@@ -12,7 +12,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, Configuracao, criar_tabelas, get_db, StatusLeadEnum, RoleEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, criar_tabelas, get_db, StatusLeadEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
@@ -132,7 +132,12 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
         lead = db.query(Lead).filter(Lead.telefone == telefone).first()
 
         # Se já foi assumido por funcionário, só salva a mensagem — humano responde
-        if lead and lead.status in [StatusLeadEnum.assumido, StatusLeadEnum.fechado]:
+        if lead and lead.status in [
+            StatusLeadEnum.assumido,
+            StatusLeadEnum.proposta_enviada,
+            StatusLeadEnum.fechado,
+            StatusLeadEnum.perdido,
+        ]:
             _salvar_msg_webhook(db, telefone, texto)
             return JSONResponse({"status": "aguardando_humano"})
 
@@ -253,6 +258,41 @@ async def assumir_lead(
     return _serial_lead(lead, db)
 
 
+@app.post("/api/leads/{lead_id}/mover")
+async def mover_lead(
+    lead_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Move um lead para outro estágio do funil."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+
+    body = await request.json()
+    novo_status = body.get("status", "")
+
+    estagios_validos = [
+        StatusLeadEnum.qualificado,
+        StatusLeadEnum.assumido,
+        StatusLeadEnum.proposta_enviada,
+        StatusLeadEnum.fechado,
+        StatusLeadEnum.perdido,
+    ]
+    if novo_status not in [s.value for s in estagios_validos]:
+        raise HTTPException(status_code=400, detail="Estágio inválido")
+
+    lead.status = novo_status
+    if novo_status == StatusLeadEnum.assumido and not lead.atribuido_para:
+        lead.atribuido_para = usuario.id
+        lead.assumido_em = datetime.utcnow()
+    lead.atualizado_em = datetime.utcnow()
+    db.commit()
+    db.refresh(lead)
+    return _serial_lead(lead, db)
+
+
 @app.post("/api/leads/{lead_id}/mensagem")
 async def enviar_mensagem_funcionario(
     lead_id: int,
@@ -328,19 +368,23 @@ async def estatisticas(
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
     total = db.query(Lead).count()
+    em_atendimento = db.query(Lead).filter(Lead.status == StatusLeadEnum.em_atendimento).count()
     qualificados = db.query(Lead).filter(Lead.status == StatusLeadEnum.qualificado).count()
     assumidos = db.query(Lead).filter(Lead.status == StatusLeadEnum.assumido).count()
-    em_atendimento = db.query(Lead).filter(Lead.status == StatusLeadEnum.em_atendimento).count()
-    desqualificados = db.query(Lead).filter(Lead.status == StatusLeadEnum.desqualificado).count()
+    propostas = db.query(Lead).filter(Lead.status == StatusLeadEnum.proposta_enviada).count()
     fechados = db.query(Lead).filter(Lead.status == StatusLeadEnum.fechado).count()
-    conv = qualificados + assumidos + fechados
+    perdidos = db.query(Lead).filter(Lead.status == StatusLeadEnum.perdido).count()
+    desqualificados = db.query(Lead).filter(Lead.status == StatusLeadEnum.desqualificado).count()
+    conv = qualificados + assumidos + propostas + fechados
     return {
         "total": total,
+        "em_atendimento": em_atendimento,
         "qualificados": qualificados,
         "assumidos": assumidos,
-        "em_atendimento": em_atendimento,
-        "desqualificados": desqualificados,
+        "propostas": propostas,
         "fechados": fechados,
+        "perdidos": perdidos,
+        "desqualificados": desqualificados,
         "financiamento": db.query(Lead).filter(Lead.modalidade == "financiamento").count(),
         "refinanciamento": db.query(Lead).filter(Lead.modalidade == "refinanciamento").count(),
         "taxa_qualificacao": round((conv / total * 100), 1) if total > 0 else 0,

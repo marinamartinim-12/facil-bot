@@ -149,9 +149,10 @@
     .badge-em_atendimento { background: #dbeafe; color: #1e40af; }
     .badge-qualificado { background: #dcfce7; color: #166534; }
     .badge-assumido { background: #fef9c3; color: #854d0e; }
-    .badge-desqualificado { background: #fee2e2; color: #991b1b; }
-    .badge-fechado { background: #f3e8ff; color: #6b21a8; }
-    .badge-abandonado { background: #f3f4f6; color: #6b7280; }
+    .badge-proposta_enviada { background: #ffedd5; color: #9a3412; }
+    .badge-fechado { background: #d1fae5; color: #065f46; }
+    .badge-perdido { background: #fee2e2; color: #991b1b; }
+    .badge-desqualificado { background: #f3f4f6; color: #6b7280; }
     .card-time { font-size: .7rem; color: var(--muted); }
     .card-actions { display: flex; gap: .35rem; margin-top: .5rem; }
     .card-resp { font-size: .72rem; color: var(--muted); margin-top: .35rem; }
@@ -326,11 +327,13 @@
           <div class="table-filters">
             <select id="filterStatus" onchange="renderLista()">
               <option value="">Todos os status</option>
-              <option value="em_atendimento">Em Atendimento</option>
+              <option value="em_atendimento">Atendimento IA</option>
               <option value="qualificado">Qualificado</option>
               <option value="assumido">Assumido</option>
-              <option value="desqualificado">Desqualificado</option>
+              <option value="proposta_enviada">Proposta Enviada</option>
               <option value="fechado">Fechado</option>
+              <option value="perdido">Perdido</option>
+              <option value="desqualificado">Fora do escopo</option>
             </select>
             <select id="filterModal" onchange="renderLista()">
               <option value="">Todas modalidades</option>
@@ -556,19 +559,20 @@
       <div class="stat s1"><div class="stat-label">Total</div><div class="stat-val">${s.total||0}</div></div>
       <div class="stat s2"><div class="stat-label">Qualificados</div><div class="stat-val">${s.qualificados||0}</div></div>
       <div class="stat s3"><div class="stat-label">Assumidos</div><div class="stat-val">${s.assumidos||0}</div></div>
-      <div class="stat s4"><div class="stat-label">Fechados</div><div class="stat-val">${s.fechados||0}</div></div>
-      <div class="stat s5"><div class="stat-label">Desqualif.</div><div class="stat-val">${s.desqualificados||0}</div></div>
+      <div class="stat s4"><div class="stat-label">Propostas</div><div class="stat-val">${s.propostas||0}</div></div>
+      <div class="stat s5"><div class="stat-label">Fechados</div><div class="stat-val">${s.fechados||0}</div></div>
       <div class="stat s6"><div class="stat-label">Taxa Qualif.</div><div class="stat-val" style="color:var(--gold3)">${s.taxa_qualificacao||0}%</div></div>
     `;
   }
 
   // ═══════ KANBAN ═══════
   const colunas = [
-    { key:'em_atendimento', label:'Em Atendimento', icon:'🤖', color:'#3b82f6' },
-    { key:'qualificado',    label:'Qualificados',   icon:'✅', color:'#22c55e' },
-    { key:'assumido',       label:'Assumidos',      icon:'👤', color:'#F5C400' },
-    { key:'fechado',        label:'Fechados',       icon:'🏁', color:'#8b5cf6' },
-    { key:'desqualificado', label:'Desqualificados',icon:'❌', color:'#ef4444' },
+    { key:'em_atendimento',  label:'Atendimento IA',   icon:'🤖', color:'#3b82f6' },
+    { key:'qualificado',     label:'Qualificado',       icon:'✅', color:'#22c55e' },
+    { key:'assumido',        label:'Assumido',          icon:'👤', color:'#F5C400' },
+    { key:'proposta_enviada',label:'Proposta Enviada',  icon:'📄', color:'#f97316' },
+    { key:'fechado',         label:'Fechado',           icon:'🏁', color:'#8b5cf6' },
+    { key:'perdido',         label:'Perdido',           icon:'❌', color:'#ef4444' },
   ];
 
   function renderKanban() {
@@ -593,8 +597,25 @@
   function cardHtml(l) {
     const nome = l.nome !== '—' ? l.nome : l.telefone;
     const tempo = tempoRelativo(l.criado_em);
-    const podeAssumir = l.status === 'qualificado';
-    const podeFachar = l.status === 'assumido' && (currentUser.role === 'admin' || l.responsavel?.id === currentUser.id);
+    const isAdmin = currentUser.role === 'admin';
+    const isResponsavel = l.responsavel?.id === currentUser.id;
+    const podeEditar = isAdmin || isResponsavel || l.status === 'qualificado';
+
+    let acoes = `<button class="btn btn-outline btn-sm" onclick="verConversa(${l.id},'${esc(nome)}')">💬 Ver</button>`;
+
+    if (l.status === 'qualificado') {
+      acoes += ` <button class="btn btn-gold btn-sm" onclick="moverLead(${l.id},'assumido')">Assumir</button>`;
+      acoes += ` <button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLead(${l.id},'perdido')">Perdido</button>`;
+    } else if (l.status === 'assumido' && podeEditar) {
+      acoes += ` <button class="btn btn-sm" style="background:#f97316;color:#fff" onclick="moverLead(${l.id},'proposta_enviada')">Proposta</button>`;
+      acoes += ` <button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLead(${l.id},'perdido')">Perdido</button>`;
+    } else if (l.status === 'proposta_enviada' && podeEditar) {
+      acoes += ` <button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="moverLead(${l.id},'fechado')">✓ Fechar</button>`;
+      acoes += ` <button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLead(${l.id},'perdido')">Perdido</button>`;
+    } else if ((l.status === 'fechado' || l.status === 'perdido') && isAdmin) {
+      acoes += ` <button class="btn btn-sm btn-outline" onclick="moverLead(${l.id},'assumido')" title="Reabrir">↩ Reabrir</button>`;
+    }
+
     return `
       <div class="lead-card">
         <div class="card-name" title="${esc(nome)}">${esc(nome)}</div>
@@ -604,29 +625,26 @@
         </div>
         ${l.responsavel ? `<div class="card-resp">👤 <strong>${esc(l.responsavel.nome)}</strong></div>` : ''}
         <div class="card-time">🕐 ${tempo}</div>
-        <div class="card-actions">
-          <button class="btn btn-outline btn-sm" onclick="verConversa(${l.id},'${esc(nome)}')">💬 Ver</button>
-          ${podeAssumir ? `<button class="btn btn-gold btn-sm" onclick="assumirLead(${l.id})">Assumir</button>` : ''}
-          ${podeFachar ? `<button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="fecharLead(${l.id})">Fechar</button>` : ''}
-        </div>
+        <div class="card-actions">${acoes}</div>
       </div>`;
   }
 
-  async function assumirLead(id) {
+  async function moverLead(id, novoStatus) {
+    const labels = {assumido:'Assumir este lead?', proposta_enviada:'Marcar proposta como enviada?', fechado:'Marcar como fechado?', perdido:'Marcar como perdido?'};
+    if (!confirm(labels[novoStatus] || 'Confirmar?')) return;
     try {
-      const r = await fetch(`/api/leads/${id}/assumir`, {method:'POST'});
+      const r = await fetch(`/api/leads/${id}/mover`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({status: novoStatus})
+      });
       if (r.ok) await refresh();
       else { const d = await r.json(); alert(d.detail); }
     } catch {}
   }
 
-  async function fecharLead(id) {
-    if (!confirm('Marcar este lead como fechado?')) return;
-    try {
-      await fetch(`/api/leads/${id}/fechar`, {method:'POST'});
-      await refresh();
-    } catch {}
-  }
+  async function assumirLead(id) { await moverLead(id, 'assumido'); }
+
+  async function fecharLead(id) { await moverLead(id, 'fechado'); }
 
   // ═══════ LISTA ═══════
   function renderLista() {
@@ -777,7 +795,7 @@
   function esc(s) { return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
   function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'); }
   function labMod(m) { return {financiamento:'Financiamento',refinanciamento:'Refinanciamento',indefinido:'Indefinido'}[m]||m; }
-  function labSt(s) { return {em_atendimento:'Em Atend.',qualificado:'Qualificado',assumido:'Assumido',desqualificado:'Desqualif.',fechado:'Fechado',abandonado:'Abandonado'}[s]||s; }
+  function labSt(s) { return {em_atendimento:'Atend. IA',qualificado:'Qualificado',assumido:'Assumido',proposta_enviada:'Proposta',fechado:'Fechado',perdido:'Perdido',desqualificado:'Fora escopo'}[s]||s; }
   function tempoRelativo(dt) {
     if (!dt) return '—';
     const parts = dt.split(/[\s\/:]/).map(Number);

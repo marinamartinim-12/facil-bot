@@ -31,9 +31,10 @@ class StatusLeadEnum(str, enum.Enum):
     em_atendimento = "em_atendimento"
     qualificado = "qualificado"
     assumido = "assumido"
-    desqualificado = "desqualificado"
-    abandonado = "abandonado"
+    proposta_enviada = "proposta_enviada"
     fechado = "fechado"
+    perdido = "perdido"
+    desqualificado = "desqualificado"
 
 
 class EstadoConversaEnum(str, enum.Enum):
