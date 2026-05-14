@@ -380,7 +380,7 @@
           <!-- Lista de conversas -->
           <div style="width:300px;min-width:300px;background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
             <div style="padding:.85rem 1rem;border-bottom:1px solid var(--border);font-weight:700;font-size:.9rem;color:var(--navy)">
-              Conversas Ativas
+              💬 Todas as Conversas
             </div>
             <div id="inboxList" style="flex:1;overflow-y:auto"></div>
           </div>
@@ -829,23 +829,39 @@
     } catch {}
   }
 
+  const statusCorInbox = {
+    em_atendimento: '#3b82f6', qualificado: '#22c55e', assumido: '#F5C400',
+    proposta_enviada: '#f97316', fechado: '#8b5cf6', perdido: '#ef4444'
+  };
+  const statusIconInbox = {
+    em_atendimento: '🤖', qualificado: '✅', assumido: '👤',
+    proposta_enviada: '📄', fechado: '🏁', perdido: '❌'
+  };
+
   function renderInboxList() {
     const list = document.getElementById('inboxList');
     if (!inboxLeads.length) {
-      list.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.83rem">Nenhum atendimento ativo</div>';
+      list.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.83rem">Nenhuma conversa ainda</div>';
       return;
     }
     list.innerHTML = inboxLeads.map(l => {
       const nome = l.nome !== '—' ? l.nome : l.telefone;
       const ativo = chatLeadAtivo && chatLeadAtivo.id === l.id;
-      return `<div onclick="abrirChat(${l.id})" style="padding:.85rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;background:${ativo ? '#f0f4ff' : 'transparent'};transition:background .1s" onmouseover="this.style.background='#f8f9fc'" onmouseout="this.style.background='${ativo ? '#f0f4ff' : 'transparent'}'">
+      const cor = statusCorInbox[l.status] || '#6b7280';
+      const icon = statusIconInbox[l.status] || '●';
+      return `<div onclick="abrirChat(${l.id})" style="padding:.75rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;background:${ativo ? '#f0f4ff' : 'transparent'};transition:background .1s" onmouseover="this.style.background='#f8f9fc'" onmouseout="this.style.background='${ativo ? '#f0f4ff' : 'transparent'}'">
         <div style="display:flex;align-items:center;gap:.6rem">
-          <div style="width:36px;height:36px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.88rem;flex-shrink:0">${nome[0].toUpperCase()}</div>
+          <div style="width:38px;height:38px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.88rem;flex-shrink:0">${nome[0].toUpperCase()}</div>
           <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nome)}</div>
+            <div style="display:flex;align-items:center;gap:.35rem">
+              <span style="font-weight:700;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nome)}</span>
+              <span style="font-size:.65rem;color:${cor};flex-shrink:0">${icon}</span>
+            </div>
             <div style="font-size:.73rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(l.ultima_mensagem||'')}</div>
           </div>
-          <div style="font-size:.68rem;color:var(--muted);flex-shrink:0">${l.ultima_hora||''}</div>
+          <div style="font-size:.68rem;color:var(--muted);flex-shrink:0;text-align:right">
+            <div>${l.ultima_hora||''}</div>
+          </div>
         </div>
       </div>`;
     }).join('');

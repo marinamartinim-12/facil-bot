@@ -304,13 +304,19 @@ async def enviar_mensagem_funcionario(
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
-    if lead.status not in [StatusLeadEnum.assumido, StatusLeadEnum.qualificado]:
-        raise HTTPException(status_code=400, detail="Lead não está em atendimento humano")
 
     body = await request.json()
     texto = body.get("mensagem", "").strip()
     if not texto:
         raise HTTPException(status_code=400, detail="Mensagem não pode ser vazia")
+
+    # Se funcionário responde, assume o lead automaticamente
+    if lead.status in [StatusLeadEnum.em_atendimento, StatusLeadEnum.qualificado]:
+        lead.status = StatusLeadEnum.assumido
+        lead.atribuido_para = usuario.id
+        lead.assumido_em = datetime.utcnow()
+        lead.atualizado_em = datetime.utcnow()
+        db.commit()
 
     # Salva no histórico como mensagem do atendente
     _salvar_msg_webhook(db, lead.telefone, f"[{usuario.nome}]: {texto}", role="assistant")
@@ -326,23 +332,31 @@ async def inbox(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
-    """Retorna conversas ativas para o inbox do dashboard."""
-    query = db.query(Lead).filter(Lead.status == StatusLeadEnum.assumido)
-    if usuario.role != RoleEnum.admin:
-        query = query.filter(Lead.atribuido_para == usuario.id)
+    """Retorna TODAS as conversas com mensagens, ordenadas pela mais recente."""
+    # Busca todos os leads que têm pelo menos uma mensagem
+    leads_com_msg = (
+        db.query(Lead)
+        .filter(Lead.status != StatusLeadEnum.desqualificado)
+        .order_by(Lead.atualizado_em.desc())
+        .all()
+    )
 
-    leads = query.order_by(Lead.atualizado_em.desc()).all()
     resultado = []
-    for l in leads:
+    for l in leads_com_msg:
         ultima = (
             db.query(MensagemConversa)
             .filter(MensagemConversa.telefone == l.telefone)
             .order_by(MensagemConversa.id.desc())
             .first()
         )
+        if not ultima:
+            continue  # ignora leads sem nenhuma mensagem
+        # Limpa prefixo [Nome]: para exibição
+        import re
+        conteudo_limpo = re.sub(r'^\[[^\]]+\]:\s*', '', ultima.conteudo)
         resultado.append({
             **_serial_lead(l, db),
-            "ultima_mensagem": ultima.conteudo[:60] if ultima else "",
+            "ultima_mensagem": conteudo_limpo[:60],
             "ultima_hora": ultima.criado_em.strftime("%H:%M") if ultima and ultima.criado_em else "",
         })
     return resultado
