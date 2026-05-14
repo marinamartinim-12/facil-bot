@@ -91,6 +91,17 @@ class MensagemConversa(Base):
     criado_em = Column(DateTime, default=datetime.utcnow)
 
 
+class Configuracao(Base):
+    """Configurações editáveis do bot pelo painel admin."""
+    __tablename__ = "configuracoes"
+
+    id = Column(Integer, primary_key=True)
+    chave = Column(String(100), unique=True, nullable=False)
+    valor = Column(Text, nullable=False)
+    descricao = Column(String(300), nullable=True)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 def criar_tabelas():
     Base.metadata.create_all(bind=engine)
 

@@ -289,6 +289,9 @@
       <button class="nav-item admin-only" onclick="showView('relatorios')" id="nav-relatorios" style="display:none">
         <span class="nav-icon">📈</span> Relatórios
       </button>
+      <button class="nav-item admin-only" onclick="showView('configuracoes')" id="nav-configuracoes" style="display:none">
+        <span class="nav-icon">⚙️</span> Config. do Bot
+      </button>
     </nav>
     <div class="sb-user">
       <div class="user-avatar" id="sidebarAvatar">?</div>
@@ -409,6 +412,14 @@
         </div>
       </div>
 
+      <!-- ── CONFIGURAÇÕES DO BOT ── -->
+      <div id="viewConfiguracoes" style="display:none">
+        <div style="max-width:800px">
+          <div id="configCards"></div>
+          <div id="configMsg" style="margin-top:.75rem;font-size:.85rem"></div>
+        </div>
+      </div>
+
       <!-- ── RELATÓRIOS ── -->
       <div id="viewRelatorios" style="display:none">
         <div class="stats-row" id="relStatsRow"></div>
@@ -495,7 +506,7 @@
   document.getElementById('loginSenha').addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); });
 
   // ═══════ VIEWS ═══════
-  const views = ['funil','lista','atendimento','usuarios','relatorios'];
+  const views = ['funil','lista','atendimento','usuarios','relatorios','configuracoes'];
   function showView(v) {
     views.forEach(x => {
       document.getElementById('view'+cap(x)).style.display = x === v ? '' : 'none';
@@ -508,6 +519,7 @@
     if (v === 'relatorios') carregarRelatorios();
     if (v === 'lista') renderLista();
     if (v === 'atendimento') carregarInbox();
+    if (v === 'configuracoes') carregarConfiguracoes();
   }
   function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
@@ -894,6 +906,73 @@
     document.getElementById('chatAvatar').textContent = '?';
     document.getElementById('btnFecharChat').style.display = 'none';
     await carregarInbox();
+  }
+
+  // ═══════ CONFIGURAÇÕES ═══════
+  let configData = [];
+
+  async function carregarConfiguracoes() {
+    try {
+      const r = await fetch('/api/config');
+      configData = await r.json();
+      renderConfiguracoes();
+    } catch {}
+  }
+
+  const configLabels = {
+    mensagem_boas_vindas:  { titulo: '👋 Mensagem de Boas-vindas', subtitulo: 'Primeira mensagem enviada ao cliente quando entra em contato' },
+    mensagem_finalizacao:  { titulo: '🤝 Mensagem de Finalização', subtitulo: 'Mensagem enviada após coletar todos os dados do cliente' },
+    regras_financiamento:  { titulo: '🚗 Regras — Financiamento de Veículo', subtitulo: 'Instruções do bot para leads de financiamento (raio de atendimento, presencialidade, etc.)' },
+    regras_refinanciamento:{ titulo: '🔑 Regras — Refinanciamento / CGI', subtitulo: 'Instruções do bot para leads de refinanciamento (restrições geográficas, etc.)' },
+  };
+
+  const configOrdem = ['mensagem_boas_vindas','mensagem_finalizacao','regras_financiamento','regras_refinanciamento'];
+
+  function renderConfiguracoes() {
+    const map = {};
+    configData.forEach(c => map[c.chave] = c);
+    const ordered = configOrdem.map(k => map[k]).filter(Boolean);
+    const outros = configData.filter(c => !configOrdem.includes(c.chave));
+
+    document.getElementById('configCards').innerHTML = [...ordered, ...outros].map(c => {
+      const label = configLabels[c.chave] || { titulo: c.chave, subtitulo: c.descricao || '' };
+      return `
+        <div class="form-card" style="margin-bottom:1rem">
+          <div style="margin-bottom:.75rem">
+            <h3 style="font-size:1rem">${label.titulo}</h3>
+            <p style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${label.subtitulo}</p>
+          </div>
+          <textarea id="cfg-${c.chave}" rows="6" style="width:100%;border:1.5px solid var(--border);border-radius:8px;padding:.65rem .85rem;font-size:.83rem;font-family:inherit;resize:vertical;outline:none;line-height:1.5"
+            onfocus="this.style.borderColor='var(--navy)'" onblur="this.style.borderColor='var(--border)'">${escHtml(c.valor)}</textarea>
+          <div style="margin-top:.6rem;display:flex;gap:.5rem;align-items:center">
+            <button class="btn btn-primary btn-sm" onclick="salvarConfig('${c.chave}')">💾 Salvar</button>
+            <span id="msg-${c.chave}" style="font-size:.78rem"></span>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  async function salvarConfig(chave) {
+    const valor = document.getElementById(`cfg-${chave}`).value;
+    const msgEl = document.getElementById(`msg-${chave}`);
+    try {
+      const r = await fetch(`/api/config/${chave}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ valor }),
+      });
+      if (r.ok) {
+        msgEl.textContent = '✅ Salvo com sucesso!';
+        msgEl.style.color = 'var(--green)';
+      } else {
+        msgEl.textContent = '⚠️ Erro ao salvar.';
+        msgEl.style.color = 'var(--red)';
+      }
+    } catch {
+      msgEl.textContent = '⚠️ Erro de conexão.';
+      msgEl.style.color = 'var(--red)';
+    }
+    setTimeout(() => { msgEl.textContent = ''; }, 3000);
   }
 
   // ═══════ INIT ═══════

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from config import get_settings
 from models import (
-    Lead, MensagemConversa,
+    Lead, MensagemConversa, Configuracao,
     EstadoConversaEnum, ModalidadeEnum, StatusLeadEnum,
 )
 
@@ -159,6 +159,12 @@ def _formatar_cpf(cpf: str) -> str:
     return cpf
 
 
+def _carregar_config(db: Session) -> dict:
+    """Carrega configurações editáveis do banco de dados."""
+    configs = db.query(Configuracao).all()
+    return {c.chave: c.valor for c in configs}
+
+
 def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str:
     # Busca ou cria lead
     lead = db.query(Lead).filter(Lead.telefone == telefone).first()
@@ -183,8 +189,23 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str
     # Salva mensagem do cliente
     _salvar_mensagem(db, telefone, "user", mensagem_cliente)
 
+    # Carrega configurações editáveis do admin
+    config = _carregar_config(db)
+    regras_extra = ""
+    if lead.modalidade == ModalidadeEnum.financiamento:
+        regras_extra = config.get("regras_financiamento", "")
+    elif lead.modalidade == ModalidadeEnum.refinanciamento:
+        regras_extra = config.get("regras_refinanciamento", "")
+
+    msg_boas_vindas = config.get("mensagem_boas_vindas", "")
+    msg_finalizacao = config.get("mensagem_finalizacao", "")
+
     system_com_contexto = (
         f"{SYSTEM_PROMPT}\n\n"
+        f"--- CONFIGURAÇÕES EDITADAS PELO ADMIN ---\n"
+        f"Mensagem de boas-vindas: {msg_boas_vindas}\n"
+        f"Mensagem de finalização: {msg_finalizacao}\n"
+        f"Regras específicas da modalidade: {regras_extra}\n\n"
         f"--- ESTADO ATUAL DA CONVERSA ---\n"
         f"Estado: {lead.estado_conversa}\n"
         f"Cidade: {lead.nome or 'não informada'}\n"

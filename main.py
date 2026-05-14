@@ -12,7 +12,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, criar_tabelas, get_db, StatusLeadEnum, RoleEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, criar_tabelas, get_db, StatusLeadEnum, RoleEnum
 from bot import processar_mensagem, obter_resumo_lead
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
@@ -27,7 +27,8 @@ async def startup():
     criar_tabelas()
 
     # Cria admin padrão se não existir nenhum usuário
-    db = next(get_db())
+    db_startup = next(get_db())
+    db = db_startup
     try:
         if db.query(Usuario).count() == 0:
             admin = Usuario(
@@ -41,7 +42,11 @@ async def startup():
             db.commit()
             print(f"✅ Admin criado: {settings.ADMIN_EMAIL} / {settings.ADMIN_PASSWORD}")
     finally:
-        db.close()
+        pass
+
+    # Configurações padrão do bot
+    _criar_config_padrao(db_startup)
+    db_startup.close()
 
     print("✅ Fácil Financiamentos Bot v2 iniciado!")
     print("📊 Dashboard: http://localhost:8000/dashboard")
@@ -397,6 +402,30 @@ async def desativar_usuario(uid: int, db: Session = Depends(get_db), admin: Usua
     return {"status": "desativado"}
 
 
+# ─── Configurações do bot (admin) ────────────────────────────────────────────────
+
+@app.get("/api/config")
+async def listar_config(db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
+    configs = db.query(Configuracao).order_by(Configuracao.chave).all()
+    return [{"chave": c.chave, "valor": c.valor, "descricao": c.descricao} for c in configs]
+
+
+@app.put("/api/config/{chave}")
+async def atualizar_config(
+    chave: str, request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    body = await request.json()
+    config = db.query(Configuracao).filter(Configuracao.chave == chave).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Configuração não encontrada")
+    config.valor = body.get("valor", config.valor)
+    config.atualizado_em = datetime.utcnow()
+    db.commit()
+    return {"status": "ok", "chave": chave}
+
+
 # ─── Relatórios (admin) ───────────────────────────────────────────────────────────
 
 @app.get("/api/relatorios")
@@ -468,6 +497,57 @@ def _serial_usuario(u: Usuario) -> dict:
         "role": u.role, "ativo": u.ativo,
         "criado_em": u.criado_em.strftime("%d/%m/%Y") if u.criado_em else "—",
     }
+
+
+def _criar_config_padrao(db: Session):
+    """Cria configurações padrão do bot se não existirem."""
+    configs_padrao = [
+        {
+            "chave": "regras_financiamento",
+            "descricao": "Regras específicas para leads de financiamento de veículo",
+            "valor": (
+                "REGRAS PARA FINANCIAMENTO:\n"
+                "- O fechamento do contrato é PRESENCIAL em Belo Horizonte/MG (exigência do banco)\n"
+                "- Após o cliente informar a cidade, verifique se está a até 200km de BH\n"
+                "- Cidades dentro de ~200km de BH: Contagem, Betim, Sete Lagoas, Montes Claros, Governador Valadares, Ipatinga, Coronel Fabriciano, Juiz de Fora, Uberlândia, Uberaba, Divinópolis, Itabira, João Monlevade, Conselheiro Lafaiete, Ouro Preto, Poços de Caldas, Pouso Alegre, Varginha, Lavras, São João del-Rei, Barbacena, Viçosa, Muriaé\n"
+                "- Se o cliente for de cidade FORA desse raio, pergunte: 'Para o financiamento, o fechamento do contrato é feito presencialmente aqui em BH (exigência do banco). Você teria disponibilidade de vir até nós?'\n"
+                "- Se o cliente NÃO puder vir: informe gentilmente que para financiamento precisamos do fechamento presencial e sugira o refinanciamento caso ele já tenha um veículo. Marque como desqualificado.\n"
+                "- Se o cliente PUDER vir: continue normalmente com a coleta de dados"
+            ),
+        },
+        {
+            "chave": "regras_refinanciamento",
+            "descricao": "Regras específicas para leads de refinanciamento/CGI",
+            "valor": (
+                "REGRAS PARA REFINANCIAMENTO:\n"
+                "- Atendimento pode ser 100% ONLINE, de qualquer lugar do Brasil\n"
+                "- Não há restrição geográfica\n"
+                "- O cliente pode ter o veículo quitado ou semi-quitado\n"
+                "- Continue normalmente com a coleta de dados independente da cidade"
+            ),
+        },
+        {
+            "chave": "mensagem_boas_vindas",
+            "descricao": "Mensagem inicial de boas-vindas (enviada quando o cliente entra em contato)",
+            "valor": (
+                "Olá ! Seja bem-vindo(a) à Fácil Financiamentos, eleita a melhor plataforma de financiamentos de MG, há 23 anos no mercado.\n\n"
+                "De particular para particular ! Você escolhe o veículo.\n\n"
+                "Meu nome é Marina, sou assistente virtual da Fácil Financiamentos. 👩‍💻\n\n"
+                "Estamos em Belo Horizonte, MG, de que cidade você é ?"
+            ),
+        },
+        {
+            "chave": "mensagem_finalizacao",
+            "descricao": "Mensagem de encerramento após coletar todos os dados",
+            "valor": "Obrigado pelas confirmações, em breve uma de nossas consultoras, entrará em contato. 🤝",
+        },
+    ]
+
+    for c in configs_padrao:
+        existe = db.query(Configuracao).filter(Configuracao.chave == c["chave"]).first()
+        if not existe:
+            db.add(Configuracao(chave=c["chave"], valor=c["valor"], descricao=c["descricao"]))
+    db.commit()
 
 
 def _salvar_msg_webhook(db: Session, telefone: str, texto: str, role: str = "user"):
