@@ -902,11 +902,11 @@
         const conteudo = escHtml(matchFunc ? m.conteudo.replace(matchFunc[0], '') : m.conteudo);
         const remetente = matchFunc ? matchFunc[1] : null;
 
-        return `<div style="display:flex;flex-direction:column;max-width:75%;align-self:${isCliente ? 'flex-start' : 'flex-end'};align-items:${isCliente ? 'flex-start' : 'flex-end'}">
+        return `<div style="display:flex;flex-direction:column;max-width:75%;align-self:${isCliente ? 'flex-end' : 'flex-start'};align-items:${isCliente ? 'flex-end' : 'flex-start'}">
           ${remetente ? `<span style="font-size:.68rem;color:var(--muted);margin-bottom:2px">👤 ${escHtml(remetente)}</span>` : ''}
           <div style="padding:.5rem .85rem;border-radius:12px;font-size:.85rem;line-height:1.5;word-break:break-word;white-space:pre-wrap;
             background:${isCliente ? '#fff' : '#dcf8c6'};
-            border-bottom-${isCliente ? 'left' : 'right'}-radius:3px;
+            border-bottom-${isCliente ? 'right' : 'left'}-radius:3px;
             box-shadow:0 1px 2px rgba(0,0,0,.1)">${conteudo}</div>
           ${m.horario ? `<span style="font-size:.68rem;color:var(--muted);margin-top:2px">${m.horario}</span>` : ''}
         </div>`;
