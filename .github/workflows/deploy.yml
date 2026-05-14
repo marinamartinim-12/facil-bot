@@ -28,14 +28,20 @@ jobs:
           push: true
           tags: ghcr.io/marinamartinim-12/facil-bot:latest
 
-      - name: Update Railway service to use new image
+      - name: Update Railway service image source
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
+          echo "=== Updating service image ==="
           curl -s -X POST https://backboard.railway.com/graphql/v2 \
             -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"query":"mutation { serviceInstanceUpdate(serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\", input: { source: { image: \"ghcr.io/marinamartinim-12/facil-bot:latest\" } }) }"}' \
-            | cat
+            -d '{"query":"mutation { serviceInstanceUpdate(serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\", input: { source: { image: \"ghcr.io/marinamartinim-12/facil-bot:latest\" } }) }"}'
           echo ""
-          echo "Deploy triggered!"
+          echo "=== Triggering redeploy ==="
+          curl -s -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"mutation { serviceInstanceRedeploy(serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\") }"}'
+          echo ""
+          echo "=== Done ==="
