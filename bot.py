@@ -1,6 +1,6 @@
 """
 Fácil Financiamentos — Motor de conversa IA
-Conduz o atendimento inicial via WhatsApp, qualifica o lead e coleta dados.
+Roteiro oficial de atendimento da Fácil Financiamentos.
 """
 
 import re
@@ -18,84 +18,102 @@ from models import (
 settings = get_settings()
 client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
-# ─── Prompt base do atendente ──────────────────────────────────────────────────
+# ─── Prompt base ───────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """Você é o assistente virtual da *Fácil Financiamentos*, especializada em financiamento e refinanciamento de veículos.
+SYSTEM_PROMPT = """Você é Marina, assistente virtual da *Fácil Financiamentos*, especializada em financiamento e crédito com garantia de veículo, localizada em Belo Horizonte, MG, há 23 anos no mercado.
 
-Seu nome é *Fácil* e você deve ser simpático, direto e profissional.
+📋 REGRAS OBRIGATÓRIAS:
+- Responda SEMPRE em português brasileiro, de forma calorosa, próxima e profissional
+- Use emojis conforme o roteiro abaixo
+- NUNCA invente taxas, parcelas ou aprovações — isso é feito pela equipe humana
+- NUNCA confirme aprovação de crédito
+- Siga o roteiro à risca, uma etapa por vez
+- NÃO ofereça menus numerados — conduza a conversa naturalmente
+- Se o cliente perguntar sobre empréstimo pessoal sem garantia, explique gentilmente que trabalhamos apenas com financiamento de veículos e crédito com garantia de veículo
 
-🎯 MISSÃO: Qualificar leads e coletar dados iniciais para a equipe de vendas.
+🏢 SOBRE A FÁCIL FINANCIAMENTOS:
+- 23 anos no mercado, eleita melhor plataforma de financiamentos de MG
+- De particular para particular — o cliente escolhe o veículo
+- Credenciados nas 9 melhores financeiras do Brasil
+- Atendimento online ou presencial em BH
+- Veículos: carros, motos, caminhões 🚘 🛵 🚚
 
-📋 REGRAS IMPORTANTES:
-- Responda SEMPRE em português brasileiro, de forma natural e amigável
-- Use emojis com moderação para humanizar o atendimento
-- Seja conciso — respostas curtas e objetivas
-- Não invente informações sobre taxas, parcelas ou aprovações
-- Nunca confirme aprovação de crédito — isso é feito pela equipe
-- Se o cliente perguntar sobre EMPRÉSTIMO PESSOAL: explique gentilmente que a Fácil é especializada em financiamento/refinanciamento de veículos e não trabalha com empréstimo pessoal sem garantia
+📋 ROTEIRO DE ATENDIMENTO (siga exatamente esta ordem):
 
-🚗 PRODUTOS DA FÁCIL FINANCIAMENTOS:
+ETAPA 1 — BOAS-VINDAS (estado: inicio)
+Quando o cliente entrar em contato, envie EXATAMENTE esta mensagem de boas-vindas:
 
-1. **FINANCIAMENTO DE VEÍCULO**
-   - Para quem quer COMPRAR um veículo (novo ou usado)
-   - Parcelamento em até 60x
-   - Veículos novos e seminovos
-   - Entrada facilitada
+"Olá ! Seja bem-vindo(a) à Fácil Financiamentos, eleita a melhor plataforma de financiamentos de MG, há 23 anos no mercado.
 
-2. **REFINANCIAMENTO / CGI (Crédito com Garantia de Imóvel/Veículo)**
-   - Para quem já TEM um veículo quitado ou semi-quitado
-   - Usa o veículo como garantia para levantar capital
-   - Taxas menores que empréstimo pessoal
-   - O cliente continua usando o veículo normalmente
-   - Ideal para capital de giro, reforma, quitar dívidas, etc.
+De particular para particular ! Você escolhe o veículo.
 
-📊 FLUXO DE ATENDIMENTO:
-Siga exatamente este fluxo, um passo por vez.
+Meu nome é Marina, sou assistente virtual da Fácil Financiamentos. 👩‍💻
 
-ETAPA 1 — BOAS-VINDAS E MODALIDADE
-Apresente-se e pergunte qual produto o cliente busca. Ofereça as opções numeradas.
+Estamos em Belo Horizonte, MG, de que cidade você é ?"
 
-ETAPA 2 — EXPLICAÇÃO
-Explique brevemente o produto escolhido e confirme se é isso que o cliente precisa.
+ETAPA 2 — CIDADE (estado: aguardando_cidade)
+O cliente informou sua cidade. Agradeça e pergunte naturalmente:
+"Você está procurando um financiamento para comprar um veículo, ou um empréstimo com garantia do seu veículo ?"
 
-ETAPA 3 — COLETA DE DADOS (um campo por mensagem)
-Colete nesta ordem: Nome completo → CPF → Data de nascimento → Veículo (pretende comprar OU veículo que possui)
+ETAPA 3 — MODALIDADE (estado: aguardando_modalidade)
+O cliente escolheu o que precisa. Identifique se é:
+- FINANCIAMENTO: quer comprar um veículo
+- REFINANCIAMENTO/CGI: já tem veículo e quer crédito com garantia
 
-ETAPA 4 — FINALIZAÇÃO
-Agradeça, informe que a equipe entrará em contato e despeça-se.
+Responda com entusiasmo e envie:
+"Somos credenciados nas 9 melhores financeiras do Brasil, podemos te atender online, ou presencialmente. 🧑🏽‍💼
+
+Com apenas 3 dados, faremos uma pré análise, e encontraremos as melhores taxas e condições para você 🚘 🛵 🚚
+
+Vamos lá !
+
+Digite seu CPF :"
+
+ETAPA 4 — CPF (estado: coletando_cpf)
+O cliente enviou o CPF. Confirme o recebimento e peça:
+"Obrigado! Agora digite sua data de nascimento :"
+
+ETAPA 5 — DATA DE NASCIMENTO (estado: coletando_data_nasc)
+O cliente enviou a data. Confirme e peça:
+"Ótimo! Por último, digite o ano e modelo do veículo :"
+(Se for financiamento: veículo que quer comprar. Se for refinanciamento: veículo que possui.)
+
+ETAPA 6 — VEÍCULO E FINALIZAÇÃO (estado: coletando_carro → finalizado)
+O cliente enviou o veículo. Encerre com:
+"Obrigado pelas confirmações, em breve uma de nossas consultoras, entrará em contato. 🤝"
 
 ⚠️ RETORNO JSON OBRIGATÓRIO:
-Você DEVE retornar suas respostas neste formato JSON exato:
+Você DEVE retornar SEMPRE neste formato JSON exato — nada antes, nada depois:
 {
-  "mensagem": "texto da resposta para o cliente",
+  "mensagem": "texto exato para o cliente",
   "proximo_estado": "nome_do_estado",
   "dados_coletados": {
     "nome": null,
     "cpf": null,
     "data_nascimento": null,
     "carro_interesse": null,
-    "modalidade": null
+    "modalidade": null,
+    "cidade": null
   },
   "qualificado": true
 }
 
 Estados possíveis para "proximo_estado":
-- "aguardando_modalidade" — após boas-vindas
-- "explicando_modalidade" — após cliente escolher
-- "coletando_nome" — após confirmar interesse
-- "coletando_cpf" — após receber nome
+- "aguardando_cidade" — após enviar boas-vindas
+- "aguardando_modalidade" — após receber cidade
+- "coletando_cpf" — após identificar modalidade
 - "coletando_data_nasc" — após receber CPF
-- "coletando_carro" — após receber data nascimento
-- "finalizado" — após receber dados do carro
-- "desqualificado" — se cliente não tem interesse ou pede produto fora do escopo
+- "coletando_carro" — após receber data de nascimento
+- "finalizado" — após receber o veículo
+- "desqualificado" — se cliente pedir produto fora do escopo
 
-Em "dados_coletados", preencha apenas o campo coletado na mensagem atual (o resto null).
+Em "dados_coletados": preencha apenas o campo recebido nesta mensagem (o resto null).
 Em "qualificado": false apenas se desqualificado.
+Em "cidade": preencha quando o cliente informar a cidade.
 """
 
 
-def _historico_para_messages(historico: list[MensagemConversa]) -> list[dict]:
-    """Converte histórico do banco para formato da API Anthropic."""
+def _historico_para_messages(historico: list) -> list[dict]:
     return [{"role": m.role, "content": m.conteudo} for m in historico[-20:]]
 
 
@@ -106,20 +124,20 @@ def _salvar_mensagem(db: Session, telefone: str, role: str, conteudo: str):
 
 
 def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, qualificado: bool):
-    """Atualiza lead com dados coletados e novo estado."""
-    if dados.get("nome"):
-        lead.nome = dados["nome"]
     if dados.get("cpf"):
         lead.cpf = _formatar_cpf(dados["cpf"])
     if dados.get("data_nascimento"):
         lead.data_nascimento = dados["data_nascimento"]
     if dados.get("carro_interesse"):
         lead.carro_interesse = dados["carro_interesse"]
+    if dados.get("cidade"):
+        # Salva cidade no campo nome por enquanto (até adicionar campo específico)
+        lead.nome = dados["cidade"]
     if dados.get("modalidade"):
         modalidade = dados["modalidade"].lower()
-        if "refin" in modalidade or "cgi" in modalidade or "capital" in modalidade:
+        if "refin" in modalidade or "garantia" in modalidade or "cgi" in modalidade:
             lead.modalidade = ModalidadeEnum.refinanciamento
-        elif "financ" in modalidade:
+        elif "financ" in modalidade or "comprar" in modalidade:
             lead.modalidade = ModalidadeEnum.financiamento
 
     lead.estado_conversa = proximo_estado
@@ -135,58 +153,13 @@ def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, q
 
 
 def _formatar_cpf(cpf: str) -> str:
-    """Remove formatação e reaplica padrão 000.000.000-00."""
     apenas_numeros = re.sub(r"\D", "", cpf)
     if len(apenas_numeros) == 11:
         return f"{apenas_numeros[:3]}.{apenas_numeros[3:6]}.{apenas_numeros[6:9]}-{apenas_numeros[9:]}"
     return cpf
 
 
-def _contexto_por_estado(estado: str, lead: Lead) -> str:
-    """Adiciona contexto extra ao prompt conforme estado atual."""
-    contextos = {
-        EstadoConversaEnum.inicio: (
-            "O cliente acabou de entrar em contato. Faça as boas-vindas da Fácil Financiamentos "
-            "e pergunte qual serviço ele busca. Apresente as opções:\n"
-            "1️⃣ Financiamento de veículo (quero COMPRAR um carro)\n"
-            "2️⃣ Refinanciamento / CGI (já TENHO um carro e preciso de crédito)"
-        ),
-        EstadoConversaEnum.aguardando_modalidade: (
-            "O cliente está escolhendo a modalidade. "
-            "Identifique a escolha dele e explique brevemente o produto. "
-            "Se ele mencionar 'empréstimo pessoal' ou algo fora do escopo, desqualifique gentilmente."
-        ),
-        EstadoConversaEnum.explicando_modalidade: (
-            f"A modalidade escolhida é: {lead.modalidade}. "
-            "Confirme se o cliente quer prosseguir e peça o nome completo dele."
-        ),
-        EstadoConversaEnum.coletando_nome: (
-            "Colete o nome completo do cliente. "
-            "Após receber, agradeça pelo nome e peça o CPF."
-        ),
-        EstadoConversaEnum.coletando_cpf: (
-            f"O nome do cliente é {lead.nome or 'não informado'}. "
-            "Colete o CPF. Após receber, peça a data de nascimento."
-        ),
-        EstadoConversaEnum.coletando_data_nasc: (
-            f"Nome: {lead.nome}, CPF: {lead.cpf}. "
-            "Colete a data de nascimento (DD/MM/AAAA). Após receber, "
-            f"peça {'qual veículo ele pretende comprar' if lead.modalidade == ModalidadeEnum.financiamento else 'qual veículo ele possui (modelo, ano)'}"
-        ),
-        EstadoConversaEnum.coletando_carro: (
-            f"Modalidade: {lead.modalidade}. "
-            f"Colete {'o veículo de interesse (ex: Fiat Cronos 2023)' if lead.modalidade == ModalidadeEnum.financiamento else 'o veículo que o cliente possui como garantia (modelo e ano)'}. "
-            "Após receber, finalize o atendimento agradecendo e informando que a equipe entrará em contato em breve."
-        ),
-    }
-    return contextos.get(estado, "Continue o atendimento conforme o fluxo.")
-
-
 def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str:
-    """
-    Ponto de entrada principal.
-    Recebe mensagem do cliente, processa com Claude e retorna resposta.
-    """
     # Busca ou cria lead
     lead = db.query(Lead).filter(Lead.telefone == telefone).first()
     if not lead:
@@ -195,14 +168,11 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str
         db.commit()
         db.refresh(lead)
 
-    # Se já finalizado ou desqualificado, resposta simples
+    # Se já finalizado, mensagem padrão
     if lead.estado_conversa == EstadoConversaEnum.finalizado:
-        return (
-            "✅ Seus dados já foram registrados! Nossa equipe entrará em contato em breve. "
-            "Caso precise de algo mais, entre em contato pelo nosso site. Obrigado! 😊"
-        )
+        return "Seus dados já estão registrados! Em breve uma de nossas consultoras entrará em contato. 🤝"
 
-    # Busca histórico de conversa
+    # Busca histórico
     historico = (
         db.query(MensagemConversa)
         .filter(MensagemConversa.telefone == telefone)
@@ -213,23 +183,20 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str
     # Salva mensagem do cliente
     _salvar_mensagem(db, telefone, "user", mensagem_cliente)
 
-    # Monta contexto extra para o estado atual
-    contexto_estado = _contexto_por_estado(lead.estado_conversa, lead)
-
     system_com_contexto = (
         f"{SYSTEM_PROMPT}\n\n"
-        f"--- CONTEXTO ATUAL ---\n"
+        f"--- ESTADO ATUAL DA CONVERSA ---\n"
         f"Estado: {lead.estado_conversa}\n"
-        f"Instrução: {contexto_estado}\n"
-        f"Dados já coletados: nome={lead.nome}, cpf={lead.cpf}, "
-        f"data_nasc={lead.data_nascimento}, carro={lead.carro_interesse}, "
-        f"modalidade={lead.modalidade}"
+        f"Cidade: {lead.nome or 'não informada'}\n"
+        f"Modalidade: {lead.modalidade}\n"
+        f"CPF: {lead.cpf or 'não informado'}\n"
+        f"Nascimento: {lead.data_nascimento or 'não informado'}\n"
+        f"Veículo: {lead.carro_interesse or 'não informado'}"
     )
 
     messages = _historico_para_messages(historico)
     messages.append({"role": "user", "content": mensagem_cliente})
 
-    # Chama Claude
     try:
         response = client.messages.create(
             model="claude-haiku-4-5",
@@ -239,11 +206,11 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str
         )
         resposta_raw = response.content[0].text
     except Exception as e:
+        print(f"Erro Claude: {e}")
         return "Desculpe, ocorreu um problema técnico. Tente novamente em instantes. 🙏"
 
-    # Tenta parsear JSON
+    # Parse JSON
     try:
-        # Extrai JSON mesmo se vier com texto ao redor
         json_match = re.search(r"\{[\s\S]*\}", resposta_raw)
         if json_match:
             dados_resposta = json.loads(json_match.group())
@@ -252,33 +219,25 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str
 
         mensagem_bot = dados_resposta.get("mensagem", resposta_raw)
         proximo_estado = dados_resposta.get("proximo_estado", lead.estado_conversa)
-        dados_coletados = dados_resposta.get("dados_coletados", {})
+        dados_coletados = {k: v for k, v in (dados_resposta.get("dados_coletados") or {}).items() if v}
         qualificado = dados_resposta.get("qualificado", True)
 
-        # Remove Nones do dict
-        dados_coletados = {k: v for k, v in (dados_coletados or {}).items() if v}
-
-        # Atualiza lead
         _atualizar_lead(db, lead, dados_coletados, proximo_estado, qualificado)
 
     except (json.JSONDecodeError, ValueError):
-        # Se Claude não retornou JSON válido, usa resposta bruta e mantém estado
         mensagem_bot = resposta_raw
 
-    # Salva resposta do bot
     _salvar_mensagem(db, telefone, "assistant", mensagem_bot)
-
     return mensagem_bot
 
 
 def obter_resumo_lead(telefone: str, db: Session) -> dict | None:
-    """Retorna resumo do lead para notificação interna."""
     lead = db.query(Lead).filter(Lead.telefone == telefone).first()
     if not lead:
         return None
     return {
         "telefone": lead.telefone,
-        "nome": lead.nome,
+        "cidade": lead.nome,
         "cpf": lead.cpf,
         "data_nascimento": lead.data_nascimento,
         "carro_interesse": lead.carro_interesse,
