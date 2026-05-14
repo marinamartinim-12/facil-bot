@@ -7,14 +7,24 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Railway CLI
         run: npm install -g @railway/cli
+
       - name: Deploy to Railway
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           RAILWAY_PROJECT_ID: e129b873-ae12-48d1-9c6c-0822fb04cfe0
           RAILWAY_SERVICE_ID: c1e1aad1-1155-48a7-b100-81e97c184334
           RAILWAY_ENVIRONMENT_ID: 3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c
-        run: railway up --detach --service "brave-ambition"
+        run: |
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            railway up --detach --service "brave-ambition" && exit 0
+            echo "Failed, retrying in 15s..."
+            sleep 15
+          done
+          exit 1
