@@ -38,7 +38,7 @@ class StatusLeadEnum(str, enum.Enum):
 
 class EstadoConversaEnum(str, enum.Enum):
     inicio = "inicio"
-    aguardando_cidade = "aguardando_cidade"
+    aguardando_nome = "aguardando_nome"
     aguardando_modalidade = "aguardando_modalidade"
     coletando_cpf = "coletando_cpf"
     coletando_data_nasc = "coletando_data_nasc"
