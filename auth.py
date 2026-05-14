@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, Cookie
 from sqlalchemy.orm import Session
 from models import get_db, Usuario, RoleEnum
@@ -9,17 +9,16 @@ from config import get_settings
 
 settings = get_settings()
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HORAS = 24 * 7  # 7 dias
 
 
 def verificar_senha(senha_plana: str, senha_hash: str) -> bool:
-    return pwd_context.verify(senha_plana, senha_hash)
+    return bcrypt.checkpw(senha_plana.encode("utf-8"), senha_hash.encode("utf-8"))
 
 
 def hash_senha(senha: str) -> str:
-    return pwd_context.hash(senha)
+    return bcrypt.hashpw(senha.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def criar_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
