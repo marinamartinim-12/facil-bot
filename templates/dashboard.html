@@ -278,6 +278,10 @@
       <button class="nav-item" onclick="showView('lista')" id="nav-lista">
         <span class="nav-icon">📋</span> Lista de Leads
       </button>
+      <button class="nav-item" onclick="showView('atendimento')" id="nav-atendimento">
+        <span class="nav-icon">💬</span> Atendimentos
+        <span id="badgeInbox" style="display:none;margin-left:auto;background:var(--red);color:#fff;border-radius:99px;padding:.1rem .45rem;font-size:.68rem;font-weight:700"></span>
+      </button>
       <div class="nav-section admin-only" style="display:none">Administração</div>
       <button class="nav-item admin-only" onclick="showView('usuarios')" id="nav-usuarios" style="display:none">
         <span class="nav-icon">👥</span> Usuários
@@ -361,6 +365,48 @@
           <span id="usuarioMsg" style="margin-left:.75rem;font-size:.82rem;"></span>
         </div>
         <div class="users-grid" id="usersGrid"></div>
+      </div>
+
+      <!-- ── ATENDIMENTO / INBOX ── -->
+      <div id="viewAtendimento" style="display:none">
+        <div style="display:flex;gap:1rem;height:calc(100vh - 115px)">
+
+          <!-- Lista de conversas -->
+          <div style="width:300px;min-width:300px;background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
+            <div style="padding:.85rem 1rem;border-bottom:1px solid var(--border);font-weight:700;font-size:.9rem;color:var(--navy)">
+              Conversas Ativas
+            </div>
+            <div id="inboxList" style="flex:1;overflow-y:auto"></div>
+          </div>
+
+          <!-- Chat ativo -->
+          <div style="flex:1;background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
+            <div id="chatHeader" style="padding:.85rem 1.25rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.75rem">
+              <div id="chatAvatar" style="width:38px;height:38px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1rem;flex-shrink:0">?</div>
+              <div>
+                <div id="chatNome" style="font-weight:700;font-size:.92rem">Selecione uma conversa</div>
+                <div id="chatTelefone" style="font-size:.75rem;color:var(--muted)"></div>
+              </div>
+              <div style="margin-left:auto;display:flex;gap:.5rem">
+                <button id="btnFecharChat" class="btn btn-sm" style="background:#8b5cf6;color:#fff;display:none" onclick="fecharLeadAtivo()">✓ Fechar lead</button>
+              </div>
+            </div>
+
+            <div id="chatMessages" style="flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:.5rem;background:#e5ddd5">
+              <div style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:2rem">
+                👈 Selecione uma conversa ao lado
+              </div>
+            </div>
+
+            <div id="chatInput" style="padding:.75rem 1rem;border-top:1px solid var(--border);display:flex;gap:.5rem;background:var(--white)">
+              <input id="msgInput" type="text" placeholder="Digite sua mensagem…"
+                style="flex:1;border:1.5px solid var(--border);border-radius:99px;padding:.5rem 1rem;font-size:.88rem;outline:none"
+                onkeydown="if(event.key==='Enter')enviarMensagem()" />
+              <button class="btn btn-primary" onclick="enviarMensagem()" style="border-radius:99px;padding:.5rem 1.1rem">➤</button>
+            </div>
+          </div>
+
+        </div>
       </div>
 
       <!-- ── RELATÓRIOS ── -->
@@ -449,7 +495,7 @@
   document.getElementById('loginSenha').addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); });
 
   // ═══════ VIEWS ═══════
-  const views = ['funil','lista','usuarios','relatorios'];
+  const views = ['funil','lista','atendimento','usuarios','relatorios'];
   function showView(v) {
     views.forEach(x => {
       document.getElementById('view'+cap(x)).style.display = x === v ? '' : 'none';
@@ -461,6 +507,7 @@
     if (v === 'usuarios') carregarUsuarios();
     if (v === 'relatorios') carregarRelatorios();
     if (v === 'lista') renderLista();
+    if (v === 'atendimento') carregarInbox();
   }
   function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
@@ -468,7 +515,7 @@
   async function refresh() {
     const btn = document.getElementById('btnRefresh');
     btn.classList.add('spinning');
-    await Promise.all([carregarStats(), carregarLeads()]);
+    await Promise.all([carregarStats(), carregarLeads(), carregarInbox()]);
     btn.classList.remove('spinning');
     document.getElementById('lastUpdate').textContent = 'Atualizado ' + new Date().toLocaleTimeString('pt-BR');
   }
@@ -728,6 +775,125 @@
     if (diff < 60) return `${diff}min atrás`;
     if (diff < 1440) return `${Math.floor(diff/60)}h atrás`;
     return `${Math.floor(diff/1440)}d atrás`;
+  }
+
+  // ═══════ INBOX / ATENDIMENTO ═══════
+  let chatLeadAtivo = null;
+  let inboxLeads = [];
+  let chatPollingInterval = null;
+
+  async function carregarInbox() {
+    try {
+      const r = await fetch('/api/inbox');
+      inboxLeads = await r.json();
+      renderInboxList();
+
+      // badge de quantidade
+      const badge = document.getElementById('badgeInbox');
+      if (inboxLeads.length > 0) {
+        badge.textContent = inboxLeads.length;
+        badge.style.display = '';
+      } else {
+        badge.style.display = 'none';
+      }
+    } catch {}
+  }
+
+  function renderInboxList() {
+    const list = document.getElementById('inboxList');
+    if (!inboxLeads.length) {
+      list.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.83rem">Nenhum atendimento ativo</div>';
+      return;
+    }
+    list.innerHTML = inboxLeads.map(l => {
+      const nome = l.nome !== '—' ? l.nome : l.telefone;
+      const ativo = chatLeadAtivo && chatLeadAtivo.id === l.id;
+      return `<div onclick="abrirChat(${l.id})" style="padding:.85rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;background:${ativo ? '#f0f4ff' : 'transparent'};transition:background .1s" onmouseover="this.style.background='#f8f9fc'" onmouseout="this.style.background='${ativo ? '#f0f4ff' : 'transparent'}'">
+        <div style="display:flex;align-items:center;gap:.6rem">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.88rem;flex-shrink:0">${nome[0].toUpperCase()}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nome)}</div>
+            <div style="font-size:.73rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(l.ultima_mensagem||'')}</div>
+          </div>
+          <div style="font-size:.68rem;color:var(--muted);flex-shrink:0">${l.ultima_hora||''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  async function abrirChat(leadId) {
+    chatLeadAtivo = inboxLeads.find(l => l.id === leadId);
+    if (!chatLeadAtivo) return;
+
+    const nome = chatLeadAtivo.nome !== '—' ? chatLeadAtivo.nome : chatLeadAtivo.telefone;
+    document.getElementById('chatAvatar').textContent = nome[0].toUpperCase();
+    document.getElementById('chatNome').textContent = nome;
+    document.getElementById('chatTelefone').textContent = chatLeadAtivo.telefone;
+    document.getElementById('btnFecharChat').style.display = '';
+    document.getElementById('msgInput').focus();
+
+    renderInboxList();
+    await carregarMensagensChat();
+
+    // Poll mensagens a cada 5s enquanto chat aberto
+    if (chatPollingInterval) clearInterval(chatPollingInterval);
+    chatPollingInterval = setInterval(carregarMensagensChat, 5000);
+  }
+
+  async function carregarMensagensChat() {
+    if (!chatLeadAtivo) return;
+    try {
+      const r = await fetch(`/api/leads/${chatLeadAtivo.id}/conversa`);
+      const d = await r.json();
+      const box = document.getElementById('chatMessages');
+      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+
+      box.innerHTML = d.mensagens.map(m => {
+        const isBot = m.role === 'assistant';
+        const conteudo = escHtml(m.conteudo);
+        return `<div style="display:flex;flex-direction:column;max-width:75%;align-self:${isBot ? 'flex-start' : 'flex-end'};align-items:${isBot ? 'flex-start' : 'flex-end'}">
+          <div style="padding:.5rem .85rem;border-radius:12px;font-size:.85rem;line-height:1.5;word-break:break-word;white-space:pre-wrap;
+            background:${isBot ? '#fff' : '#dcf8c6'};
+            border-bottom-${isBot ? 'left' : 'right'}-radius:3px;
+            box-shadow:0 1px 2px rgba(0,0,0,.1)">${conteudo}</div>
+          ${m.horario ? `<span style="font-size:.68rem;color:var(--muted);margin-top:2px">${m.horario}</span>` : ''}
+        </div>`;
+      }).join('');
+
+      if (atBottom) box.scrollTop = box.scrollHeight;
+    } catch {}
+  }
+
+  async function enviarMensagem() {
+    if (!chatLeadAtivo) return;
+    const input = document.getElementById('msgInput');
+    const texto = input.value.trim();
+    if (!texto) return;
+    input.value = '';
+
+    try {
+      await fetch(`/api/leads/${chatLeadAtivo.id}/mensagem`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mensagem: texto }),
+      });
+      await carregarMensagensChat();
+      await carregarInbox();
+    } catch {}
+  }
+
+  async function fecharLeadAtivo() {
+    if (!chatLeadAtivo) return;
+    if (!confirm('Marcar este atendimento como finalizado?')) return;
+    await fetch(`/api/leads/${chatLeadAtivo.id}/fechar`, { method: 'POST' });
+    chatLeadAtivo = null;
+    if (chatPollingInterval) clearInterval(chatPollingInterval);
+    document.getElementById('chatMessages').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:2rem">👈 Selecione uma conversa ao lado</div>';
+    document.getElementById('chatNome').textContent = 'Selecione uma conversa';
+    document.getElementById('chatTelefone').textContent = '';
+    document.getElementById('chatAvatar').textContent = '?';
+    document.getElementById('btnFecharChat').style.display = 'none';
+    await carregarInbox();
   }
 
   // ═══════ INIT ═══════

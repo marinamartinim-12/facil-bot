@@ -123,11 +123,22 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
         texto = body.get("text", {}).get("message", "").strip()
         if not telefone or not texto:
             return JSONResponse({"status": "ignored"})
+
+        lead = db.query(Lead).filter(Lead.telefone == telefone).first()
+
+        # Se já foi assumido por funcionário, só salva a mensagem — humano responde
+        if lead and lead.status in [StatusLeadEnum.assumido, StatusLeadEnum.fechado]:
+            _salvar_msg_webhook(db, telefone, texto)
+            return JSONResponse({"status": "aguardando_humano"})
+
+        # Bot ainda está qualificando
         resposta = processar_mensagem(telefone, texto, db)
         await enviar_zapi(telefone, resposta)
+
         lead = db.query(Lead).filter(Lead.telefone == telefone).first()
         if lead and lead.status == StatusLeadEnum.qualificado:
             await _notificar_equipe(telefone, db)
+
     except Exception as e:
         print(f"⚠️ Erro webhook Z-API: {e}")
     return JSONResponse({"status": "ok"})
@@ -235,6 +246,61 @@ async def assumir_lead(
     db.commit()
     db.refresh(lead)
     return _serial_lead(lead, db)
+
+
+@app.post("/api/leads/{lead_id}/mensagem")
+async def enviar_mensagem_funcionario(
+    lead_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Funcionário envia mensagem para o cliente pelo dashboard."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    if lead.status not in [StatusLeadEnum.assumido, StatusLeadEnum.qualificado]:
+        raise HTTPException(status_code=400, detail="Lead não está em atendimento humano")
+
+    body = await request.json()
+    texto = body.get("mensagem", "").strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail="Mensagem não pode ser vazia")
+
+    # Salva no histórico como mensagem do atendente
+    _salvar_msg_webhook(db, lead.telefone, f"[{usuario.nome}]: {texto}", role="assistant")
+
+    # Envia pelo WhatsApp
+    await enviar_zapi(lead.telefone, texto)
+
+    return {"status": "enviado"}
+
+
+@app.get("/api/inbox")
+async def inbox(
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Retorna conversas ativas para o inbox do dashboard."""
+    query = db.query(Lead).filter(Lead.status == StatusLeadEnum.assumido)
+    if usuario.role != RoleEnum.admin:
+        query = query.filter(Lead.atribuido_para == usuario.id)
+
+    leads = query.order_by(Lead.atualizado_em.desc()).all()
+    resultado = []
+    for l in leads:
+        ultima = (
+            db.query(MensagemConversa)
+            .filter(MensagemConversa.telefone == l.telefone)
+            .order_by(MensagemConversa.id.desc())
+            .first()
+        )
+        resultado.append({
+            **_serial_lead(l, db),
+            "ultima_mensagem": ultima.conteudo[:60] if ultima else "",
+            "ultima_hora": ultima.criado_em.strftime("%H:%M") if ultima and ultima.criado_em else "",
+        })
+    return resultado
 
 
 @app.post("/api/leads/{lead_id}/fechar")
@@ -402,6 +468,13 @@ def _serial_usuario(u: Usuario) -> dict:
         "role": u.role, "ativo": u.ativo,
         "criado_em": u.criado_em.strftime("%d/%m/%Y") if u.criado_em else "—",
     }
+
+
+def _salvar_msg_webhook(db: Session, telefone: str, texto: str, role: str = "user"):
+    from models import MensagemConversa
+    msg = MensagemConversa(telefone=telefone, role=role, conteudo=texto)
+    db.add(msg)
+    db.commit()
 
 
 async def _notificar_equipe(telefone: str, db: Session):
