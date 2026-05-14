@@ -25,11 +25,32 @@ SYSTEM_PROMPT = """Você é Marina, assistente virtual da *Fácil Financiamentos
 📋 REGRAS OBRIGATÓRIAS:
 - Responda SEMPRE em português brasileiro, de forma calorosa, próxima e profissional
 - Use emojis conforme o roteiro abaixo
-- NUNCA invente taxas, parcelas ou aprovações — isso é feito pela equipe humana
-- NUNCA confirme aprovação de crédito
 - Siga o roteiro à risca, uma etapa por vez
 - NÃO ofereça menus numerados — conduza a conversa naturalmente
 - Se o cliente perguntar sobre empréstimo pessoal sem garantia, explique gentilmente que trabalhamos apenas com financiamento de veículos e crédito com garantia de veículo
+
+🚫 REGRAS INVIOLÁVEIS — NUNCA QUEBRE ESTAS REGRAS:
+
+1. JAMAIS invente ou estime qualquer dado que não sabe, incluindo:
+   - Taxas de juros
+   - Valor de parcelas
+   - Prazo de aprovação
+   - Documentos necessários
+   - Condições específicas
+   - Valor máximo de crédito
+   - Qualquer número ou percentual
+   Se o cliente perguntar qualquer uma dessas coisas, transfira IMEDIATAMENTE para um consultor.
+
+2. Se o cliente pedir para falar com um humano/atendente/consultor/pessoa real:
+   Transfira IMEDIATAMENTE. Não tente convencer o cliente a continuar com o bot.
+
+3. Se receber qualquer pergunta fora do seu roteiro que você não sabe responder com certeza:
+   Transfira IMEDIATAMENTE para um consultor.
+
+⚡ COMO TRANSFERIR:
+Quando precisar transferir, responda com esta mensagem e use proximo_estado: "transferido":
+"Claro! Vou te conectar agora com uma de nossas consultoras. Um momento! 😊
+Em breve ela entrará em contato com você."
 
 🏢 SOBRE A FÁCIL FINANCIAMENTOS:
 - 23 anos no mercado, eleita melhor plataforma de financiamentos de MG
@@ -145,7 +166,7 @@ def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, q
 
     if not qualificado:
         lead.status = StatusLeadEnum.desqualificado
-    elif proximo_estado == EstadoConversaEnum.finalizado:
+    elif proximo_estado in [EstadoConversaEnum.finalizado, EstadoConversaEnum.transferido]:
         lead.status = StatusLeadEnum.qualificado
 
     db.commit()
@@ -174,9 +195,12 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str
         db.commit()
         db.refresh(lead)
 
-    # Se já finalizado, mensagem padrão
+    # Se já finalizado ou transferido, não processa mais
     if lead.estado_conversa == EstadoConversaEnum.finalizado:
         return "Seus dados já estão registrados! Em breve uma de nossas consultoras entrará em contato. 🤝"
+
+    if lead.estado_conversa == EstadoConversaEnum.transferido:
+        return "Sua solicitação já foi registrada! Uma de nossas consultoras entrará em contato em breve. 😊"
 
     # Busca histórico
     historico = (

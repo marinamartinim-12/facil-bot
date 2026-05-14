@@ -44,6 +44,7 @@ class EstadoConversaEnum(str, enum.Enum):
     coletando_data_nasc = "coletando_data_nasc"
     coletando_carro = "coletando_carro"
     finalizado = "finalizado"
+    transferido = "transferido"
     desqualificado = "desqualificado"
 
 
