@@ -31,21 +31,32 @@ jobs:
             ghcr.io/marinamartinim-12/facil-bot:latest
             ghcr.io/marinamartinim-12/facil-bot:${{ github.sha }}
 
-      - name: Deploy to Railway via image update
+      - name: Update Railway image source
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           SHA_TAG: ghcr.io/marinamartinim-12/facil-bot:${{ github.sha }}
         run: |
-          echo "=== Updating service to new image tag ==="
+          echo "=== Atualizando imagem no Railway ==="
           RESULT=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
             -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
             -H "Content-Type: application/json" \
             -d "{\"query\":\"mutation { serviceInstanceUpdate(serviceId: \\\"c1e1aad1-1155-48a7-b100-81e97c184334\\\", environmentId: \\\"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\\\", input: { source: { image: \\\"$SHA_TAG\\\" } }) }\"}")
           echo "Update result: $RESULT"
 
-          echo "=== Triggering deploy via new deployment ==="
+      - name: Trigger Railway deploy
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          echo "=== Disparando novo deploy ==="
           DEPLOY=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
             -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"query":"mutation { deploymentRedeploy(id: \"3b972479-f65c-40a7-af15-4896277d767c\") { id status } }"}')
+            -d '{"query":"mutation { serviceInstanceDeploy(serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\") }"}')
           echo "Deploy result: $DEPLOY"
+
+          # Verificar se teve erro
+          if echo "$DEPLOY" | grep -q '"errors"'; then
+            echo "AVISO: Pode ter havido erro no deploy, verifique o Railway"
+          else
+            echo "Deploy disparado com sucesso!"
+          fi
