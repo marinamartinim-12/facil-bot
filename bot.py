@@ -7,6 +7,7 @@ import re
 import json
 import anthropic
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from config import get_settings
@@ -193,13 +194,40 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str
         db.refresh(lead)
 
     # Se já finalizado ou transferido, não processa mais
-    if lead.estado_conversa == EstadoConversaEnum.finalizado:
-        nome = f" {lead.nome}," if lead.nome else ""
-        return f"Olá{nome} seus dados já estão registrados! Em breve uma de nossas consultoras entrará em contato. 🤝"
+    if lead.estado_conversa in [EstadoConversaEnum.finalizado, EstadoConversaEnum.transferido]:
+        nome = f" {lead.nome}" if lead.nome else ""
+        return (
+            f"Olá{nome}, não consigo tirar dúvidas ainda, "
+            f"mas em breve uma atendente humana entrará em contato. 😊"
+        )
 
-    if lead.estado_conversa == EstadoConversaEnum.transferido:
-        nome = f" {lead.nome}," if lead.nome else ""
-        return f"Olá{nome} sua solicitação já foi registrada! Uma de nossas consultoras entrará em contato em breve. 😊"
+    # Verifica horário de funcionamento (fuso Brasília)
+    agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
+    dia_semana = agora.weekday()  # 0=segunda ... 6=domingo
+    hora = agora.hour
+    minuto = agora.minute
+    hora_decimal = hora + minuto / 60
+
+    fora_do_horario = False
+    if dia_semana < 5:   # Segunda a sexta
+        fora_do_horario = hora_decimal < 9 or hora_decimal >= 18
+    elif dia_semana == 5:  # Sábado
+        fora_do_horario = hora_decimal < 9 or hora_decimal >= 13
+    else:  # Domingo
+        fora_do_horario = True
+
+    if fora_do_horario and lead.estado_conversa == EstadoConversaEnum.inicio:
+        _salvar_mensagem(db, telefone, "user", mensagem_cliente)
+        msg_fora = (
+            "Olá! 😊 Obrigada pelo contato com a Fácil Financiamentos!\n\n"
+            "Nosso horário de atendimento é:\n"
+            "🕘 Segunda a sexta: 09h às 18h\n"
+            "🕘 Sábado: 09h às 13h\n\n"
+            "Assim que abrirmos, nossa equipe entrará em contato com você. "
+            "Até lá! 🤝"
+        )
+        _salvar_mensagem(db, telefone, "assistant", msg_fora)
+        return msg_fora
 
     # Busca histórico
     historico = (
