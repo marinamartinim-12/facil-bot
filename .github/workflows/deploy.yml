@@ -22,7 +22,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
-        id: push
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -31,32 +30,33 @@ jobs:
             ghcr.io/marinamartinim-12/facil-bot:latest
             ghcr.io/marinamartinim-12/facil-bot:${{ github.sha }}
 
+      - name: Make package public
+        run: |
+          echo "=== Tornando imagem publica ==="
+          curl -s -X PATCH \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/user/packages/container/facil-bot \
+            -d '{"visibility":"public"}' | cat
+
       - name: Update Railway image source
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-          SHA_TAG: ghcr.io/marinamartinim-12/facil-bot:${{ github.sha }}
         run: |
           echo "=== Atualizando imagem no Railway ==="
           RESULT=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
             -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"query\":\"mutation { serviceInstanceUpdate(serviceId: \\\"c1e1aad1-1155-48a7-b100-81e97c184334\\\", environmentId: \\\"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\\\", input: { source: { image: \\\"$SHA_TAG\\\" } }) }\"}")
+            -d '{"query":"mutation { serviceInstanceUpdate(serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\", input: { source: { image: \"ghcr.io/marinamartinim-12/facil-bot:latest\" } }) }"}')
           echo "Update result: $RESULT"
 
       - name: Trigger Railway deploy
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          echo "=== Disparando novo deploy ==="
+          echo "=== Disparando deploy ==="
           DEPLOY=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
             -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"query":"mutation { serviceInstanceDeploy(serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\") }"}')
           echo "Deploy result: $DEPLOY"
-
-          # Verificar se teve erro
-          if echo "$DEPLOY" | grep -q '"errors"'; then
-            echo "AVISO: Pode ter havido erro no deploy, verifique o Railway"
-          else
-            echo "Deploy disparado com sucesso!"
-          fi
