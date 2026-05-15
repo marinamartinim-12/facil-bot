@@ -607,10 +607,8 @@ def _criar_config_padrao(db: Session):
             "chave": "mensagem_boas_vindas",
             "descricao": "Mensagem inicial de boas-vindas (enviada quando o cliente entra em contato)",
             "valor": (
-                "Olá ! Seja bem-vindo(a) à Fácil Financiamentos, eleita a melhor plataforma de financiamentos de MG, há 23 anos no mercado.\n\n"
-                "De particular para particular ! Você escolhe o veículo.\n\n"
-                "Meu nome é Marina, sou assistente virtual da Fácil Financiamentos. 👩‍💻\n\n"
-                "Estamos em Belo Horizonte, MG, de que cidade você é ?"
+                "Olá, seja bem vindo a Fácil Financiamentos. Meu nome é Maria e sou sua atendente virtual, estou aqui para ajudá-lo!\n\n"
+                "Qual o seu nome?"
             ),
         },
         {

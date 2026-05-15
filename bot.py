@@ -149,9 +149,8 @@ def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, q
         lead.data_nascimento = dados["data_nascimento"]
     if dados.get("carro_interesse"):
         lead.carro_interesse = dados["carro_interesse"]
-    if dados.get("cidade"):
-        # Salva cidade no campo nome por enquanto (até adicionar campo específico)
-        lead.nome = dados["cidade"]
+    if dados.get("nome"):
+        lead.nome = dados["nome"]
     if dados.get("modalidade"):
         modalidade = dados["modalidade"].lower()
         if "refin" in modalidade or "garantia" in modalidade or "cgi" in modalidade:
@@ -226,17 +225,18 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str
 
     system_com_contexto = (
         f"{SYSTEM_PROMPT}\n\n"
-        f"--- CONFIGURAÇÕES EDITADAS PELO ADMIN ---\n"
-        f"Mensagem de boas-vindas: {msg_boas_vindas}\n"
-        f"Mensagem de finalização: {msg_finalizacao}\n"
-        f"Regras específicas da modalidade: {regras_extra}\n\n"
         f"--- ESTADO ATUAL DA CONVERSA ---\n"
-        f"Estado: {lead.estado_conversa}\n"
-        f"Nome do cliente: {lead.nome or 'não informado'}\n"
-        f"Modalidade: {lead.modalidade}\n"
-        f"CPF: {lead.cpf or 'não informado'}\n"
-        f"Nascimento: {lead.data_nascimento or 'não informado'}\n"
-        f"Veículo: {lead.carro_interesse or 'não informado'}"
+        f"Estado atual: {lead.estado_conversa}\n"
+        f"Nome do cliente: {lead.nome or 'não informado ainda'}\n"
+        f"Modalidade escolhida: {lead.modalidade}\n"
+        f"CPF: {lead.cpf or 'não informado ainda'}\n"
+        f"Data de nascimento: {lead.data_nascimento or 'não informado ainda'}\n"
+        f"Veículo: {lead.carro_interesse or 'não informado ainda'}\n\n"
+        f"INSTRUÇÃO CRÍTICA: Você está no estado '{lead.estado_conversa}'. "
+        f"Siga EXATAMENTE o roteiro a partir deste estado. "
+        f"Não repita etapas já concluídas. Não pule etapas.\n"
+        + (f"\n--- REGRAS DA MODALIDADE ---\n{regras_extra}" if regras_extra else "")
+        + (f"\n--- MENSAGEM DE FINALIZAÇÃO PERSONALIZADA ---\n{msg_finalizacao}" if msg_finalizacao else "")
     )
 
     messages = _historico_para_messages(historico)
