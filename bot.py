@@ -171,6 +171,40 @@ def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, q
     db.refresh(lead)
 
 
+def _proximo_horario_atendimento() -> str:
+    """Retorna string com o próximo horário de atendimento, ou vazio se estiver dentro do horário."""
+    from datetime import timedelta
+    agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
+    dia = agora.weekday()   # 0=seg ... 6=dom
+    hora_dec = agora.hour + agora.minute / 60
+
+    # Dentro do horário?
+    if dia < 5 and 9 <= hora_dec < 18:
+        return ""
+    if dia == 5 and 9 <= hora_dec < 13:
+        return ""
+
+    # Calcula próximo turno
+    if dia < 5:
+        if hora_dec < 9:
+            # Hoje mesmo às 9h
+            return f"hoje às 09h"
+        else:
+            # Próximo dia útil
+            dias_ate_prox = 1 if dia < 4 else (3 if dia == 4 else 2)
+            prox = agora + timedelta(days=dias_ate_prox)
+            nomes = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"]
+            return f"{nomes[prox.weekday()]} às 09h"
+    elif dia == 5:
+        if hora_dec < 9:
+            return "hoje (sábado) às 09h"
+        else:
+            return "segunda-feira às 09h"
+    else:
+        # Domingo
+        return "segunda-feira às 09h"
+
+
 def _formatar_cpf(cpf: str) -> str:
     apenas_numeros = re.sub(r"\D", "", cpf)
     if len(apenas_numeros) == 11:
@@ -201,33 +235,7 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str
             f"mas em breve uma atendente humana entrará em contato. 😊"
         )
 
-    # Verifica horário de funcionamento (fuso Brasília)
-    agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
-    dia_semana = agora.weekday()  # 0=segunda ... 6=domingo
-    hora = agora.hour
-    minuto = agora.minute
-    hora_decimal = hora + minuto / 60
-
-    fora_do_horario = False
-    if dia_semana < 5:   # Segunda a sexta
-        fora_do_horario = hora_decimal < 9 or hora_decimal >= 18
-    elif dia_semana == 5:  # Sábado
-        fora_do_horario = hora_decimal < 9 or hora_decimal >= 13
-    else:  # Domingo
-        fora_do_horario = True
-
-    if fora_do_horario and lead.estado_conversa == EstadoConversaEnum.inicio:
-        _salvar_mensagem(db, telefone, "user", mensagem_cliente)
-        msg_fora = (
-            "Olá! 😊 Obrigada pelo contato com a Fácil Financiamentos!\n\n"
-            "Nosso horário de atendimento é:\n"
-            "🕘 Segunda a sexta: 09h às 18h\n"
-            "🕘 Sábado: 09h às 13h\n\n"
-            "Assim que abrirmos, nossa equipe entrará em contato com você. "
-            "Até lá! 🤝"
-        )
-        _salvar_mensagem(db, telefone, "assistant", msg_fora)
-        return msg_fora
+    # (bot atende 24h — aviso de horário só na finalização)
 
     # Busca histórico
     historico = (
@@ -251,6 +259,17 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str
     msg_boas_vindas = config.get("mensagem_boas_vindas", "")
     msg_finalizacao = config.get("mensagem_finalizacao", "")
 
+    # Aviso de horário para incluir na mensagem de encerramento
+    proximo_horario = _proximo_horario_atendimento()
+    aviso_horario = ""
+    if proximo_horario:
+        aviso_horario = (
+            f"\n\nIMPORTANTE: Estamos FORA do horário de atendimento agora. "
+            f"Na mensagem de finalização, após agradecer, adicione: "
+            f"'Nossa equipe entrará em contato {proximo_horario}. "
+            f"Nosso horário de atendimento é segunda a sexta das 09h às 18h e sábado das 09h às 13h. 🕘'"
+        )
+
     system_com_contexto = (
         f"{SYSTEM_PROMPT}\n\n"
         f"--- ESTADO ATUAL DA CONVERSA ---\n"
@@ -262,9 +281,10 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str
         f"Veículo: {lead.carro_interesse or 'não informado ainda'}\n\n"
         f"INSTRUÇÃO CRÍTICA: Você está no estado '{lead.estado_conversa}'. "
         f"Siga EXATAMENTE o roteiro a partir deste estado. "
-        f"Não repita etapas já concluídas. Não pule etapas.\n"
-        + (f"\n--- REGRAS DA MODALIDADE ---\n{regras_extra}" if regras_extra else "")
-        + (f"\n--- MENSAGEM DE FINALIZAÇÃO PERSONALIZADA ---\n{msg_finalizacao}" if msg_finalizacao else "")
+        f"Não repita etapas já concluídas. Não pule etapas."
+        + aviso_horario
+        + (f"\n\n--- REGRAS DA MODALIDADE ---\n{regras_extra}" if regras_extra else "")
+        + (f"\n\n--- MENSAGEM DE FINALIZAÇÃO PERSONALIZADA ---\n{msg_finalizacao}" if msg_finalizacao else "")
     )
 
     messages = _historico_para_messages(historico)
