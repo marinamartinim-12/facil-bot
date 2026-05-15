@@ -25,9 +25,7 @@
       background: var(--white); border-radius: 20px; padding: 2.5rem 2rem;
       width: 100%; max-width: 380px; box-shadow: 0 20px 60px rgba(0,0,0,.3);
     }
-    .login-logo {
-      text-align: center; margin-bottom: 1.75rem;
-    }
+    .login-logo { text-align: center; margin-bottom: 1.75rem; }
     .login-logo .ico {
       width: 60px; height: 60px; background: var(--gold); border-radius: 14px;
       display: inline-flex; align-items: center; justify-content: center;
@@ -115,7 +113,7 @@
     .btn-primary:hover { background: var(--navy2); }
     .btn-gold { background: var(--gold); color: var(--navy); }
     .btn-gold:hover { background: var(--gold2); }
-    .btn-sm { padding: .3rem .65rem; font-size: .76rem; }
+    .btn-sm { padding: .28rem .6rem; font-size: .74rem; }
     .btn-outline { background: none; border: 1.5px solid var(--border); color: var(--text); }
     .btn-outline:hover { border-color: var(--navy); }
     .btn-danger { background: var(--red); color: var(--white); }
@@ -132,13 +130,23 @@
 
     /* ── KANBAN ── */
     .kanban { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: .5rem; height: calc(100vh - 195px); align-items: flex-start; }
-    .kanban-col { min-width: 240px; max-width: 260px; background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); display: flex; flex-direction: column; max-height: 100%; }
+    .kanban-col {
+      min-width: 230px; max-width: 250px; background: var(--white); border-radius: var(--radius);
+      box-shadow: var(--shadow); display: flex; flex-direction: column; max-height: 100%;
+      transition: background .15s;
+    }
+    .kanban-col.drag-over { background: #eef2ff; outline: 2px dashed var(--navy2); }
     .col-header { padding: .75rem 1rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); border-radius: var(--radius) var(--radius) 0 0; }
     .col-title { font-size: .82rem; font-weight: 700; display: flex; align-items: center; gap: 6px; }
     .col-count { background: rgba(0,0,0,.07); border-radius: 99px; padding: .1rem .5rem; font-size: .72rem; font-weight: 700; }
-    .col-cards { flex: 1; overflow-y: auto; padding: .6rem; display: flex; flex-direction: column; gap: .5rem; }
-    .lead-card { background: var(--bg); border-radius: 8px; padding: .7rem .75rem; border: 1px solid var(--border); transition: box-shadow .15s; cursor: default; }
+    .col-cards { flex: 1; overflow-y: auto; padding: .6rem; display: flex; flex-direction: column; gap: .5rem; min-height: 60px; }
+    .lead-card {
+      background: var(--bg); border-radius: 8px; padding: .7rem .75rem; border: 1px solid var(--border);
+      transition: box-shadow .15s, opacity .15s; cursor: grab;
+    }
     .lead-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,.09); }
+    .lead-card.dragging { opacity: .4; cursor: grabbing; }
+    .lead-card.drag-placeholder { border: 2px dashed var(--navy2); background: #eef2ff; min-height: 60px; }
     .card-name { font-weight: 700; font-size: .85rem; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .card-phone { font-size: .75rem; color: var(--muted); font-family: monospace; }
     .card-meta { display: flex; gap: .4rem; margin: .4rem 0; flex-wrap: wrap; }
@@ -154,7 +162,7 @@
     .badge-perdido { background: #fee2e2; color: #991b1b; }
     .badge-desqualificado { background: #f3f4f6; color: #6b7280; }
     .card-time { font-size: .7rem; color: var(--muted); }
-    .card-actions { display: flex; gap: .35rem; margin-top: .5rem; }
+    .card-actions { display: flex; gap: .3rem; margin-top: .5rem; flex-wrap: wrap; }
     .card-resp { font-size: .72rem; color: var(--muted); margin-top: .35rem; }
     .card-resp strong { color: var(--navy); }
     .empty-col { text-align: center; padding: 1.5rem .5rem; color: var(--muted); font-size: .8rem; opacity: .6; }
@@ -200,7 +208,6 @@
       width: 100%; padding: .45rem .7rem; border: 1.5px solid var(--border);
       border-radius: 7px; font-size: .85rem; outline: none;
     }
-    .form-row .form-group input:focus, .form-row .form-group select:focus { border-color: var(--navy); }
 
     /* ── RELATÓRIOS ── */
     .rel-card { background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.25rem; margin-bottom: 1rem; }
@@ -212,25 +219,65 @@
     .progress-bar { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; margin-top: 4px; }
     .progress-fill { height: 100%; background: var(--green); border-radius: 99px; }
 
-    /* ── MODAL CONVERSA ── */
-    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 300; align-items: center; justify-content: center; padding: 1rem; }
+    /* ── MODAL LEAD (completo) ── */
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 300; align-items: center; justify-content: center; padding: 1rem; }
     .overlay.open { display: flex; }
-    .modal { background: var(--white); border-radius: var(--radius); box-shadow: 0 20px 60px rgba(0,0,0,.25); width: 100%; max-width: 520px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; }
-    .modal-hd { background: var(--navy); color: var(--white); padding: .85rem 1.25rem; display: flex; align-items: center; justify-content: space-between; }
-    .modal-hd h3 { font-size: .95rem; font-weight: 700; }
+    .modal-lead {
+      background: var(--white); border-radius: var(--radius);
+      box-shadow: 0 20px 60px rgba(0,0,0,.3);
+      width: 100%; max-width: 920px; max-height: 90vh;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .modal-hd {
+      background: var(--navy); color: var(--white);
+      padding: .85rem 1.25rem; display: flex; align-items: center; gap: .75rem;
+    }
+    .modal-hd h3 { font-size: .95rem; font-weight: 700; flex: 1; }
     .modal-close { background: none; border: none; color: var(--white); font-size: 1.4rem; cursor: pointer; opacity: .7; line-height: 1; }
     .modal-close:hover { opacity: 1; }
-    .modal-body { flex: 1; overflow-y: auto; padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: .5rem; }
-    .chat-msg { display: flex; flex-direction: column; max-width: 80%; }
-    .chat-msg.user { align-self: flex-end; align-items: flex-end; }
-    .chat-msg.assistant { align-self: flex-start; align-items: flex-start; }
-    .bubble { padding: .55rem .85rem; border-radius: 12px; font-size: .85rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-    .chat-msg.user .bubble { background: var(--navy); color: var(--white); border-bottom-right-radius: 3px; }
-    .chat-msg.assistant .bubble { background: #f1f5fb; color: var(--text); border: 1px solid var(--border); border-bottom-left-radius: 3px; }
-    .bubble-time { font-size: .68rem; color: var(--muted); margin-top: 2px; }
+    .modal-body-lead {
+      flex: 1; overflow: hidden; display: flex;
+    }
+    /* Coluna esquerda: dados + obs */
+    .modal-left {
+      width: 320px; min-width: 320px; border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow-y: auto;
+    }
+    .modal-section { padding: 1rem 1.1rem; border-bottom: 1px solid var(--border); }
+    .modal-section h4 { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; margin-bottom: .75rem; }
+    .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .75rem; }
+    .data-item label { display: block; font-size: .68rem; color: var(--muted); font-weight: 600; text-transform: uppercase; margin-bottom: 1px; }
+    .data-item span { font-size: .82rem; font-weight: 600; color: var(--text); word-break: break-all; }
+    .data-item.full { grid-column: 1 / -1; }
+    .obs-textarea {
+      width: 100%; border: 1.5px solid var(--border); border-radius: 8px;
+      padding: .55rem .75rem; font-size: .83rem; font-family: inherit;
+      resize: vertical; outline: none; line-height: 1.5; min-height: 90px;
+      transition: border .15s;
+    }
+    .obs-textarea:focus { border-color: var(--navy); }
+    /* Coluna direita: chat */
+    .modal-right { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .modal-chat-title {
+      padding: .65rem 1rem; border-bottom: 1px solid var(--border);
+      font-size: .78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+    }
+    .modal-chat-msgs {
+      flex: 1; overflow-y: auto; padding: .75rem 1rem; display: flex; flex-direction: column; gap: .5rem; background: #e5ddd5;
+    }
+    .chat-bubble-wrap { display: flex; flex-direction: column; max-width: 78%; }
+    .chat-bubble-wrap.from-client { align-self: flex-end; align-items: flex-end; }
+    .chat-bubble-wrap.from-us { align-self: flex-start; align-items: flex-start; }
+    .chat-bubble {
+      padding: .5rem .85rem; border-radius: 12px; font-size: .85rem; line-height: 1.5;
+      word-break: break-word; white-space: pre-wrap; box-shadow: 0 1px 2px rgba(0,0,0,.1);
+    }
+    .from-client .chat-bubble { background: #fff; border-bottom-right-radius: 3px; }
+    .from-us .chat-bubble { background: #dcf8c6; border-bottom-left-radius: 3px; }
+    .bubble-meta { font-size: .65rem; color: var(--muted); margin-top: 2px; }
     .loading-msg { text-align: center; padding: 2rem; color: var(--muted); font-size: .88rem; }
-    .empty-state { text-align: center; padding: 2rem; color: var(--muted); font-size: .85rem; }
 
+    /* ── INBOX ── */
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinning { animation: spin .6s linear infinite; display: inline-block; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
@@ -267,9 +314,7 @@
   <aside id="sidebar">
     <div class="sb-brand">
       <div class="ico">F</div>
-      <div>
-        <span>Fácil<br>Financiamentos</span>
-      </div>
+      <div><span>Fácil<br>Financiamentos</span></div>
     </div>
     <nav>
       <div class="nav-section">Principal</div>
@@ -376,15 +421,13 @@
       <!-- ── ATENDIMENTO / INBOX ── -->
       <div id="viewAtendimento" style="display:none">
         <div style="display:flex;gap:1rem;height:calc(100vh - 115px)">
-
-          <!-- Lista de conversas -->
+          <!-- Lista conversas -->
           <div style="width:300px;min-width:300px;background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
             <div style="padding:.85rem 1rem;border-bottom:1px solid var(--border);font-weight:700;font-size:.9rem;color:var(--navy)">
               💬 Todas as Conversas
             </div>
             <div id="inboxList" style="flex:1;overflow-y:auto"></div>
           </div>
-
           <!-- Chat ativo -->
           <div style="flex:1;background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
             <div id="chatHeader" style="padding:.85rem 1.25rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.75rem">
@@ -393,17 +436,14 @@
                 <div id="chatNome" style="font-weight:700;font-size:.92rem">Selecione uma conversa</div>
                 <div id="chatTelefone" style="font-size:.75rem;color:var(--muted)"></div>
               </div>
-              <div style="margin-left:auto;display:flex;gap:.5rem">
+              <div style="margin-left:auto;display:flex;gap:.5rem;align-items:center">
+                <button id="btnAssumirChat" class="btn btn-gold btn-sm" style="display:none" onclick="assumirLeadAtivo()">👤 Assumir</button>
                 <button id="btnFecharChat" class="btn btn-sm" style="background:#8b5cf6;color:#fff;display:none" onclick="fecharLeadAtivo()">✓ Fechar lead</button>
               </div>
             </div>
-
             <div id="chatMessages" style="flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:.5rem;background:#e5ddd5">
-              <div style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:2rem">
-                👈 Selecione uma conversa ao lado
-              </div>
+              <div style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:2rem">👈 Selecione uma conversa ao lado</div>
             </div>
-
             <div id="chatInput" style="padding:.75rem 1rem;border-top:1px solid var(--border);display:flex;gap:.5rem;background:var(--white)">
               <input id="msgInput" type="text" placeholder="Digite sua mensagem…"
                 style="flex:1;border:1.5px solid var(--border);border-radius:99px;padding:.5rem 1rem;font-size:.88rem;outline:none"
@@ -411,7 +451,6 @@
               <button class="btn btn-primary" onclick="enviarMensagem()" style="border-radius:99px;padding:.5rem 1.1rem">➤</button>
             </div>
           </div>
-
         </div>
       </div>
 
@@ -446,14 +485,40 @@
   </div>
 </div>
 
-<!-- MODAL CONVERSA -->
+<!-- ═══════════ MODAL LEAD COMPLETO ═══════════ -->
 <div class="overlay" id="modalOverlay" onclick="fecharModal(event)">
-  <div class="modal">
+  <div class="modal-lead">
     <div class="modal-hd">
-      <h3 id="modalTitle">Conversa</h3>
-      <button class="modal-close" onclick="closeModal()">×</button>
+      <h3 id="modalTitle">Lead</h3>
+      <span id="modalStatusBadge"></span>
+      <button class="modal-close" onclick="closeModal()" style="margin-left:auto">×</button>
     </div>
-    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-body-lead">
+      <!-- Esquerda: dados + obs -->
+      <div class="modal-left">
+        <div class="modal-section">
+          <h4>📋 Dados do Cliente</h4>
+          <div class="data-grid" id="modalDados"></div>
+        </div>
+        <div class="modal-section" style="flex:1">
+          <h4>📝 Observações</h4>
+          <textarea class="obs-textarea" id="modalObs" placeholder="Anote aqui informações sobre este cliente ou atendimento…"></textarea>
+          <div style="margin-top:.5rem;display:flex;gap:.5rem;align-items:center">
+            <button class="btn btn-primary btn-sm" onclick="salvarObs()">💾 Salvar observação</button>
+            <span id="obsMsg" style="font-size:.75rem"></span>
+          </div>
+        </div>
+        <!-- Botões de ação -->
+        <div class="modal-section" id="modalAcoes" style="display:flex;flex-wrap:wrap;gap:.4rem"></div>
+      </div>
+      <!-- Direita: conversa -->
+      <div class="modal-right">
+        <div class="modal-chat-title">💬 Conversa</div>
+        <div class="modal-chat-msgs" id="modalChat">
+          <div class="loading-msg">Carregando…</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -461,6 +526,7 @@
   let currentUser = null;
   let allLeads = [];
   let statsData = {};
+  let modalLeadId = null;
 
   // ═══════ AUTH ═══════
   async function fazerLogin() {
@@ -516,7 +582,7 @@
       const n = document.getElementById('nav-'+x);
       if (n) n.classList.toggle('active', x === v);
     });
-    const titles = {funil:'Funil de Leads', lista:'Lista de Leads', usuarios:'Usuários', relatorios:'Relatórios'};
+    const titles = {funil:'Funil de Leads', lista:'Lista de Leads', usuarios:'Usuários', relatorios:'Relatórios', atendimento:'Atendimentos', configuracoes:'Config. do Bot'};
     document.getElementById('pageTitle').textContent = titles[v] || v;
     if (v === 'usuarios') carregarUsuarios();
     if (v === 'relatorios') carregarRelatorios();
@@ -536,20 +602,11 @@
   }
 
   async function carregarStats() {
-    try {
-      const r = await fetch('/api/stats');
-      statsData = await r.json();
-      renderStats();
-    } catch {}
+    try { const r = await fetch('/api/stats'); statsData = await r.json(); renderStats(); } catch {}
   }
 
   async function carregarLeads() {
-    try {
-      const r = await fetch('/api/leads');
-      allLeads = await r.json();
-      renderKanban();
-      renderLista();
-    } catch {}
+    try { const r = await fetch('/api/leads'); allLeads = await r.json(); renderKanban(); renderLista(); } catch {}
   }
 
   // ═══════ STATS ═══════
@@ -567,27 +624,33 @@
 
   // ═══════ KANBAN ═══════
   const colunas = [
-    { key:'em_atendimento',  label:'Atendimento IA',   icon:'🤖', color:'#3b82f6' },
-    { key:'qualificado',     label:'Qualificado',       icon:'✅', color:'#22c55e' },
-    { key:'assumido',        label:'Assumido',          icon:'👤', color:'#F5C400' },
-    { key:'proposta_enviada',label:'Proposta Enviada',  icon:'📄', color:'#f97316' },
-    { key:'fechado',         label:'Fechado',           icon:'🏁', color:'#8b5cf6' },
-    { key:'perdido',         label:'Perdido',           icon:'❌', color:'#ef4444' },
+    { key:'em_atendimento',  label:'Atendimento IA',  icon:'🤖', color:'#3b82f6' },
+    { key:'qualificado',     label:'Qualificado',      icon:'✅', color:'#22c55e' },
+    { key:'assumido',        label:'Assumido',         icon:'👤', color:'#F5C400' },
+    { key:'proposta_enviada',label:'Proposta Enviada', icon:'📄', color:'#f97316' },
+    { key:'fechado',         label:'Fechado',          icon:'🏁', color:'#8b5cf6' },
+    { key:'perdido',         label:'Perdido',          icon:'❌', color:'#ef4444' },
   ];
+
+  let dragLeadId = null;
 
   function renderKanban() {
     const board = document.getElementById('kanbanBoard');
     board.innerHTML = colunas.map(col => {
       const cards = allLeads.filter(l => l.status === col.key);
       return `
-        <div class="kanban-col">
+        <div class="kanban-col"
+          ondragover="colDragOver(event, '${col.key}')"
+          ondragleave="colDragLeave(event)"
+          ondrop="colDrop(event, '${col.key}')"
+          data-col="${col.key}">
           <div class="col-header" style="border-top: 3px solid ${col.color}">
             <div class="col-title" style="color:${col.color}">${col.icon} ${col.label}</div>
             <span class="col-count">${cards.length}</span>
           </div>
           <div class="col-cards">
             ${cards.length === 0
-              ? '<div class="empty-col">Nenhum lead</div>'
+              ? '<div class="empty-col">Nenhum lead<br><small>Arraste aqui</small></div>'
               : cards.map(l => cardHtml(l)).join('')}
           </div>
         </div>`;
@@ -599,25 +662,32 @@
     const tempo = tempoRelativo(l.criado_em);
     const isAdmin = currentUser.role === 'admin';
     const isResponsavel = l.responsavel?.id === currentUser.id;
-    const podeEditar = isAdmin || isResponsavel || l.status === 'qualificado';
+    const podeEditar = isAdmin || isResponsavel || !l.responsavel;
 
-    let acoes = `<button class="btn btn-outline btn-sm" onclick="verConversa(${l.id},'${esc(nome)}')">💬 Ver</button>`;
+    // Botão Ver sempre presente
+    let acoes = `<button class="btn btn-outline btn-sm" onclick="verLead(${l.id})" style="flex:1">👁 Ver</button>`;
 
-    if (l.status === 'qualificado') {
-      acoes += ` <button class="btn btn-gold btn-sm" onclick="moverLead(${l.id},'assumido')">Assumir</button>`;
-      acoes += ` <button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLead(${l.id},'perdido')">Perdido</button>`;
-    } else if (l.status === 'assumido' && podeEditar) {
-      acoes += ` <button class="btn btn-sm" style="background:#f97316;color:#fff" onclick="moverLead(${l.id},'proposta_enviada')">Proposta</button>`;
-      acoes += ` <button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLead(${l.id},'perdido')">Perdido</button>`;
+    // Assumir — para qualquer status em que ainda não assumido por mim
+    const jaAssumidoPorMim = l.responsavel?.id === currentUser.id;
+    if (!jaAssumidoPorMim && l.status !== 'fechado' && l.status !== 'perdido') {
+      acoes += ` <button class="btn btn-gold btn-sm" onclick="moverLead(${l.id},'assumido',true)" title="Assumir este lead">👤</button>`;
+    }
+
+    // Botões de progressão
+    if (l.status === 'assumido' && podeEditar) {
+      acoes += ` <button class="btn btn-sm" style="background:#f97316;color:#fff" onclick="moverLead(${l.id},'proposta_enviada',true)">📄</button>`;
     } else if (l.status === 'proposta_enviada' && podeEditar) {
-      acoes += ` <button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="moverLead(${l.id},'fechado')">✓ Fechar</button>`;
-      acoes += ` <button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLead(${l.id},'perdido')">Perdido</button>`;
+      acoes += ` <button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="moverLead(${l.id},'fechado',true)">✓</button>`;
     } else if ((l.status === 'fechado' || l.status === 'perdido') && isAdmin) {
-      acoes += ` <button class="btn btn-sm btn-outline" onclick="moverLead(${l.id},'assumido')" title="Reabrir">↩ Reabrir</button>`;
+      acoes += ` <button class="btn btn-sm btn-outline" onclick="moverLead(${l.id},'assumido',true)" title="Reabrir">↩</button>`;
     }
 
     return `
-      <div class="lead-card">
+      <div class="lead-card"
+        draggable="true"
+        data-lead-id="${l.id}"
+        ondragstart="cardDragStart(event, ${l.id})"
+        ondragend="cardDragEnd(event)">
         <div class="card-name" title="${esc(nome)}">${esc(nome)}</div>
         <div class="card-phone">${l.telefone}</div>
         <div class="card-meta">
@@ -629,9 +699,49 @@
       </div>`;
   }
 
-  async function moverLead(id, novoStatus) {
-    const labels = {assumido:'Assumir este lead?', proposta_enviada:'Marcar proposta como enviada?', fechado:'Marcar como fechado?', perdido:'Marcar como perdido?'};
-    if (!confirm(labels[novoStatus] || 'Confirmar?')) return;
+  // ─── Drag & Drop ───
+  function cardDragStart(e, leadId) {
+    dragLeadId = leadId;
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => e.target.classList.add('dragging'), 0);
+  }
+
+  function cardDragEnd(e) {
+    e.target.classList.remove('dragging');
+    document.querySelectorAll('.kanban-col').forEach(c => c.classList.remove('drag-over'));
+  }
+
+  function colDragOver(e, colKey) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.classList.add('drag-over');
+  }
+
+  function colDragLeave(e) {
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      e.currentTarget.classList.remove('drag-over');
+    }
+  }
+
+  async function colDrop(e, colKey) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drag-over');
+    if (!dragLeadId) return;
+    const lead = allLeads.find(l => l.id === dragLeadId);
+    if (!lead || lead.status === colKey) return;
+    dragLeadId = null;
+    await moverLead(lead.id, colKey, false);
+  }
+
+  async function moverLead(id, novoStatus, confirmar = true) {
+    if (confirmar) {
+      const labels = {
+        assumido:'Assumir este lead?', proposta_enviada:'Marcar proposta como enviada?',
+        fechado:'Marcar como fechado?', perdido:'Marcar como perdido?',
+        qualificado:'Mover para Qualificado?', em_atendimento:'Devolver para Atendimento IA?'
+      };
+      if (!confirm(labels[novoStatus] || 'Confirmar?')) return;
+    }
     try {
       const r = await fetch(`/api/leads/${id}/mover`, {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -642,9 +752,136 @@
     } catch {}
   }
 
-  async function assumirLead(id) { await moverLead(id, 'assumido'); }
+  // ═══════ MODAL LEAD COMPLETO ═══════
+  async function verLead(leadId) {
+    modalLeadId = leadId;
+    document.getElementById('modalTitle').textContent = 'Carregando…';
+    document.getElementById('modalDados').innerHTML = '';
+    document.getElementById('modalObs').value = '';
+    document.getElementById('modalChat').innerHTML = '<div class="loading-msg">Carregando conversa…</div>';
+    document.getElementById('modalAcoes').innerHTML = '';
+    document.getElementById('obsMsg').textContent = '';
+    document.getElementById('modalOverlay').classList.add('open');
 
-  async function fecharLead(id) { await moverLead(id, 'fechado'); }
+    try {
+      const [convResp] = await Promise.all([
+        fetch(`/api/leads/${leadId}/conversa`)
+      ]);
+      const conv = await convResp.json();
+      const lead = allLeads.find(l => l.id === leadId) || conv.lead;
+
+      // Título
+      const nome = (lead.nome && lead.nome !== '—') ? lead.nome : lead.telefone;
+      document.getElementById('modalTitle').textContent = nome;
+
+      // Badge status
+      const stLabel = labSt(lead.status || '');
+      document.getElementById('modalStatusBadge').innerHTML =
+        `<span class="badge badge-${lead.status}" style="font-size:.75rem;margin-left:.5rem">${stLabel}</span>`;
+
+      // Dados do cliente
+      document.getElementById('modalDados').innerHTML = `
+        <div class="data-item"><label>Nome</label><span>${escHtml(lead.nome||'—')}</span></div>
+        <div class="data-item"><label>Telefone</label><span>${escHtml(lead.telefone||'—')}</span></div>
+        <div class="data-item"><label>CPF</label><span>${escHtml(lead.cpf||'—')}</span></div>
+        <div class="data-item"><label>Nasc.</label><span>${escHtml(lead.data_nascimento||'—')}</span></div>
+        <div class="data-item full"><label>Veículo de interesse</label><span>${escHtml(lead.carro_interesse||'—')}</span></div>
+        <div class="data-item"><label>Modalidade</label><span>${labMod(lead.modalidade||'')}</span></div>
+        <div class="data-item"><label>Responsável</label><span>${lead.responsavel ? escHtml(lead.responsavel.nome) : '—'}</span></div>
+        <div class="data-item"><label>Cadastrado</label><span>${escHtml(lead.criado_em||'—')}</span></div>
+        ${lead.assumido_em ? `<div class="data-item"><label>Assumido em</label><span>${escHtml(lead.assumido_em)}</span></div>` : ''}
+      `;
+
+      // Observações
+      document.getElementById('modalObs').value = lead.observacoes || '';
+
+      // Botões de ação
+      const isAdmin = currentUser.role === 'admin';
+      const isResp = lead.responsavel?.id === currentUser.id;
+      const podeEditar = isAdmin || isResp || !lead.responsavel;
+      const jaAssumido = lead.responsavel?.id === currentUser.id;
+      let acoes = '';
+
+      if (!jaAssumido && lead.status !== 'fechado' && lead.status !== 'perdido')
+        acoes += `<button class="btn btn-gold btn-sm" onclick="moverLeadModal(${leadId},'assumido')">👤 Assumir</button>`;
+      if (lead.status === 'qualificado' && podeEditar)
+        acoes += `<button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLeadModal(${leadId},'perdido')">❌ Perdido</button>`;
+      if (lead.status === 'assumido' && podeEditar)
+        acoes += `<button class="btn btn-sm" style="background:#f97316;color:#fff" onclick="moverLeadModal(${leadId},'proposta_enviada')">📄 Proposta</button>`;
+      if (lead.status === 'assumido' && podeEditar)
+        acoes += `<button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLeadModal(${leadId},'perdido')">❌ Perdido</button>`;
+      if (lead.status === 'proposta_enviada' && podeEditar)
+        acoes += `<button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="moverLeadModal(${leadId},'fechado')">✓ Fechar</button>`;
+      if (lead.status === 'proposta_enviada' && podeEditar)
+        acoes += `<button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLeadModal(${leadId},'perdido')">❌ Perdido</button>`;
+      if ((lead.status === 'fechado' || lead.status === 'perdido') && isAdmin)
+        acoes += `<button class="btn btn-sm btn-outline" onclick="moverLeadModal(${leadId},'assumido')">↩ Reabrir</button>`;
+
+      document.getElementById('modalAcoes').innerHTML = acoes || '<span style="font-size:.78rem;color:var(--muted)">Nenhuma ação disponível</span>';
+
+      // Chat
+      if (!conv.mensagens.length) {
+        document.getElementById('modalChat').innerHTML = '<div class="loading-msg">Nenhuma mensagem registrada.</div>';
+      } else {
+        document.getElementById('modalChat').innerHTML = conv.mensagens.map(m => {
+          const isCliente = m.role === 'user';
+          const matchFunc = m.conteudo.match(/^\[([^\]]+)\]:\s*/);
+          const conteudo = escHtml(matchFunc ? m.conteudo.replace(matchFunc[0], '') : m.conteudo);
+          const remetente = matchFunc ? matchFunc[1] : null;
+          return `<div class="chat-bubble-wrap ${isCliente ? 'from-client' : 'from-us'}">
+            ${remetente ? `<span class="bubble-meta">👤 ${escHtml(remetente)}</span>` : ''}
+            <div class="chat-bubble">${conteudo}</div>
+            ${m.horario ? `<span class="bubble-meta">${m.horario}</span>` : ''}
+          </div>`;
+        }).join('');
+        const chat = document.getElementById('modalChat');
+        chat.scrollTop = chat.scrollHeight;
+      }
+    } catch(err) {
+      document.getElementById('modalChat').innerHTML = '<div class="loading-msg" style="color:var(--red)">Erro ao carregar.</div>';
+    }
+  }
+
+  async function salvarObs() {
+    if (!modalLeadId) return;
+    const obs = document.getElementById('modalObs').value;
+    const msg = document.getElementById('obsMsg');
+    try {
+      const r = await fetch(`/api/leads/${modalLeadId}/observacoes`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({observacoes: obs})
+      });
+      if (r.ok) {
+        msg.textContent = '✅ Salvo!'; msg.style.color = 'var(--green)';
+        // Atualiza no array local
+        const l = allLeads.find(x => x.id === modalLeadId);
+        if (l) l.observacoes = obs;
+      } else { msg.textContent = '⚠️ Erro ao salvar'; msg.style.color = 'var(--red)'; }
+    } catch { msg.textContent = '⚠️ Erro'; msg.style.color = 'var(--red)'; }
+    setTimeout(() => { msg.textContent = ''; }, 3000);
+  }
+
+  async function moverLeadModal(id, novoStatus) {
+    const labels = {
+      assumido:'Assumir este lead?', proposta_enviada:'Marcar proposta como enviada?',
+      fechado:'Marcar como fechado?', perdido:'Marcar como perdido?'
+    };
+    if (!confirm(labels[novoStatus] || 'Confirmar?')) return;
+    const r = await fetch(`/api/leads/${id}/mover`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({status: novoStatus})
+    });
+    if (r.ok) {
+      closeModal();
+      await refresh();
+    } else {
+      const d = await r.json(); alert(d.detail);
+    }
+  }
+
+  function fecharModal(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
+  function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); modalLeadId = null; }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
   // ═══════ LISTA ═══════
   function renderLista() {
@@ -659,18 +896,18 @@
     const tbody = document.getElementById('listaBody');
     if (!tbody) return;
     tbody.innerHTML = filtered.length === 0
-      ? `<tr><td colspan="10" class="empty-state">Nenhum lead encontrado.</td></tr>`
+      ? `<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">Nenhum lead encontrado.</td></tr>`
       : filtered.map(l => `<tr>
           <td style="color:var(--muted);font-size:.76rem">#${l.id}</td>
           <td><strong>${esc(l.nome)}</strong></td>
           <td class="td-mono">${l.telefone}</td>
           <td class="td-mono">${l.cpf}</td>
-          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(l.carro_interesse)}">${esc(l.carro_interesse)}</td>
+          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.carro_interesse)}</td>
           <td><span class="badge badge-${l.modalidade}">${labMod(l.modalidade)}</span></td>
           <td><span class="badge badge-${l.status}">${labSt(l.status)}</span></td>
           <td>${l.responsavel ? esc(l.responsavel.nome) : '<span style="color:var(--muted)">—</span>'}</td>
           <td style="font-size:.76rem;color:var(--muted);white-space:nowrap">${l.criado_em}</td>
-          <td><button class="btn btn-outline btn-sm" onclick="verConversa(${l.id},'${esc(l.nome)}')">💬 Ver</button></td>
+          <td><button class="btn btn-outline btn-sm" onclick="verLead(${l.id})">👁 Ver</button></td>
         </tr>`).join('');
   }
 
@@ -710,10 +947,8 @@
     try {
       const r = await fetch('/api/usuarios', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
       if (r.ok) {
-        msg.textContent = '✅ Usuário criado com sucesso!'; msg.style.color = 'var(--green)';
-        document.getElementById('novoNome').value = '';
-        document.getElementById('novoEmail').value = '';
-        document.getElementById('novaSenha').value = '';
+        msg.textContent = '✅ Usuário criado!'; msg.style.color = 'var(--green)';
+        ['novoNome','novoEmail','novaSenha'].forEach(id => document.getElementById(id).value = '');
         carregarUsuarios();
       } else {
         const d = await r.json(); msg.textContent = '⚠️ ' + d.detail; msg.style.color='var(--red)';
@@ -733,8 +968,6 @@
     try {
       const r = await fetch('/api/relatorios');
       const d = await r.json();
-
-      // stats
       const s = statsData;
       document.getElementById('relStatsRow').innerHTML = `
         <div class="stat s1"><div class="stat-label">Total de Leads</div><div class="stat-val">${s.total||0}</div></div>
@@ -742,24 +975,16 @@
         <div class="stat s4"><div class="stat-label">Fechados</div><div class="stat-val">${s.fechados||0}</div></div>
         <div class="stat s6"><div class="stat-label">Taxa Qualificação</div><div class="stat-val" style="color:var(--gold3)">${s.taxa_qualificacao||0}%</div></div>
       `;
-
-      // por funcionário
       document.getElementById('relBody').innerHTML = d.por_funcionario.length === 0
-        ? '<tr><td colspan="5" class="empty-state">Nenhum dado.</td></tr>'
+        ? '<tr><td colspan="5" style="text-align:center;padding:1rem;color:var(--muted)">Nenhum dado.</td></tr>'
         : d.por_funcionario.map(f => `<tr>
             <td><strong>${esc(f.nome)}</strong></td>
             <td><span class="badge badge-${f.role}">${f.role==='admin'?'Admin':'Funcionário'}</span></td>
-            <td>${f.total_assumidos}</td>
-            <td>${f.fechados}</td>
-            <td>
-              <div style="display:flex;align-items:center;gap:.5rem">
-                <div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:${f.taxa}%"></div></div>
-                <span style="font-size:.78rem;font-weight:700">${f.taxa}%</span>
-              </div>
-            </td>
-          </tr>`).join('');
-
-      // por modalidade
+            <td>${f.total_assumidos}</td><td>${f.fechados}</td>
+            <td><div style="display:flex;align-items:center;gap:.5rem">
+              <div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:${f.taxa}%"></div></div>
+              <span style="font-size:.78rem;font-weight:700">${f.taxa}%</span>
+            </div></td></tr>`).join('');
       const m = d.por_modalidade;
       document.getElementById('relModalBody').innerHTML = `
         <tr><td><span class="badge badge-financiamento">Financiamento</span></td><td><strong>${m.financiamento}</strong></td></tr>
@@ -768,28 +993,197 @@
     } catch {}
   }
 
-  // ═══════ CONVERSA ═══════
-  async function verConversa(leadId, nome) {
-    document.getElementById('modalTitle').textContent = nome !== '—' ? nome : `Lead #${leadId}`;
-    document.getElementById('modalBody').innerHTML = '<div class="loading-msg">Carregando mensagens…</div>';
-    document.getElementById('modalOverlay').classList.add('open');
+  // ═══════ INBOX / ATENDIMENTO ═══════
+  let chatLeadAtivo = null;
+  let inboxLeads = [];
+  let chatPollingInterval = null;
+
+  const statusCorInbox = {
+    em_atendimento: '#3b82f6', qualificado: '#22c55e', assumido: '#F5C400',
+    proposta_enviada: '#f97316', fechado: '#8b5cf6', perdido: '#ef4444'
+  };
+  const statusIconInbox = {
+    em_atendimento: '🤖', qualificado: '✅', assumido: '👤',
+    proposta_enviada: '📄', fechado: '🏁', perdido: '❌'
+  };
+
+  async function carregarInbox() {
     try {
-      const r = await fetch(`/api/leads/${leadId}/conversa`);
-      const d = await r.json();
-      const body = document.getElementById('modalBody');
-      if (!d.mensagens.length) { body.innerHTML = '<div class="empty-state">Nenhuma mensagem registrada.</div>'; return; }
-      body.innerHTML = d.mensagens.map(m => `
-        <div class="chat-msg ${m.role}">
-          <div class="bubble">${escHtml(m.conteudo)}</div>
-          ${m.horario ? `<span class="bubble-time">${m.horario}</span>` : ''}
-        </div>`).join('');
-      body.scrollTop = body.scrollHeight;
-    } catch { document.getElementById('modalBody').innerHTML = '<div class="loading-msg" style="color:var(--red)">Erro ao carregar.</div>'; }
+      const r = await fetch('/api/inbox');
+      inboxLeads = await r.json();
+      renderInboxList();
+      const badge = document.getElementById('badgeInbox');
+      if (inboxLeads.length > 0) { badge.textContent = inboxLeads.length; badge.style.display = ''; }
+      else { badge.style.display = 'none'; }
+    } catch {}
   }
 
-  function fecharModal(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
-  function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+  function renderInboxList() {
+    const list = document.getElementById('inboxList');
+    if (!inboxLeads.length) {
+      list.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.83rem">Nenhuma conversa ainda</div>';
+      return;
+    }
+    list.innerHTML = inboxLeads.map(l => {
+      const nome = l.nome !== '—' ? l.nome : l.telefone;
+      const ativo = chatLeadAtivo && chatLeadAtivo.id === l.id;
+      const cor = statusCorInbox[l.status] || '#6b7280';
+      const icon = statusIconInbox[l.status] || '●';
+      return `<div onclick="abrirChat(${l.id})" style="padding:.75rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;background:${ativo?'#f0f4ff':'transparent'};transition:background .1s">
+        <div style="display:flex;align-items:center;gap:.6rem">
+          <div style="width:38px;height:38px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.88rem;flex-shrink:0">${nome[0].toUpperCase()}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:.35rem">
+              <span style="font-weight:700;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nome)}</span>
+              <span style="font-size:.65rem;color:${cor};flex-shrink:0">${icon}</span>
+            </div>
+            <div style="font-size:.73rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(l.ultima_mensagem||'')}</div>
+          </div>
+          <div style="font-size:.68rem;color:var(--muted);flex-shrink:0">${l.ultima_hora||''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  async function abrirChat(leadId) {
+    chatLeadAtivo = inboxLeads.find(l => l.id === leadId);
+    if (!chatLeadAtivo) return;
+    const nome = chatLeadAtivo.nome !== '—' ? chatLeadAtivo.nome : chatLeadAtivo.telefone;
+    document.getElementById('chatAvatar').textContent = nome[0].toUpperCase();
+    document.getElementById('chatNome').textContent = nome;
+    document.getElementById('chatTelefone').textContent = chatLeadAtivo.telefone;
+    document.getElementById('btnFecharChat').style.display = '';
+
+    // Mostrar botão assumir se não for responsável
+    const jaAssumido = chatLeadAtivo.responsavel?.id === currentUser.id;
+    const podeAssumir = !jaAssumido && chatLeadAtivo.status !== 'fechado' && chatLeadAtivo.status !== 'perdido';
+    document.getElementById('btnAssumirChat').style.display = podeAssumir ? '' : 'none';
+
+    document.getElementById('msgInput').focus();
+    renderInboxList();
+    await carregarMensagensChat();
+    if (chatPollingInterval) clearInterval(chatPollingInterval);
+    chatPollingInterval = setInterval(carregarMensagensChat, 5000);
+  }
+
+  async function assumirLeadAtivo() {
+    if (!chatLeadAtivo) return;
+    await fetch(`/api/leads/${chatLeadAtivo.id}/mover`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({status: 'assumido'})
+    });
+    await carregarInbox();
+    chatLeadAtivo = inboxLeads.find(l => l.id === chatLeadAtivo.id);
+    if (chatLeadAtivo) {
+      document.getElementById('btnAssumirChat').style.display = 'none';
+    }
+  }
+
+  async function carregarMensagensChat() {
+    if (!chatLeadAtivo) return;
+    try {
+      const r = await fetch(`/api/leads/${chatLeadAtivo.id}/conversa`);
+      const d = await r.json();
+      const box = document.getElementById('chatMessages');
+      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+      box.innerHTML = d.mensagens.map(m => {
+        const isCliente = m.role === 'user';
+        const matchFunc = m.conteudo.match(/^\[([^\]]+)\]:\s*/);
+        const conteudo = escHtml(matchFunc ? m.conteudo.replace(matchFunc[0], '') : m.conteudo);
+        const remetente = matchFunc ? matchFunc[1] : null;
+        return `<div style="display:flex;flex-direction:column;max-width:75%;align-self:${isCliente?'flex-end':'flex-start'};align-items:${isCliente?'flex-end':'flex-start'}">
+          ${remetente ? `<span style="font-size:.68rem;color:var(--muted);margin-bottom:2px">👤 ${escHtml(remetente)}</span>` : ''}
+          <div style="padding:.5rem .85rem;border-radius:12px;font-size:.85rem;line-height:1.5;word-break:break-word;white-space:pre-wrap;
+            background:${isCliente?'#fff':'#dcf8c6'};
+            border-bottom-${isCliente?'right':'left'}-radius:3px;
+            box-shadow:0 1px 2px rgba(0,0,0,.1)">${conteudo}</div>
+          ${m.horario ? `<span style="font-size:.68rem;color:var(--muted);margin-top:2px">${m.horario}</span>` : ''}
+        </div>`;
+      }).join('');
+      if (atBottom) box.scrollTop = box.scrollHeight;
+    } catch {}
+  }
+
+  async function enviarMensagem() {
+    if (!chatLeadAtivo) return;
+    const input = document.getElementById('msgInput');
+    const texto = input.value.trim();
+    if (!texto) return;
+    input.value = '';
+    try {
+      await fetch(`/api/leads/${chatLeadAtivo.id}/mensagem`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({mensagem: texto}),
+      });
+      await carregarMensagensChat();
+      await carregarInbox();
+    } catch {}
+  }
+
+  async function fecharLeadAtivo() {
+    if (!chatLeadAtivo) return;
+    if (!confirm('Marcar este atendimento como finalizado?')) return;
+    await fetch(`/api/leads/${chatLeadAtivo.id}/fechar`, {method:'POST'});
+    chatLeadAtivo = null;
+    if (chatPollingInterval) clearInterval(chatPollingInterval);
+    document.getElementById('chatMessages').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:2rem">👈 Selecione uma conversa ao lado</div>';
+    document.getElementById('chatNome').textContent = 'Selecione uma conversa';
+    document.getElementById('chatTelefone').textContent = '';
+    document.getElementById('chatAvatar').textContent = '?';
+    document.getElementById('btnFecharChat').style.display = 'none';
+    document.getElementById('btnAssumirChat').style.display = 'none';
+    await carregarInbox();
+  }
+
+  // ═══════ CONFIGURAÇÕES ═══════
+  let configData = [];
+  async function carregarConfiguracoes() {
+    try { const r = await fetch('/api/config'); configData = await r.json(); renderConfiguracoes(); } catch {}
+  }
+
+  const configLabels = {
+    mensagem_boas_vindas:  { titulo: '👋 Mensagem de Boas-vindas', subtitulo: 'Primeira mensagem ao cliente' },
+    mensagem_finalizacao:  { titulo: '🤝 Mensagem de Finalização', subtitulo: 'Enviada após coletar todos os dados' },
+    regras_financiamento:  { titulo: '🚗 Regras — Financiamento', subtitulo: 'Instruções para leads de financiamento' },
+    regras_refinanciamento:{ titulo: '🔑 Regras — Refinanciamento', subtitulo: 'Instruções para leads de refinanciamento' },
+  };
+  const configOrdem = ['mensagem_boas_vindas','mensagem_finalizacao','regras_financiamento','regras_refinanciamento'];
+
+  function renderConfiguracoes() {
+    const map = {};
+    configData.forEach(c => map[c.chave] = c);
+    const ordered = configOrdem.map(k => map[k]).filter(Boolean);
+    const outros = configData.filter(c => !configOrdem.includes(c.chave));
+    document.getElementById('configCards').innerHTML = [...ordered, ...outros].map(c => {
+      const label = configLabels[c.chave] || { titulo: c.chave, subtitulo: c.descricao || '' };
+      return `<div class="form-card" style="margin-bottom:1rem">
+        <div style="margin-bottom:.75rem">
+          <h3 style="font-size:1rem">${label.titulo}</h3>
+          <p style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${label.subtitulo}</p>
+        </div>
+        <textarea id="cfg-${c.chave}" rows="6" style="width:100%;border:1.5px solid var(--border);border-radius:8px;padding:.65rem .85rem;font-size:.83rem;font-family:inherit;resize:vertical;outline:none;line-height:1.5"
+          onfocus="this.style.borderColor='var(--navy)'" onblur="this.style.borderColor='var(--border)'">${escHtml(c.valor)}</textarea>
+        <div style="margin-top:.6rem;display:flex;gap:.5rem;align-items:center">
+          <button class="btn btn-primary btn-sm" onclick="salvarConfig('${c.chave}')">💾 Salvar</button>
+          <span id="msg-${c.chave}" style="font-size:.78rem"></span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  async function salvarConfig(chave) {
+    const valor = document.getElementById(`cfg-${chave}`).value;
+    const msgEl = document.getElementById(`msg-${chave}`);
+    try {
+      const r = await fetch(`/api/config/${chave}`, {
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({valor})
+      });
+      msgEl.textContent = r.ok ? '✅ Salvo!' : '⚠️ Erro ao salvar.';
+      msgEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
+    } catch { msgEl.textContent = '⚠️ Erro de conexão.'; msgEl.style.color = 'var(--red)'; }
+    setTimeout(() => { msgEl.textContent = ''; }, 3000);
+  }
 
   // ═══════ HELPERS ═══════
   function esc(s) { return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
@@ -805,214 +1199,6 @@
     if (diff < 60) return `${diff}min atrás`;
     if (diff < 1440) return `${Math.floor(diff/60)}h atrás`;
     return `${Math.floor(diff/1440)}d atrás`;
-  }
-
-  // ═══════ INBOX / ATENDIMENTO ═══════
-  let chatLeadAtivo = null;
-  let inboxLeads = [];
-  let chatPollingInterval = null;
-
-  async function carregarInbox() {
-    try {
-      const r = await fetch('/api/inbox');
-      inboxLeads = await r.json();
-      renderInboxList();
-
-      // badge de quantidade
-      const badge = document.getElementById('badgeInbox');
-      if (inboxLeads.length > 0) {
-        badge.textContent = inboxLeads.length;
-        badge.style.display = '';
-      } else {
-        badge.style.display = 'none';
-      }
-    } catch {}
-  }
-
-  const statusCorInbox = {
-    em_atendimento: '#3b82f6', qualificado: '#22c55e', assumido: '#F5C400',
-    proposta_enviada: '#f97316', fechado: '#8b5cf6', perdido: '#ef4444'
-  };
-  const statusIconInbox = {
-    em_atendimento: '🤖', qualificado: '✅', assumido: '👤',
-    proposta_enviada: '📄', fechado: '🏁', perdido: '❌'
-  };
-
-  function renderInboxList() {
-    const list = document.getElementById('inboxList');
-    if (!inboxLeads.length) {
-      list.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.83rem">Nenhuma conversa ainda</div>';
-      return;
-    }
-    list.innerHTML = inboxLeads.map(l => {
-      const nome = l.nome !== '—' ? l.nome : l.telefone;
-      const ativo = chatLeadAtivo && chatLeadAtivo.id === l.id;
-      const cor = statusCorInbox[l.status] || '#6b7280';
-      const icon = statusIconInbox[l.status] || '●';
-      return `<div onclick="abrirChat(${l.id})" style="padding:.75rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;background:${ativo ? '#f0f4ff' : 'transparent'};transition:background .1s" onmouseover="this.style.background='#f8f9fc'" onmouseout="this.style.background='${ativo ? '#f0f4ff' : 'transparent'}'">
-        <div style="display:flex;align-items:center;gap:.6rem">
-          <div style="width:38px;height:38px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.88rem;flex-shrink:0">${nome[0].toUpperCase()}</div>
-          <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:.35rem">
-              <span style="font-weight:700;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nome)}</span>
-              <span style="font-size:.65rem;color:${cor};flex-shrink:0">${icon}</span>
-            </div>
-            <div style="font-size:.73rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(l.ultima_mensagem||'')}</div>
-          </div>
-          <div style="font-size:.68rem;color:var(--muted);flex-shrink:0;text-align:right">
-            <div>${l.ultima_hora||''}</div>
-          </div>
-        </div>
-      </div>`;
-    }).join('');
-  }
-
-  async function abrirChat(leadId) {
-    chatLeadAtivo = inboxLeads.find(l => l.id === leadId);
-    if (!chatLeadAtivo) return;
-
-    const nome = chatLeadAtivo.nome !== '—' ? chatLeadAtivo.nome : chatLeadAtivo.telefone;
-    document.getElementById('chatAvatar').textContent = nome[0].toUpperCase();
-    document.getElementById('chatNome').textContent = nome;
-    document.getElementById('chatTelefone').textContent = chatLeadAtivo.telefone;
-    document.getElementById('btnFecharChat').style.display = '';
-    document.getElementById('msgInput').focus();
-
-    renderInboxList();
-    await carregarMensagensChat();
-
-    // Poll mensagens a cada 5s enquanto chat aberto
-    if (chatPollingInterval) clearInterval(chatPollingInterval);
-    chatPollingInterval = setInterval(carregarMensagensChat, 5000);
-  }
-
-  async function carregarMensagensChat() {
-    if (!chatLeadAtivo) return;
-    try {
-      const r = await fetch(`/api/leads/${chatLeadAtivo.id}/conversa`);
-      const d = await r.json();
-      const box = document.getElementById('chatMessages');
-      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-
-      box.innerHTML = d.mensagens.map(m => {
-        // cliente = esquerda (recebido), empresa (bot/funcionário) = direita em verde
-        const isCliente = m.role === 'user';
-        // detecta se é mensagem de funcionário pelo prefixo [Nome]:
-        const matchFunc = m.conteudo.match(/^\[([^\]]+)\]:\s*/);
-        const conteudo = escHtml(matchFunc ? m.conteudo.replace(matchFunc[0], '') : m.conteudo);
-        const remetente = matchFunc ? matchFunc[1] : null;
-
-        return `<div style="display:flex;flex-direction:column;max-width:75%;align-self:${isCliente ? 'flex-end' : 'flex-start'};align-items:${isCliente ? 'flex-end' : 'flex-start'}">
-          ${remetente ? `<span style="font-size:.68rem;color:var(--muted);margin-bottom:2px">👤 ${escHtml(remetente)}</span>` : ''}
-          <div style="padding:.5rem .85rem;border-radius:12px;font-size:.85rem;line-height:1.5;word-break:break-word;white-space:pre-wrap;
-            background:${isCliente ? '#fff' : '#dcf8c6'};
-            border-bottom-${isCliente ? 'right' : 'left'}-radius:3px;
-            box-shadow:0 1px 2px rgba(0,0,0,.1)">${conteudo}</div>
-          ${m.horario ? `<span style="font-size:.68rem;color:var(--muted);margin-top:2px">${m.horario}</span>` : ''}
-        </div>`;
-      }).join('');
-
-      if (atBottom) box.scrollTop = box.scrollHeight;
-    } catch {}
-  }
-
-  async function enviarMensagem() {
-    if (!chatLeadAtivo) return;
-    const input = document.getElementById('msgInput');
-    const texto = input.value.trim();
-    if (!texto) return;
-    input.value = '';
-
-    try {
-      await fetch(`/api/leads/${chatLeadAtivo.id}/mensagem`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mensagem: texto }),
-      });
-      await carregarMensagensChat();
-      await carregarInbox();
-    } catch {}
-  }
-
-  async function fecharLeadAtivo() {
-    if (!chatLeadAtivo) return;
-    if (!confirm('Marcar este atendimento como finalizado?')) return;
-    await fetch(`/api/leads/${chatLeadAtivo.id}/fechar`, { method: 'POST' });
-    chatLeadAtivo = null;
-    if (chatPollingInterval) clearInterval(chatPollingInterval);
-    document.getElementById('chatMessages').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:2rem">👈 Selecione uma conversa ao lado</div>';
-    document.getElementById('chatNome').textContent = 'Selecione uma conversa';
-    document.getElementById('chatTelefone').textContent = '';
-    document.getElementById('chatAvatar').textContent = '?';
-    document.getElementById('btnFecharChat').style.display = 'none';
-    await carregarInbox();
-  }
-
-  // ═══════ CONFIGURAÇÕES ═══════
-  let configData = [];
-
-  async function carregarConfiguracoes() {
-    try {
-      const r = await fetch('/api/config');
-      configData = await r.json();
-      renderConfiguracoes();
-    } catch {}
-  }
-
-  const configLabels = {
-    mensagem_boas_vindas:  { titulo: '👋 Mensagem de Boas-vindas', subtitulo: 'Primeira mensagem enviada ao cliente quando entra em contato' },
-    mensagem_finalizacao:  { titulo: '🤝 Mensagem de Finalização', subtitulo: 'Mensagem enviada após coletar todos os dados do cliente' },
-    regras_financiamento:  { titulo: '🚗 Regras — Financiamento de Veículo', subtitulo: 'Instruções do bot para leads de financiamento (raio de atendimento, presencialidade, etc.)' },
-    regras_refinanciamento:{ titulo: '🔑 Regras — Refinanciamento / CGI', subtitulo: 'Instruções do bot para leads de refinanciamento (restrições geográficas, etc.)' },
-  };
-
-  const configOrdem = ['mensagem_boas_vindas','mensagem_finalizacao','regras_financiamento','regras_refinanciamento'];
-
-  function renderConfiguracoes() {
-    const map = {};
-    configData.forEach(c => map[c.chave] = c);
-    const ordered = configOrdem.map(k => map[k]).filter(Boolean);
-    const outros = configData.filter(c => !configOrdem.includes(c.chave));
-
-    document.getElementById('configCards').innerHTML = [...ordered, ...outros].map(c => {
-      const label = configLabels[c.chave] || { titulo: c.chave, subtitulo: c.descricao || '' };
-      return `
-        <div class="form-card" style="margin-bottom:1rem">
-          <div style="margin-bottom:.75rem">
-            <h3 style="font-size:1rem">${label.titulo}</h3>
-            <p style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${label.subtitulo}</p>
-          </div>
-          <textarea id="cfg-${c.chave}" rows="6" style="width:100%;border:1.5px solid var(--border);border-radius:8px;padding:.65rem .85rem;font-size:.83rem;font-family:inherit;resize:vertical;outline:none;line-height:1.5"
-            onfocus="this.style.borderColor='var(--navy)'" onblur="this.style.borderColor='var(--border)'">${escHtml(c.valor)}</textarea>
-          <div style="margin-top:.6rem;display:flex;gap:.5rem;align-items:center">
-            <button class="btn btn-primary btn-sm" onclick="salvarConfig('${c.chave}')">💾 Salvar</button>
-            <span id="msg-${c.chave}" style="font-size:.78rem"></span>
-          </div>
-        </div>`;
-    }).join('');
-  }
-
-  async function salvarConfig(chave) {
-    const valor = document.getElementById(`cfg-${chave}`).value;
-    const msgEl = document.getElementById(`msg-${chave}`);
-    try {
-      const r = await fetch(`/api/config/${chave}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ valor }),
-      });
-      if (r.ok) {
-        msgEl.textContent = '✅ Salvo com sucesso!';
-        msgEl.style.color = 'var(--green)';
-      } else {
-        msgEl.textContent = '⚠️ Erro ao salvar.';
-        msgEl.style.color = 'var(--red)';
-      }
-    } catch {
-      msgEl.textContent = '⚠️ Erro de conexão.';
-      msgEl.style.color = 'var(--red)';
-    }
-    setTimeout(() => { msgEl.textContent = ''; }, 3000);
   }
 
   // ═══════ INIT ═══════

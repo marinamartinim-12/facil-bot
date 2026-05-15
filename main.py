@@ -274,6 +274,7 @@ async def mover_lead(
     novo_status = body.get("status", "")
 
     estagios_validos = [
+        StatusLeadEnum.em_atendimento,
         StatusLeadEnum.qualificado,
         StatusLeadEnum.assumido,
         StatusLeadEnum.proposta_enviada,
@@ -360,6 +361,23 @@ async def inbox(
             "ultima_hora": ultima.criado_em.strftime("%H:%M") if ultima and ultima.criado_em else "",
         })
     return resultado
+
+
+@app.put("/api/leads/{lead_id}/observacoes")
+async def salvar_observacoes(
+    lead_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    body = await request.json()
+    lead.observacoes = body.get("observacoes", "")
+    lead.atualizado_em = datetime.utcnow()
+    db.commit()
+    return {"status": "ok"}
 
 
 @app.post("/api/leads/{lead_id}/fechar")
@@ -546,6 +564,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "assumido_em": l.assumido_em.strftime("%d/%m/%Y %H:%M") if l.assumido_em else None,
         "criado_em": l.criado_em.strftime("%d/%m/%Y %H:%M") if l.criado_em else "—",
         "atualizado_em": l.atualizado_em.strftime("%d/%m/%Y %H:%M") if l.atualizado_em else "—",
+        "observacoes": l.observacoes or "",
     }
 
 
