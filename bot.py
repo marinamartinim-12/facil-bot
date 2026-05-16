@@ -291,14 +291,15 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str
     msg_finalizacao = config.get("mensagem_finalizacao", "")
 
     # Aviso de horário para incluir na mensagem de encerramento
-    proximo_horario = _proximo_horario_atendimento()
+    fora_do_horario = bool(_proximo_horario_atendimento())
     aviso_horario = ""
-    if proximo_horario:
+    if fora_do_horario:
         aviso_horario = (
             f"\n\nIMPORTANTE: Estamos FORA do horário de atendimento agora. "
             f"Na mensagem de finalização, após agradecer, adicione: "
-            f"'Nossa equipe entrará em contato {proximo_horario}. "
-            f"Nosso horário de atendimento é segunda a sexta das 09h às 18h e sábado das 09h às 13h. 🕘'"
+            f"'No momento estamos fora do horário de atendimento. "
+            f"Nosso horário de funcionamento é segunda a sexta das 09h às 18h e sábado das 09h às 13h. "
+            f"Assim que houver alguém disponível, entraremos em contato! 🕘'"
         )
 
     system_com_contexto = (
