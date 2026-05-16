@@ -908,18 +908,9 @@
       document.getElementById('modalStatusBadge').innerHTML =
         `<span class="badge badge-${lead.status}" style="font-size:.75rem;margin-left:.5rem">${stLabel}</span>`;
 
-      // Dados do cliente
-      document.getElementById('modalDados').innerHTML = `
-        <div class="data-item"><label>Nome</label><span>${escHtml(lead.nome||'—')}</span></div>
-        <div class="data-item"><label>Telefone</label><span>${escHtml(lead.telefone||'—')}</span></div>
-        <div class="data-item"><label>CPF</label><span>${escHtml(lead.cpf||'—')}</span></div>
-        <div class="data-item"><label>Nasc.</label><span>${escHtml(lead.data_nascimento||'—')}</span></div>
-        <div class="data-item full"><label>Veículo de interesse</label><span>${escHtml(lead.carro_interesse||'—')}</span></div>
-        <div class="data-item"><label>Modalidade</label><span>${labMod(lead.modalidade||'')}</span></div>
-        <div class="data-item"><label>Responsável</label><span>${lead.responsavel ? escHtml(lead.responsavel.nome) : '—'}</span></div>
-        <div class="data-item"><label>Cadastrado</label><span>${escHtml(lead.criado_em||'—')}</span></div>
-        ${lead.assumido_em ? `<div class="data-item"><label>Assumido em</label><span>${escHtml(lead.assumido_em)}</span></div>` : ''}
-      `;
+      // Dados do cliente — modo visualização
+      window._modalLeadData = lead;
+      renderDadosLead(lead, false);
 
       // Observações
       document.getElementById('modalObs').value = lead.observacoes || '';
@@ -1381,6 +1372,69 @@
     if (diff < 60) return `${diff}min atrás`;
     if (diff < 1440) return `${Math.floor(diff/60)}h atrás`;
     return `${Math.floor(diff/1440)}d atrás`;
+  }
+
+  // ═══════ EDIÇÃO DE DADOS DO LEAD ═══════
+  function renderDadosLead(lead, editando) {
+    const inpStyle = 'border:1px solid var(--border);border-radius:6px;padding:.3rem .5rem;font-size:.82rem;width:100%;background:#fff;font-family:inherit';
+    const inputNome   = editando ? `<input id="ei_nome"  value="${escHtml(lead.nome&&lead.nome!=='—'?lead.nome:'')}" style="${inpStyle}" placeholder="Nome do cliente">` : `<span>${escHtml(lead.nome||'—')}</span>`;
+    const inputCPF    = editando ? `<input id="ei_cpf"   value="${escHtml(lead.cpf&&lead.cpf!=='—'?lead.cpf:'')}" style="${inpStyle}" placeholder="000.000.000-00">` : `<span>${escHtml(lead.cpf||'—')}</span>`;
+    const inputNasc   = editando ? `<input id="ei_nasc"  value="${escHtml(lead.data_nascimento&&lead.data_nascimento!=='—'?lead.data_nascimento:'')}" style="${inpStyle}" placeholder="DD/MM/AAAA">` : `<span>${escHtml(lead.data_nascimento||'—')}</span>`;
+    const inputCarro  = editando ? `<input id="ei_carro" value="${escHtml(lead.carro_interesse&&lead.carro_interesse!=='—'?lead.carro_interesse:'')}" style="${inpStyle}" placeholder="Ex: Honda Civic 2020">` : `<span>${escHtml(lead.carro_interesse||'—')}</span>`;
+    const inputMod    = editando
+      ? `<select id="ei_mod" style="${inpStyle}">
+           <option value="indefinido" ${(lead.modalidade==='indefinido'||!lead.modalidade)?'selected':''}>Indefinido</option>
+           <option value="financiamento" ${lead.modalidade==='financiamento'?'selected':''}>Financiamento</option>
+           <option value="refinanciamento" ${lead.modalidade==='refinanciamento'?'selected':''}>Empréstimo com garantia</option>
+         </select>`
+      : `<span>${labMod(lead.modalidade||'')}</span>`;
+
+    const btnEditar = editando
+      ? `<div style="display:flex;gap:.5rem;margin-top:.5rem">
+           <button class="btn btn-primary btn-sm" onclick="salvarDadosLead()" style="flex:1">💾 Salvar</button>
+           <button class="btn btn-sm" style="background:var(--border);color:var(--navy);flex:1" onclick="renderDadosLead(window._modalLeadData,false)">✕ Cancelar</button>
+         </div>`
+      : `<button class="btn btn-sm btn-outline" onclick="renderDadosLead(window._modalLeadData,true)" style="margin-top:.5rem;width:100%">✏️ Editar dados</button>`;
+
+    document.getElementById('modalDados').innerHTML = `
+      <div class="data-item"><label>Nome</label>${inputNome}</div>
+      <div class="data-item"><label>Telefone</label><span>${escHtml(lead.telefone||'—')}</span></div>
+      <div class="data-item"><label>CPF</label>${inputCPF}</div>
+      <div class="data-item"><label>Nasc.</label>${inputNasc}</div>
+      <div class="data-item full"><label>Veículo de interesse</label>${inputCarro}</div>
+      <div class="data-item"><label>Modalidade</label>${inputMod}</div>
+      <div class="data-item"><label>Responsável</label><span>${lead.responsavel ? escHtml(lead.responsavel.nome) : '—'}</span></div>
+      <div class="data-item"><label>Cadastrado</label><span>${escHtml(lead.criado_em||'—')}</span></div>
+      ${lead.assumido_em ? `<div class="data-item"><label>Assumido em</label><span>${escHtml(lead.assumido_em)}</span></div>` : ''}
+      ${btnEditar}
+    `;
+  }
+
+  async function salvarDadosLead() {
+    if (!modalLeadId) return;
+    const body = {
+      nome:             document.getElementById('ei_nome')?.value.trim()  || null,
+      cpf:              document.getElementById('ei_cpf')?.value.trim()   || null,
+      data_nascimento:  document.getElementById('ei_nasc')?.value.trim()  || null,
+      carro_interesse:  document.getElementById('ei_carro')?.value.trim() || null,
+      modalidade:       document.getElementById('ei_mod')?.value          || null,
+    };
+    try {
+      const r = await fetch(`/api/leads/${modalLeadId}`, {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) { alert('Erro ao salvar dados.'); return; }
+      const leadAtualizado = await r.json();
+      window._modalLeadData = leadAtualizado;
+      // Atualiza no array local
+      const idx = allLeads.findIndex(l => l.id === modalLeadId);
+      if (idx !== -1) allLeads[idx] = leadAtualizado;
+      renderDadosLead(leadAtualizado, false);
+      // Atualiza título do modal
+      const nome = (leadAtualizado.nome && leadAtualizado.nome !== '—') ? leadAtualizado.nome : leadAtualizado.telefone;
+      document.getElementById('modalTitle').textContent = nome;
+    } catch { alert('Erro de rede.'); }
   }
 
   // ═══════ INIT ═══════

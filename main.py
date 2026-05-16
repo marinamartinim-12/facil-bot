@@ -436,6 +436,33 @@ async def inbox(
     return resultado
 
 
+@app.patch("/api/leads/{lead_id}")
+async def editar_lead(
+    lead_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Edita dados do lead — disponível para admin e funcionários."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    body = await request.json()
+    campos_editaveis = ["nome", "cpf", "data_nascimento", "carro_interesse", "modalidade", "observacoes"]
+    for campo in campos_editaveis:
+        if campo in body:
+            valor = body[campo]
+            if campo == "cpf" and valor:
+                valor = re.sub(r"[^\d]", "", valor)
+                if len(valor) == 11:
+                    valor = f"{valor[:3]}.{valor[3:6]}.{valor[6:9]}-{valor[9:]}"
+            setattr(lead, campo, valor if valor != "" else None)
+    lead.atualizado_em = datetime.utcnow()
+    db.commit()
+    db.refresh(lead)
+    return _serial_lead(lead, db)
+
+
 @app.put("/api/leads/{lead_id}/observacoes")
 async def salvar_observacoes(
     lead_id: int,
