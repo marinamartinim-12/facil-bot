@@ -41,6 +41,7 @@ class EstadoConversaEnum(str, enum.Enum):
     inicio = "inicio"
     aguardando_nome = "aguardando_nome"
     aguardando_modalidade = "aguardando_modalidade"
+    coletando_cidade = "coletando_cidade"
     coletando_cpf = "coletando_cpf"
     coletando_data_nasc = "coletando_data_nasc"
     coletando_carro = "coletando_carro"
