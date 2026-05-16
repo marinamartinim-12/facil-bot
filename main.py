@@ -4,6 +4,7 @@ FastAPI + Webhook Z-API + Dashboard com login
 """
 
 import json
+import os
 import httpx
 from datetime import datetime
 from fastapi import FastAPI, Request, Depends, HTTPException, Query, Response
@@ -24,7 +25,23 @@ app = FastAPI(title="Fácil Financiamentos", version="2.0.0")
 
 @app.on_event("startup")
 async def startup():
-    criar_tabelas()
+    # Garante que o diretório do banco existe (volume /data ou local)
+    db_url = settings.DATABASE_URL
+    if "sqlite" in db_url:
+        db_path = db_url.replace("sqlite:///", "").replace("sqlite://", "")
+        db_dir = os.path.dirname(db_path)
+        if db_dir:
+            try:
+                os.makedirs(db_dir, exist_ok=True)
+                print(f"📁 Diretório do banco: {db_dir}")
+            except Exception as e:
+                print(f"⚠️ Não foi possível criar diretório {db_dir}: {e}")
+
+    try:
+        criar_tabelas()
+    except Exception as e:
+        print(f"⚠️ Erro ao criar tabelas: {e}")
+        raise
 
     # Cria admin padrão se não existir nenhum usuário
     db_startup = next(get_db())
@@ -49,6 +66,7 @@ async def startup():
     db_startup.close()
 
     print("✅ Fácil Financiamentos Bot v2 iniciado!")
+    print(f"🗄️  Banco: {settings.DATABASE_URL}")
     print("📊 Dashboard: http://localhost:8000/dashboard")
 
 
