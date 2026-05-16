@@ -25,6 +25,7 @@ app = FastAPI(title="Fácil Financiamentos", version="2.0.0")
 
 # ─── Follow-up automático ───────────────────────────────────────────────────────
 
+# Estados do bot onde o lead ainda não completou os dados para o consultor
 _ESTADOS_BOT_ATIVO = [
     EstadoConversaEnum.aguardando_nome,
     EstadoConversaEnum.coletando_cidade,
@@ -34,44 +35,73 @@ _ESTADOS_BOT_ATIVO = [
     EstadoConversaEnum.coletando_carro,
 ]
 
+
+def _dentro_horario_atendimento() -> bool:
+    """Retorna True se estiver dentro do horário de funcionamento (horário de Brasília)."""
+    from zoneinfo import ZoneInfo
+    agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
+    dia = agora.weekday()       # 0=seg … 6=dom
+    hora_dec = agora.hour + agora.minute / 60
+    if dia < 5 and 9 <= hora_dec < 18:   # segunda a sexta
+        return True
+    if dia == 5 and 9 <= hora_dec < 13:  # sábado
+        return True
+    return False
+
+
 async def _enviar_followups():
     from models import SessionLocal
     db = SessionLocal()
     try:
-        # Carrega horas configuradas (padrão 4)
+        # ── 1. Só envia dentro do horário de atendimento ──────────────────────
+        if not _dentro_horario_atendimento():
+            print("⏰ Follow-up ignorado: fora do horário de atendimento")
+            return
+
+        # ── 2. Carrega configurações ──────────────────────────────────────────
         config_horas = db.query(Configuracao).filter(Configuracao.chave == "followup_horas").first()
         horas = int(config_horas.valor) if config_horas and config_horas.valor.isdigit() else 4
         limite = datetime.utcnow() - timedelta(hours=horas)
 
-        # Leads ainda no fluxo do bot e não assumidos por humano
+        config_msg = db.query(Configuracao).filter(Configuracao.chave == "mensagem_followup").first()
+        texto_padrao = (
+            "Oi! 😊 Vi que nossa conversa ficou parada...\n"
+            "Quando quiser continuar, estou aqui! Gostaria de retomar?"
+        )
+        texto_base = config_msg.valor if config_msg else texto_padrao
+
+        # ── 3. Leads ainda no fluxo do bot (dados incompletos) ───────────────
         leads = db.query(Lead).filter(
             Lead.estado_conversa.in_([e.value for e in _ESTADOS_BOT_ATIVO]),
-            Lead.status.in_([StatusLeadEnum.em_atendimento.value, StatusLeadEnum.qualificado.value]),
+            Lead.status.in_([
+                StatusLeadEnum.em_atendimento.value,
+                StatusLeadEnum.qualificado.value,
+            ]),
         ).all()
 
         for lead in leads:
             # Última mensagem do usuário
             ultima_user = (
                 db.query(MensagemConversa)
-                .filter(MensagemConversa.telefone == lead.telefone, MensagemConversa.role == "user")
+                .filter(
+                    MensagemConversa.telefone == lead.telefone,
+                    MensagemConversa.role == "user",
+                )
                 .order_by(MensagemConversa.id.desc())
                 .first()
             )
-            # Sem mensagem do usuário, ou mensagem recente → pula
+
+            # Nunca mandou mensagem, ou mandou recentemente → pula
             if not ultima_user or ultima_user.criado_em > limite:
                 continue
 
-            # Já enviou follow-up após a última mensagem do usuário → pula
+            # Já enviou follow-up depois da última mensagem do usuário → pula
             if lead.followup_em and lead.followup_em > ultima_user.criado_em:
                 continue
 
-            # Carrega texto configurável
-            config = db.query(Configuracao).filter(Configuracao.chave == "mensagem_followup").first()
+            # Personaliza com nome se disponível
             nome = f" {lead.nome}" if lead.nome else ""
-            texto = config.valor if config else (
-                f"Oi{nome}! 😊 Vi que nossa conversa ficou parada...\n"
-                f"Quando quiser continuar, estou aqui! Gostaria de retomar?"
-            )
+            texto = texto_base.replace("{nome}", nome.strip()).replace("Oi!", f"Oi{nome}!")
 
             await enviar_zapi(lead.telefone, texto)
             _salvar_msg_webhook(db, lead.telefone, texto, role="assistant")
@@ -91,7 +121,7 @@ async def _loop_followup():
     while True:
         print("🔍 Verificando leads para follow-up…")
         await _enviar_followups()
-        await asyncio.sleep(30 * 60)  # 30 minutos
+        await asyncio.sleep(30 * 60)  # a cada 30 minutos
 
 
 # ─── Startup ────────────────────────────────────────────────────────────────────
