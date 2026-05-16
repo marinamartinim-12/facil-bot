@@ -3,6 +3,7 @@ Fácil Financiamentos — Servidor principal v2
 FastAPI + Webhook Z-API + Dashboard com login
 """
 
+import asyncio
 import json
 import os
 import re
@@ -161,8 +162,11 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
             return JSONResponse({"status": "aguardando_humano"})
 
         # Bot ainda está qualificando
-        resposta = processar_mensagem(telefone, texto, db)
-        await enviar_zapi(telefone, resposta)
+        respostas = processar_mensagem(telefone, texto, db)
+        for i, msg in enumerate(respostas):
+            if i > 0:
+                await asyncio.sleep(0.8)
+            await enviar_zapi(telefone, msg)
 
         lead = db.query(Lead).filter(Lead.telefone == telefone).first()
         if lead and lead.status == StatusLeadEnum.qualificado:
@@ -196,8 +200,11 @@ async def receber_webhook_meta(request: Request, db: Session = Depends(get_db)):
             texto = msg["text"]["body"].strip()
             if not texto:
                 continue
-            resposta = processar_mensagem(telefone, texto, db)
-            await enviar_meta(telefone, resposta)
+            respostas = processar_mensagem(telefone, texto, db)
+            for i, msg in enumerate(respostas):
+                if i > 0:
+                    await asyncio.sleep(0.8)
+                await enviar_meta(telefone, msg)
             lead = db.query(Lead).filter(Lead.telefone == telefone).first()
             if lead and lead.status == StatusLeadEnum.qualificado:
                 await _notificar_equipe(telefone, db)
@@ -215,8 +222,8 @@ async def testar_bot(request: Request, db: Session = Depends(get_db)):
     mensagem = body.get("mensagem", "")
     if not mensagem:
         raise HTTPException(status_code=400, detail="Campo 'mensagem' obrigatório")
-    resposta = processar_mensagem(telefone, mensagem, db)
-    return JSONResponse({"resposta": resposta, "telefone": telefone})
+    respostas = processar_mensagem(telefone, mensagem, db)
+    return JSONResponse({"respostas": respostas, "telefone": telefone})
 
 
 # ─── API Leads ───────────────────────────────────────────────────────────────────
