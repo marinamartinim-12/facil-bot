@@ -7,15 +7,15 @@ jobs:
   fix:
     runs-on: ubuntu-latest
     steps:
-      - name: Definir DATABASE_URL para o volume persistente
+      - name: Definir DATABASE_URL para PostgreSQL
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          echo "=== Definindo DATABASE_URL para o volume em /data ==="
+          echo "=== Definindo DATABASE_URL para PostgreSQL ==="
           RESULT=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
             -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"query":"mutation { variableUpsert(input: { projectId: \"e129b873-ae12-48d1-9c6c-0822fb04cfe0\", serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\", name: \"DATABASE_URL\", value: \"sqlite:////data/facil_leads.db\" }) }"}')
+            -d '{"query":"mutation { variableUpsert(input: { projectId: \"e129b873-ae12-48d1-9c6c-0822fb04cfe0\", serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\", name: \"DATABASE_URL\", value: \"${{Postgres.DATABASE_URL}}\" }) }"}')
           echo "Resultado: $RESULT"
 
           echo "=== Disparando redeploy ==="
@@ -25,5 +25,4 @@ jobs:
             -d '{"query":"mutation { serviceInstanceDeploy(serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\") }"}')
           echo "Deploy: $DEPLOY"
 
-          echo "✅ DATABASE_URL definida para sqlite:////data/facil_leads.db"
-          echo "📦 Volume montado em /data — dados persistirão entre deploys!"
+          echo "Pronto! PostgreSQL conectado via referencia Railway"
