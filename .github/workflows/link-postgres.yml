@@ -11,9 +11,38 @@ jobs:
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          echo "=== Variaveis do PostgreSQL ==="
+          echo "=== Buscando variaveis do PostgreSQL ==="
           PG_VARS=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
             -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"query":"{ variables(projectId: \"e129b873-ae12-48d1-9c6c-0822fb04cfe0\", serviceId: \"72bdbae9-c7cd-41f9-9b92-1d050976ed55\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\") }"}')
-          echo "$PG_VARS"
+
+          # Montar DATABASE_URL a partir dos componentes (nao mascarados)
+          DB_URL=$(echo "$PG_VARS" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+v = d['data']['variables']
+user = v['PGUSER']
+password = v['PGPASSWORD']
+host = v['PGHOST']
+port = v['PGPORT']
+db = v['PGDATABASE']
+print(f'postgresql://{user}:{password}@{host}:{port}/{db}')
+")
+          echo "URL construida (host): $(echo $DB_URL | sed 's/:.*@/@/')"
+
+          echo "=== Definindo DATABASE_URL no brave-ambition ==="
+          RESULT=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { variableUpsert(input: { projectId: \\\"e129b873-ae12-48d1-9c6c-0822fb04cfe0\\\", serviceId: \\\"c1e1aad1-1155-48a7-b100-81e97c184334\\\", environmentId: \\\"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\\\", name: \\\"DATABASE_URL\\\", value: \\\"$DB_URL\\\" }) }\"}")
+          echo "Resultado: $RESULT"
+
+          echo "=== Disparando redeploy ==="
+          DEPLOY=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"mutation { serviceInstanceDeploy(serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\") }"}')
+          echo "Deploy: $DEPLOY"
+
+          echo "✅ PostgreSQL conectado ao bot!"
