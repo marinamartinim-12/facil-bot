@@ -76,7 +76,9 @@ Qual serviço você procura?
 2 - Refinanciamento (já tenho um carro e preciso de crédito);"
 
 ETAPA 3 — MODALIDADE (estado: aguardando_modalidade)
-O cliente escolheu 1 ou 2. Identifique:
+O cliente está escolhendo entre os serviços. Qualquer mensagem com "1", "financiamento", "comprar" = opção 1. Qualquer mensagem com "2", "refinanciamento", "já tenho" = opção 2.
+⛔ NUNCA envie a mensagem de boas-vindas neste estado. ⛔ NUNCA retorne proximo_estado "inicio" ou "aguardando_nome".
+
 - Opção 1 / FINANCIAMENTO: quer comprar um veículo → próximo estado: coletando_cidade
 - Opção 2 / REFINANCIAMENTO: já tem veículo e quer crédito → próximo estado: coletando_cpf (pula cidade)
 
@@ -173,6 +175,44 @@ def _salvar_mensagem(db: Session, telefone: str, role: str, conteudo: str):
     db.commit()
 
 
+# Ordem dos estados no fluxo — protege contra regressão
+_ORDEM_ESTADOS = [
+    EstadoConversaEnum.inicio,
+    EstadoConversaEnum.aguardando_nome,
+    EstadoConversaEnum.aguardando_modalidade,
+    EstadoConversaEnum.coletando_cidade,
+    EstadoConversaEnum.coletando_cpf,
+    EstadoConversaEnum.coletando_data_nasc,
+    EstadoConversaEnum.coletando_carro,
+    EstadoConversaEnum.finalizado,
+]
+# Estados terminais: podem ser atingidos de qualquer ponto
+_ESTADOS_TERMINAIS = {EstadoConversaEnum.transferido, EstadoConversaEnum.desqualificado, EstadoConversaEnum.finalizado}
+
+
+def _validar_proximo_estado(estado_atual: str, proximo_estado: str) -> str:
+    """
+    Impede que o bot regrida para um estado anterior.
+    Se Claude retornar um estado anterior ao atual, mantemos o estado atual.
+    Estados terminais (transferido/desqualificado/finalizado) sempre são aceitos.
+    """
+    if proximo_estado in _ESTADOS_TERMINAIS:
+        return proximo_estado
+
+    try:
+        idx_atual = _ORDEM_ESTADOS.index(estado_atual)
+        idx_proximo = _ORDEM_ESTADOS.index(proximo_estado)
+    except ValueError:
+        # Estado desconhecido → mantém atual
+        return estado_atual
+
+    if idx_proximo < idx_atual:
+        print(f"⚠️  Regressão de estado bloqueada: {estado_atual} → {proximo_estado} (mantido: {estado_atual})")
+        return estado_atual
+
+    return proximo_estado
+
+
 def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, qualificado: bool):
     if dados.get("cpf"):
         lead.cpf = _formatar_cpf(dados["cpf"])
@@ -182,10 +222,6 @@ def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, q
         lead.carro_interesse = dados["carro_interesse"]
     if dados.get("nome"):
         lead.nome = dados["nome"]
-    if dados.get("cidade"):
-        # Guarda cidade no campo carro_interesse temporariamente se não houver campo próprio
-        # (usamos observacoes para não sobrescrever nada importante)
-        pass  # cidade é usada apenas para qualificação pelo bot, não precisa persistir separado
     if dados.get("modalidade"):
         modalidade = dados["modalidade"].lower()
         if "refin" in modalidade or "garantia" in modalidade or "cgi" in modalidade:
@@ -193,6 +229,8 @@ def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, q
         elif "financ" in modalidade or "comprar" in modalidade:
             lead.modalidade = ModalidadeEnum.financiamento
 
+    # Protege contra regressão de estado
+    proximo_estado = _validar_proximo_estado(lead.estado_conversa, proximo_estado)
     lead.estado_conversa = proximo_estado
     lead.atualizado_em = datetime.utcnow()
 
@@ -313,7 +351,9 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> str
         f"Veículo: {lead.carro_interesse or 'não informado ainda'}\n\n"
         f"INSTRUÇÃO CRÍTICA: Você está no estado '{lead.estado_conversa}'. "
         f"Siga EXATAMENTE o roteiro a partir deste estado. "
-        f"Não repita etapas já concluídas. Não pule etapas."
+        f"Não repita etapas já concluídas. Não pule etapas. "
+        f"PROIBIDO retornar proximo_estado = 'inicio' ou 'aguardando_nome' se o estado atual não for 'inicio'. "
+        f"PROIBIDO enviar a mensagem de boas-vindas se o estado atual não for 'inicio'."
         + aviso_horario
         + (f"\n\n--- REGRAS DA MODALIDADE ---\n{regras_extra}" if regras_extra else "")
         + (f"\n\n--- MENSAGEM DE FINALIZAÇÃO PERSONALIZADA ---\n{msg_finalizacao}" if msg_finalizacao else "")
