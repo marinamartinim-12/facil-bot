@@ -1399,14 +1399,14 @@
     document.getElementById('modalNovaConversa').style.display = 'none';
   }
 
-  // Fecha modal ao clicar no overlay
-  document.getElementById('modalNovaConversa').addEventListener('click', function(e) {
-    if (e.target === this) fecharModalNovaConversa();
-  });
-
-  // Enter no campo de mensagem envia
-  document.getElementById('novaConversaMensagem').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarNovaConversa(); }
+  // Listeners do modal (elementos criados após este script, aguarda DOM pronto)
+  window.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('modalNovaConversa').addEventListener('click', function(e) {
+      if (e.target === this) fecharModalNovaConversa();
+    });
+    document.getElementById('novaConversaMensagem').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarNovaConversa(); }
+    });
   });
 
   async function enviarNovaConversa() {
