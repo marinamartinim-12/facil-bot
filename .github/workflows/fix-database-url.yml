@@ -17,7 +17,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"query":"{ variables(projectId: \"e129b873-ae12-48d1-9c6c-0822fb04cfe0\", serviceId: \"72bdbae9-c7cd-41f9-9b92-1d050976ed55\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\") }"}')
 
-          DB_URL=$(echo "$PG_VARS" | python3 -c "import sys,json; v=json.load(sys.stdin)['data']['variables']; print('postgresql://{}:{}@{}:{}/{}'.format(v['PGUSER'],v['PGPASSWORD'],v['RAILWAY_TCP_PROXY_DOMAIN'],v['RAILWAY_TCP_PROXY_PORT'],v['PGDATABASE']))")
+          DB_URL="sqlite:////data/facil_leads.db"
           echo "Host: $(echo $DB_URL | sed 's|//.*@|//***@|')"
 
           echo "=== Definindo DATABASE_URL no brave-ambition ==="
