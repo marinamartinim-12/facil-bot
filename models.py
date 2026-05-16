@@ -99,6 +99,7 @@ class Lead(Base):
     estado_conversa = Column(String(40), default=EstadoConversaEnum.inicio)
     atribuido_para = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
     assumido_em = Column(DateTime, nullable=True)
+    followup_em = Column(DateTime, nullable=True)
     observacoes = Column(Text, nullable=True)
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

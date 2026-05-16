@@ -8,7 +8,7 @@ import json
 import os
 import re
 import httpx
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, Depends, HTTPException, Query, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from pathlib import Path
@@ -21,6 +21,77 @@ from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, 
 
 settings = get_settings()
 app = FastAPI(title="Fácil Financiamentos", version="2.0.0")
+
+
+# ─── Follow-up automático ───────────────────────────────────────────────────────
+
+_ESTADOS_BOT_ATIVO = [
+    EstadoConversaEnum.aguardando_nome,
+    EstadoConversaEnum.coletando_cidade,
+    EstadoConversaEnum.aguardando_modalidade,
+    EstadoConversaEnum.coletando_cpf,
+    EstadoConversaEnum.coletando_data_nasc,
+    EstadoConversaEnum.coletando_carro,
+]
+
+async def _enviar_followups():
+    from models import SessionLocal
+    db = SessionLocal()
+    try:
+        # Carrega horas configuradas (padrão 4)
+        config_horas = db.query(Configuracao).filter(Configuracao.chave == "followup_horas").first()
+        horas = int(config_horas.valor) if config_horas and config_horas.valor.isdigit() else 4
+        limite = datetime.utcnow() - timedelta(hours=horas)
+
+        # Leads ainda no fluxo do bot e não assumidos por humano
+        leads = db.query(Lead).filter(
+            Lead.estado_conversa.in_([e.value for e in _ESTADOS_BOT_ATIVO]),
+            Lead.status.in_([StatusLeadEnum.em_atendimento.value, StatusLeadEnum.qualificado.value]),
+        ).all()
+
+        for lead in leads:
+            # Última mensagem do usuário
+            ultima_user = (
+                db.query(MensagemConversa)
+                .filter(MensagemConversa.telefone == lead.telefone, MensagemConversa.role == "user")
+                .order_by(MensagemConversa.id.desc())
+                .first()
+            )
+            # Sem mensagem do usuário, ou mensagem recente → pula
+            if not ultima_user or ultima_user.criado_em > limite:
+                continue
+
+            # Já enviou follow-up após a última mensagem do usuário → pula
+            if lead.followup_em and lead.followup_em > ultima_user.criado_em:
+                continue
+
+            # Carrega texto configurável
+            config = db.query(Configuracao).filter(Configuracao.chave == "mensagem_followup").first()
+            nome = f" {lead.nome}" if lead.nome else ""
+            texto = config.valor if config else (
+                f"Oi{nome}! 😊 Vi que nossa conversa ficou parada...\n"
+                f"Quando quiser continuar, estou aqui! Gostaria de retomar?"
+            )
+
+            await enviar_zapi(lead.telefone, texto)
+            _salvar_msg_webhook(db, lead.telefone, texto, role="assistant")
+            lead.followup_em = datetime.utcnow()
+            db.commit()
+            print(f"📨 Follow-up enviado para {lead.telefone}")
+
+    except Exception as e:
+        print(f"❌ Erro no follow-up: {e}")
+    finally:
+        db.close()
+
+
+async def _loop_followup():
+    """Roda a cada 30 minutos verificando leads parados."""
+    await asyncio.sleep(60)  # aguarda 1 min após startup
+    while True:
+        print("🔍 Verificando leads para follow-up…")
+        await _enviar_followups()
+        await asyncio.sleep(30 * 60)  # 30 minutos
 
 
 # ─── Startup ────────────────────────────────────────────────────────────────────
@@ -63,9 +134,22 @@ async def startup():
     finally:
         pass
 
+    # Migração: adiciona coluna followup_em se não existir
+    try:
+        from sqlalchemy import text
+        with db_startup.bind.connect() as conn:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN followup_em DATETIME"))
+            conn.commit()
+        print("✅ Coluna followup_em adicionada")
+    except Exception:
+        pass  # Coluna já existe
+
     # Configurações padrão do bot
     _criar_config_padrao(db_startup)
     db_startup.close()
+
+    # Inicia tarefa de follow-up automático
+    asyncio.create_task(_loop_followup())
 
     print("✅ Fácil Financiamentos Bot v2 iniciado!")
     print(f"🗄️  Banco: {settings.DATABASE_URL}")
@@ -839,6 +923,16 @@ def _criar_config_padrao(db: Session):
             "chave": "mensagem_finalizacao",
             "descricao": "Mensagem de encerramento após coletar todos os dados",
             "valor": "Obrigado pelas confirmações, em breve uma de nossas consultoras, entrará em contato. 🤝",
+        },
+        {
+            "chave": "mensagem_followup",
+            "descricao": "Mensagem enviada automaticamente após 4h sem resposta do cliente",
+            "valor": "Oi! 😊 Vi que nossa conversa ficou parada...\nQuando quiser continuar, estou aqui! Gostaria de retomar?",
+        },
+        {
+            "chave": "followup_horas",
+            "descricao": "Horas de inatividade antes de enviar o follow-up (padrão: 4)",
+            "valor": "4",
         },
     ]
 
