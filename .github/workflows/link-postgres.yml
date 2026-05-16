@@ -1,0 +1,55 @@
+name: Conectar PostgreSQL ao bot
+
+on:
+  workflow_dispatch:
+
+jobs:
+  link:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Buscar variaveis do PostgreSQL
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          echo "=== Variaveis do servico Postgres ==="
+          PG_VARS=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"{ variables(projectId: \"e129b873-ae12-48d1-9c6c-0822fb04cfe0\", serviceId: \"72bdbae9-c7cd-41f9-9b92-1d050976ed55\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\") }"}')
+          echo "PG Vars: $PG_VARS"
+
+          # Extrair DATABASE_URL do Postgres
+          DB_URL=$(echo "$PG_VARS" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+vars = d.get('data', {}).get('variables', {})
+# Tenta DATABASE_URL, DATABASE_PRIVATE_URL ou DATABASE_PUBLIC_URL
+url = vars.get('DATABASE_URL') or vars.get('DATABASE_PRIVATE_URL') or vars.get('DATABASE_PUBLIC_URL') or vars.get('POSTGRES_URL') or ''
+print(url)
+" 2>/dev/null)
+
+          echo "DB_URL encontrada: ${DB_URL:0:30}..."
+
+          if [ -z "$DB_URL" ]; then
+            echo "❌ Nao encontrou DATABASE_URL automaticamente"
+            echo "Variaveis disponiveis:"
+            echo "$PG_VARS" | python3 -c "import sys,json; d=json.load(sys.stdin); [print(k) for k in d.get('data',{}).get('variables',{}).keys()]" 2>/dev/null
+            exit 1
+          fi
+
+          echo "=== Definindo DATABASE_URL no servico brave-ambition ==="
+          RESULT=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-urlencode "" \
+            -d "{\"query\":\"mutation { variableUpsert(input: { projectId: \\\"e129b873-ae12-48d1-9c6c-0822fb04cfe0\\\", serviceId: \\\"c1e1aad1-1155-48a7-b100-81e97c184334\\\", environmentId: \\\"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\\\", name: \\\"DATABASE_URL\\\", value: \\\"$DB_URL\\\" }) }\"}")
+          echo "Resultado: $RESULT"
+
+          echo "=== Disparando redeploy ==="
+          DEPLOY=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"mutation { serviceInstanceDeploy(serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\") }"}')
+          echo "Deploy: $DEPLOY"
+
+          echo "✅ PostgreSQL conectado!"
