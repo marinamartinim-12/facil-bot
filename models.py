@@ -3,14 +3,35 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 import enum
+import os
 
 from config import get_settings
 
 settings = get_settings()
 
+def _resolver_database_url() -> str:
+    url = settings.DATABASE_URL
+    if "sqlite" in url:
+        # Garante que o diretório existe
+        caminho = url.replace("sqlite:///", "").lstrip("/")
+        if url.startswith("sqlite:////"):
+            caminho = "/" + url[len("sqlite:////"):]
+        diretorio = os.path.dirname(caminho)
+        if diretorio:
+            try:
+                os.makedirs(diretorio, exist_ok=True)
+            except Exception:
+                # Fallback: usa /app se não conseguir criar o diretório
+                print(f"⚠️ Não foi possível usar {url} — fallback para /app/facil_leads.db")
+                return "sqlite:////app/facil_leads.db"
+    return url
+
+_DATABASE_URL = _resolver_database_url()
+print(f"🗄️  DATABASE_URL resolvida: {_DATABASE_URL}")
+
 engine = create_engine(
-    settings.DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
+    _DATABASE_URL,
+    connect_args={"check_same_thread": False} if "sqlite" in _DATABASE_URL else {},
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
