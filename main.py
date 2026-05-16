@@ -5,6 +5,7 @@ FastAPI + Webhook Z-API + Dashboard com login
 
 import json
 import os
+import re
 import httpx
 from datetime import datetime
 from fastapi import FastAPI, Request, Depends, HTTPException, Query, Response
@@ -313,6 +314,49 @@ async def mover_lead(
     lead.atualizado_em = datetime.utcnow()
     db.commit()
     db.refresh(lead)
+    return _serial_lead(lead, db)
+
+
+@app.post("/api/conversa/iniciar")
+async def iniciar_conversa(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Funcionário inicia uma nova conversa com um número de WhatsApp."""
+    body = await request.json()
+    telefone = re.sub(r"\D", "", body.get("telefone", ""))
+    texto = body.get("mensagem", "").strip()
+
+    if not telefone or len(telefone) < 10:
+        raise HTTPException(status_code=400, detail="Número de telefone inválido")
+    if not texto:
+        raise HTTPException(status_code=400, detail="Mensagem não pode ser vazia")
+
+    # Busca ou cria o lead
+    lead = db.query(Lead).filter(Lead.telefone == telefone).first()
+    if not lead:
+        lead = Lead(
+            telefone=telefone,
+            status=StatusLeadEnum.assumido,
+            atribuido_para=usuario.id,
+            assumido_em=datetime.utcnow(),
+            estado_conversa="transferido",
+        )
+        db.add(lead)
+        db.commit()
+        db.refresh(lead)
+    elif lead.status not in [StatusLeadEnum.assumido, StatusLeadEnum.proposta_enviada]:
+        lead.status = StatusLeadEnum.assumido
+        lead.atribuido_para = usuario.id
+        lead.assumido_em = datetime.utcnow()
+        lead.atualizado_em = datetime.utcnow()
+        db.commit()
+
+    # Salva e envia
+    _salvar_msg_webhook(db, telefone, f"[{usuario.nome}]: {texto}", role="assistant")
+    await enviar_zapi(telefone, texto)
+
     return _serial_lead(lead, db)
 
 
