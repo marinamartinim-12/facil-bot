@@ -544,11 +544,16 @@
         <div style="display:flex;gap:1rem;height:calc(100vh - 115px)">
           <!-- Lista conversas -->
           <div style="width:300px;min-width:300px;background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
-            <div style="padding:.75rem 1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-              <span style="font-weight:700;font-size:.9rem;color:var(--navy)">💬 Conversas</span>
-              <button class="btn btn-primary btn-sm" onclick="abrirModalNovaConversa()" title="Iniciar nova conversa" style="padding:.3rem .7rem;font-size:.8rem;border-radius:999px;gap:.3rem;display:flex;align-items:center">
-                ✏️ Nova
-              </button>
+            <div style="padding:.75rem 1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+              <span style="font-weight:700;font-size:.9rem;color:var(--navy);white-space:nowrap">💬 Conversas</span>
+              <div style="display:flex;gap:.4rem">
+                <button id="btnSincronizar" class="btn btn-sm" onclick="sincronizarChats()" title="Importar conversas do WhatsApp" style="padding:.3rem .6rem;font-size:.78rem;border-radius:999px;background:#e8f5e9;color:#1b5e20;border:1px solid #a5d6a7">
+                  🔄 Sincronizar
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="abrirModalNovaConversa()" title="Iniciar nova conversa" style="padding:.3rem .7rem;font-size:.8rem;border-radius:999px">
+                  ✏️ Nova
+                </button>
+              </div>
             </div>
             <div id="inboxList" style="flex:1;overflow-y:auto"></div>
           </div>
@@ -1445,6 +1450,21 @@
 
   // ═══════ INIT ═══════
   verificarSessao();
+
+  // ═══════ SINCRONIZAR CHATS ═══════
+  async function sincronizarChats() {
+    const btn = document.getElementById('btnSincronizar');
+    btn.disabled = true;
+    btn.textContent = '⏳ Sincronizando…';
+    try {
+      const r = await fetch('/api/sincronizar-chats', { method: 'POST' });
+      const d = await r.json();
+      if (!r.ok) { alert('Erro: ' + (d.detail || 'Falha na sincronização.')); return; }
+      await carregarInbox();
+      alert(`✅ Sincronização concluída!\n\n${d.criados} contato(s) novo(s) importado(s)\n${d.ignorados} já existiam ou foram ignorados (grupos/spam)`);
+    } catch { alert('Erro de rede. Tente novamente.'); }
+    finally { btn.disabled = false; btn.textContent = '🔄 Sincronizar'; }
+  }
 
   // ═══════ NOVA CONVERSA ═══════
   function abrirModalNovaConversa() {

@@ -499,6 +499,81 @@ async def fechar_lead(
     return _serial_lead(lead, db)
 
 
+@app.post("/api/sincronizar-chats")
+async def sincronizar_chats(
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Importa todos os chats existentes do WhatsApp para o painel."""
+    if not settings.ZAPI_INSTANCE or not settings.ZAPI_TOKEN:
+        raise HTTPException(status_code=400, detail="Z-API não configurada.")
+
+    base = f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE}/token/{settings.ZAPI_TOKEN}"
+    headers = {"Client-Token": settings.ZAPI_CLIENT_TOKEN}
+
+    criados = 0
+    ignorados = 0
+    page = 1
+
+    async with httpx.AsyncClient() as http:
+        while True:
+            resp = await http.get(
+                f"{base}/chats",
+                headers=headers,
+                params={"page": page, "pageSize": 100},
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                raise HTTPException(status_code=502, detail=f"Erro Z-API: {resp.text}")
+
+            chats = resp.json()
+            if not chats:
+                break
+
+            for chat in chats:
+                # Ignora grupos, broadcasts e spam
+                if chat.get("isGroup") or chat.get("isMarkedSpam"):
+                    ignorados += 1
+                    continue
+
+                telefone = re.sub(r"\D", "", chat.get("phone", ""))
+                if not telefone or len(telefone) < 10:
+                    ignorados += 1
+                    continue
+
+                # Só cria se ainda não existe
+                existente = db.query(Lead).filter(Lead.telefone == telefone).first()
+                if not existente:
+                    nome = chat.get("name") or None
+                    # Ignora se o nome for igual ao telefone (sem nome real)
+                    if nome and re.sub(r"\D", "", nome) == telefone:
+                        nome = None
+                    lead = Lead(
+                        telefone=telefone,
+                        nome=nome,
+                        status=StatusLeadEnum.em_atendimento,
+                        estado_conversa=EstadoConversaEnum.transferido,
+                    )
+                    db.add(lead)
+                    criados += 1
+                else:
+                    # Atualiza nome se ainda não tinha
+                    nome = chat.get("name") or None
+                    if nome and re.sub(r"\D", "", nome) == telefone:
+                        nome = None
+                    if nome and not existente.nome:
+                        existente.nome = nome
+                    ignorados += 1
+
+            db.commit()
+
+            if len(chats) < 100:
+                break
+            page += 1
+
+    return {"criados": criados, "ignorados": ignorados, "total_paginas": page}
+
+
 @app.get("/api/stats")
 async def estatisticas(
     db: Session = Depends(get_db),
