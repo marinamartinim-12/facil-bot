@@ -11,11 +11,11 @@ jobs:
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          echo "=== Criando volume ==="
+          echo "=== Criando e montando volume ==="
           VOL=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
             -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"query":"mutation { volumeCreate(input: { projectId: \"e129b873-ae12-48d1-9c6c-0822fb04cfe0\", name: \"facil-bot-data\" }) { id name } }"}')
+            -d '{"query":"mutation { volumeCreate(input: { projectId: \"e129b873-ae12-48d1-9c6c-0822fb04cfe0\", serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\", mountPath: \"/data\" }) { id mountPath } }"}')
           echo "Volume: $VOL"
 
           VOLUME_ID=$(echo "$VOL" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('volumeCreate',{}).get('id',''))" 2>/dev/null)
@@ -25,13 +25,6 @@ jobs:
             echo "❌ Falha ao criar volume"
             exit 1
           fi
-
-          echo "=== Montando volume no serviço ==="
-          MOUNT=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
-            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"query\":\"mutation { volumeInstanceCreate(input: { volumeId: \\\"$VOLUME_ID\\\", serviceId: \\\"c1e1aad1-1155-48a7-b100-81e97c184334\\\", environmentId: \\\"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\\\", mountPath: \\\"/data\\\" }) { id } }\"}")
-          echo "Mount: $MOUNT"
 
           echo "=== Atualizando DATABASE_URL para usar o volume ==="
           VARS=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
