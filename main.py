@@ -314,6 +314,11 @@ async def mover_lead(
     if novo_status not in [s.value for s in estagios_validos]:
         raise HTTPException(status_code=400, detail="Estágio inválido")
 
+    # Apenas administradores podem marcar como perdido ou desqualificado
+    restritos = [StatusLeadEnum.perdido.value, StatusLeadEnum.desqualificado.value]
+    if novo_status in restritos and usuario.role != RoleEnum.admin:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem remover leads do funil.")
+
     lead.status = novo_status
     if novo_status == StatusLeadEnum.assumido and not lead.atribuido_para:
         lead.atribuido_para = usuario.id

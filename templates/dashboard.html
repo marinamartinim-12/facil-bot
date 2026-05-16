@@ -858,6 +858,12 @@
     if (!dragLeadId) return;
     const lead = allLeads.find(l => l.id === dragLeadId);
     if (!lead || lead.status === colKey) return;
+    // Não-admins não podem mover para Perdido ou Desqualificado
+    if (['perdido','desqualificado'].includes(colKey) && currentUser.role !== 'admin') {
+      alert('Apenas administradores podem remover leads do funil.');
+      dragLeadId = null;
+      return;
+    }
     dragLeadId = null;
     await moverLead(lead.id, colKey, false);
   }
@@ -924,15 +930,15 @@
 
       if (!jaAssumido && lead.status !== 'fechado' && lead.status !== 'perdido')
         acoes += `<button class="btn btn-gold btn-sm" onclick="moverLeadModal(${leadId},'assumido')">👤 Assumir</button>`;
-      if (lead.status === 'qualificado' && podeEditar)
+      if (lead.status === 'qualificado' && podeEditar && isAdmin)
         acoes += `<button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLeadModal(${leadId},'perdido')">❌ Perdido</button>`;
       if (lead.status === 'assumido' && podeEditar)
         acoes += `<button class="btn btn-sm" style="background:#f97316;color:#fff" onclick="moverLeadModal(${leadId},'proposta_enviada')">📄 Proposta</button>`;
-      if (lead.status === 'assumido' && podeEditar)
+      if (lead.status === 'assumido' && podeEditar && isAdmin)
         acoes += `<button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLeadModal(${leadId},'perdido')">❌ Perdido</button>`;
       if (lead.status === 'proposta_enviada' && podeEditar)
         acoes += `<button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="moverLeadModal(${leadId},'fechado')">✓ Fechar</button>`;
-      if (lead.status === 'proposta_enviada' && podeEditar)
+      if (lead.status === 'proposta_enviada' && podeEditar && isAdmin)
         acoes += `<button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLeadModal(${leadId},'perdido')">❌ Perdido</button>`;
       if ((lead.status === 'fechado' || lead.status === 'perdido') && isAdmin)
         acoes += `<button class="btn btn-sm btn-outline" onclick="moverLeadModal(${leadId},'assumido')">↩ Reabrir</button>`;
