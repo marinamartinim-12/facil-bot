@@ -219,23 +219,20 @@ def _proximo_horario_atendimento() -> str:
         return ""
 
     # Calcula próximo turno
-    if dia < 5:
+    if dia < 5:          # Segunda a sexta
         if hora_dec < 9:
-            # Hoje mesmo às 9h
-            return f"hoje às 09h"
-        else:
-            # Próximo dia útil
-            dias_ate_prox = 1 if dia < 4 else (3 if dia == 4 else 2)
-            prox = agora + timedelta(days=dias_ate_prox)
+            return "hoje às 09h"
+        elif dia == 4:   # Sexta após 18h → sábado (trabalhamos!)
+            return "amanhã (sábado) às 09h"
+        else:            # Segunda a quinta após 18h → dia seguinte
             nomes = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"]
-            return f"{nomes[prox.weekday()]} às 09h"
-    elif dia == 5:
+            return f"{nomes[dia + 1]} às 09h"
+    elif dia == 5:       # Sábado
         if hora_dec < 9:
             return "hoje (sábado) às 09h"
-        else:
+        else:            # Sábado após 13h → segunda
             return "segunda-feira às 09h"
-    else:
-        # Domingo
+    else:                # Domingo → segunda
         return "segunda-feira às 09h"
 
 
