@@ -256,25 +256,146 @@
       transition: border .15s;
     }
     .obs-textarea:focus { border-color: var(--navy); }
-    /* Coluna direita: chat */
-    .modal-right { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ══════════════════════════════════════════
+       WHATSAPP WEB — estilo global de chat
+    ══════════════════════════════════════════ */
+    :root {
+      --wsp-header: #075e54;
+      --wsp-header2: #128C7E;
+      --wsp-bg: #efeae2;
+      --wsp-bubble-in: #ffffff;      /* cliente (esquerda) */
+      --wsp-bubble-out: #d9fdd3;     /* bot / atendente (direita) */
+      --wsp-input-bg: #f0f2f5;
+      --wsp-send: #00a884;
+      --wsp-tick: #53bdeb;
+      --wsp-ts: #667781;
+      --wsp-avatar: #dfe5e7;
+    }
+
+    /* ── Coluna direita: chat (modal) ── */
+    .modal-right { flex: 1; display: flex; flex-direction: column; overflow: hidden; border-radius: 0 0 12px 0; }
     .modal-chat-title {
-      padding: .65rem 1rem; border-bottom: 1px solid var(--border);
-      font-size: .78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+      background: var(--wsp-header);
+      padding: .6rem 1rem; font-size: .82rem; font-weight: 600;
+      color: rgba(255,255,255,.85); letter-spacing: .03em;
     }
     .modal-chat-msgs {
-      flex: 1; overflow-y: auto; padding: .75rem 1rem; display: flex; flex-direction: column; gap: .5rem; background: #e5ddd5;
+      flex: 1; overflow-y: auto; padding: .75rem 1rem;
+      display: flex; flex-direction: column; gap: 3px;
+      background: var(--wsp-bg);
+      background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c9b99a' fill-opacity='0.15'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
     }
-    .chat-bubble-wrap { display: flex; flex-direction: column; max-width: 78%; }
-    .chat-bubble-wrap.from-client { align-self: flex-end; align-items: flex-end; }
-    .chat-bubble-wrap.from-us { align-self: flex-start; align-items: flex-start; }
-    .chat-bubble {
-      padding: .5rem .85rem; border-radius: 12px; font-size: .85rem; line-height: 1.5;
-      word-break: break-word; white-space: pre-wrap; box-shadow: 0 1px 2px rgba(0,0,0,.1);
+
+    /* ── Bolhas ── */
+    .wsp-row { display: flex; margin: 1px 0; }
+    .wsp-row.out { justify-content: flex-end; }
+    .wsp-row.in  { justify-content: flex-start; }
+
+    .wsp-bubble {
+      position: relative;
+      max-width: 70%;
+      padding: 6px 10px 8px 10px;
+      border-radius: 7.5px;
+      font-size: .875rem;
+      line-height: 1.45;
+      word-break: break-word;
+      white-space: pre-wrap;
+      box-shadow: 0 1px 2px rgba(0,0,0,.13);
     }
-    .from-client .chat-bubble { background: #fff; border-bottom-right-radius: 3px; }
-    .from-us .chat-bubble { background: #dcf8c6; border-bottom-left-radius: 3px; }
-    .bubble-meta { font-size: .65rem; color: var(--muted); margin-top: 2px; }
+    .wsp-row.in  .wsp-bubble { background: var(--wsp-bubble-in);  border-top-left-radius: 0; }
+    .wsp-row.out .wsp-bubble { background: var(--wsp-bubble-out); border-top-right-radius: 0; }
+
+    /* Rabo da bolha (esquerda) */
+    .wsp-row.in .wsp-bubble::before {
+      content: ''; position: absolute; top: 0; left: -8px;
+      width: 0; height: 0;
+      border-top: 8px solid var(--wsp-bubble-in);
+      border-left: 8px solid transparent;
+    }
+    /* Rabo da bolha (direita) */
+    .wsp-row.out .wsp-bubble::before {
+      content: ''; position: absolute; top: 0; right: -8px;
+      width: 0; height: 0;
+      border-top: 8px solid var(--wsp-bubble-out);
+      border-right: 8px solid transparent;
+    }
+
+    /* Metadados dentro da bolha */
+    .wsp-meta {
+      display: flex; align-items: center; gap: 3px;
+      float: right; margin: 2px 0 -2px 6px;
+      font-size: .68rem; color: var(--wsp-ts); white-space: nowrap;
+    }
+    .wsp-tick { color: var(--wsp-tick); font-size: .72rem; }
+    .wsp-sender { font-size: .72rem; font-weight: 600; color: var(--wsp-header2); margin-bottom: 1px; }
+    .wsp-date-divider {
+      text-align: center; margin: 8px 0;
+    }
+    .wsp-date-divider span {
+      background: #e1f2fb; color: #54656f; font-size: .72rem;
+      padding: 3px 10px; border-radius: 99px; box-shadow: 0 1px 2px rgba(0,0,0,.1);
+    }
+
+    /* ── Header WhatsApp ── */
+    .wsp-header {
+      background: var(--wsp-header);
+      padding: .6rem 1rem;
+      display: flex; align-items: center; gap: .75rem;
+      flex-shrink: 0;
+    }
+    .wsp-header-avatar {
+      width: 38px; height: 38px; border-radius: 50%;
+      background: var(--wsp-avatar); display: flex; align-items: center;
+      justify-content: center; font-weight: 700; font-size: 1rem;
+      color: #fff; flex-shrink: 0; overflow: hidden;
+    }
+    .wsp-header-info { flex: 1; min-width: 0; }
+    .wsp-header-name { font-weight: 600; font-size: .92rem; color: #fff; }
+    .wsp-header-sub  { font-size: .72rem; color: rgba(255,255,255,.65); }
+    .wsp-header-actions { display: flex; gap: .4rem; align-items: center; }
+
+    /* ── Input WhatsApp ── */
+    .wsp-input-bar {
+      background: var(--wsp-input-bg);
+      padding: .5rem .75rem;
+      display: flex; align-items: center; gap: .5rem;
+      border-top: 1px solid #e9edef;
+      flex-shrink: 0;
+    }
+    .wsp-input-bar input {
+      flex: 1; border: none; background: #fff; border-radius: 20px;
+      padding: .5rem 1rem; font-size: .9rem; outline: none; color: #111;
+    }
+    .wsp-send-btn {
+      width: 40px; height: 40px; border-radius: 50%; background: var(--wsp-send);
+      border: none; cursor: pointer; color: #fff; font-size: 1.1rem;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: background .15s;
+    }
+    .wsp-send-btn:hover { background: #008f72; }
+
+    /* ── Lista de conversas (sidebar inbox) ── */
+    .wsp-conv-item {
+      display: flex; align-items: center; gap: .65rem;
+      padding: .7rem 1rem; border-bottom: 1px solid #e9edef;
+      cursor: pointer; transition: background .1s;
+    }
+    .wsp-conv-item:hover  { background: #f5f6f6; }
+    .wsp-conv-item.active { background: #f0f2f5; }
+    .wsp-conv-avatar {
+      width: 46px; height: 46px; border-radius: 50%;
+      background: var(--wsp-header2); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 1.1rem; flex-shrink: 0;
+    }
+    .wsp-conv-body { flex: 1; min-width: 0; }
+    .wsp-conv-top { display: flex; align-items: baseline; justify-content: space-between; }
+    .wsp-conv-name { font-weight: 600; font-size: .88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+    .wsp-conv-time { font-size: .68rem; color: var(--wsp-ts); flex-shrink: 0; }
+    .wsp-conv-preview { font-size: .78rem; color: var(--wsp-ts); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── Loading / misc ── */
     .loading-msg { text-align: center; padding: 2rem; color: var(--muted); font-size: .88rem; }
 
     /* ── INBOX ── */
@@ -429,26 +550,30 @@
             <div id="inboxList" style="flex:1;overflow-y:auto"></div>
           </div>
           <!-- Chat ativo -->
-          <div style="flex:1;background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
-            <div id="chatHeader" style="padding:.85rem 1.25rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.75rem">
-              <div id="chatAvatar" style="width:38px;height:38px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1rem;flex-shrink:0">?</div>
-              <div>
-                <div id="chatNome" style="font-weight:700;font-size:.92rem">Selecione uma conversa</div>
-                <div id="chatTelefone" style="font-size:.75rem;color:var(--muted)"></div>
+          <div style="flex:1;border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;background:var(--wsp-bg)">
+            <!-- Header WhatsApp -->
+            <div class="wsp-header" id="chatHeader">
+              <div class="wsp-header-avatar" id="chatAvatar">?</div>
+              <div class="wsp-header-info">
+                <div class="wsp-header-name" id="chatNome">Selecione uma conversa</div>
+                <div class="wsp-header-sub" id="chatTelefone"></div>
               </div>
-              <div style="margin-left:auto;display:flex;gap:.5rem;align-items:center">
+              <div class="wsp-header-actions">
                 <button id="btnAssumirChat" class="btn btn-gold btn-sm" style="display:none" onclick="assumirLeadAtivo()">👤 Assumir</button>
-                <button id="btnFecharChat" class="btn btn-sm" style="background:#8b5cf6;color:#fff;display:none" onclick="fecharLeadAtivo()">✓ Fechar lead</button>
+                <button id="btnFecharChat" class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);display:none" onclick="fecharLeadAtivo()">✓ Fechar</button>
               </div>
             </div>
-            <div id="chatMessages" style="flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:.5rem;background:#e5ddd5">
+            <!-- Mensagens -->
+            <div id="chatMessages" style="flex:1;overflow-y:auto;padding:.75rem 1rem;display:flex;flex-direction:column;gap:2px;background:var(--wsp-bg);background-image:url('data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23c9b99a\' fill-opacity=\'0.15\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')">
               <div style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:2rem">👈 Selecione uma conversa ao lado</div>
             </div>
-            <div id="chatInput" style="padding:.75rem 1rem;border-top:1px solid var(--border);display:flex;gap:.5rem;background:var(--white)">
-              <input id="msgInput" type="text" placeholder="Digite sua mensagem…"
-                style="flex:1;border:1.5px solid var(--border);border-radius:99px;padding:.5rem 1rem;font-size:.88rem;outline:none"
+            <!-- Input WhatsApp -->
+            <div class="wsp-input-bar">
+              <input id="msgInput" type="text" placeholder="Digite uma mensagem"
                 onkeydown="if(event.key==='Enter')enviarMensagem()" />
-              <button class="btn btn-primary" onclick="enviarMensagem()" style="border-radius:99px;padding:.5rem 1.1rem">➤</button>
+              <button class="wsp-send-btn" onclick="enviarMensagem()">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M1.101 21.757L23.8 12.028 1.101 2.3l.011 7.912 13.623 1.816-13.623 1.817-.011 7.912z"/></svg>
+              </button>
             </div>
           </div>
         </div>
@@ -513,7 +638,7 @@
       </div>
       <!-- Direita: conversa -->
       <div class="modal-right">
-        <div class="modal-chat-title">💬 Conversa</div>
+        <div class="modal-chat-title">💬 Conversa completa</div>
         <div class="modal-chat-msgs" id="modalChat">
           <div class="loading-msg">Carregando…</div>
         </div>
@@ -823,17 +948,7 @@
       if (!conv.mensagens.length) {
         document.getElementById('modalChat').innerHTML = '<div class="loading-msg">Nenhuma mensagem registrada.</div>';
       } else {
-        document.getElementById('modalChat').innerHTML = conv.mensagens.map(m => {
-          const isCliente = m.role === 'user';
-          const matchFunc = m.conteudo.match(/^\[([^\]]+)\]:\s*/);
-          const conteudo = escHtml(matchFunc ? m.conteudo.replace(matchFunc[0], '') : m.conteudo);
-          const remetente = matchFunc ? matchFunc[1] : null;
-          return `<div class="chat-bubble-wrap ${isCliente ? 'from-client' : 'from-us'}">
-            ${remetente ? `<span class="bubble-meta">👤 ${escHtml(remetente)}</span>` : ''}
-            <div class="chat-bubble">${conteudo}</div>
-            ${m.horario ? `<span class="bubble-meta">${m.horario}</span>` : ''}
-          </div>`;
-        }).join('');
+        document.getElementById('modalChat').innerHTML = renderMensagens(conv.mensagens);
         const chat = document.getElementById('modalChat');
         chat.scrollTop = chat.scrollHeight;
       }
@@ -1027,19 +1142,18 @@
     list.innerHTML = inboxLeads.map(l => {
       const nome = l.nome !== '—' ? l.nome : l.telefone;
       const ativo = chatLeadAtivo && chatLeadAtivo.id === l.id;
-      const cor = statusCorInbox[l.status] || '#6b7280';
       const icon = statusIconInbox[l.status] || '●';
-      return `<div onclick="abrirChat(${l.id})" style="padding:.75rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;background:${ativo?'#f0f4ff':'transparent'};transition:background .1s">
-        <div style="display:flex;align-items:center;gap:.6rem">
-          <div style="width:38px;height:38px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.88rem;flex-shrink:0">${nome[0].toUpperCase()}</div>
-          <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:.35rem">
-              <span style="font-weight:700;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nome)}</span>
-              <span style="font-size:.65rem;color:${cor};flex-shrink:0">${icon}</span>
-            </div>
-            <div style="font-size:.73rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(l.ultima_mensagem||'')}</div>
+      const avatarColors = ['#128C7E','#075e54','#25D366','#34B7F1','#6c47ff'];
+      const avatarColor = avatarColors[(nome.charCodeAt(0)||0) % avatarColors.length];
+      const preview = l.ultima_mensagem ? (l.ultima_mensagem.length > 38 ? l.ultima_mensagem.slice(0,35)+'…' : l.ultima_mensagem) : '';
+      return `<div onclick="abrirChat(${l.id})" class="wsp-conv-item${ativo?' active':''}">
+        <div class="wsp-conv-avatar" style="background:${avatarColor}">${nome[0].toUpperCase()}</div>
+        <div class="wsp-conv-body">
+          <div class="wsp-conv-top">
+            <span class="wsp-conv-name">${esc(nome)}</span>
+            <span class="wsp-conv-time">${l.ultima_hora||''}</span>
           </div>
-          <div style="font-size:.68rem;color:var(--muted);flex-shrink:0">${l.ultima_hora||''}</div>
+          <div class="wsp-conv-preview">${icon} ${esc(preview)}</div>
         </div>
       </div>`;
     }).join('');
@@ -1086,20 +1200,7 @@
       const d = await r.json();
       const box = document.getElementById('chatMessages');
       const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-      box.innerHTML = d.mensagens.map(m => {
-        const isCliente = m.role === 'user';
-        const matchFunc = m.conteudo.match(/^\[([^\]]+)\]:\s*/);
-        const conteudo = escHtml(matchFunc ? m.conteudo.replace(matchFunc[0], '') : m.conteudo);
-        const remetente = matchFunc ? matchFunc[1] : null;
-        return `<div style="display:flex;flex-direction:column;max-width:75%;align-self:${isCliente?'flex-end':'flex-start'};align-items:${isCliente?'flex-end':'flex-start'}">
-          ${remetente ? `<span style="font-size:.68rem;color:var(--muted);margin-bottom:2px">👤 ${escHtml(remetente)}</span>` : ''}
-          <div style="padding:.5rem .85rem;border-radius:12px;font-size:.85rem;line-height:1.5;word-break:break-word;white-space:pre-wrap;
-            background:${isCliente?'#fff':'#dcf8c6'};
-            border-bottom-${isCliente?'right':'left'}-radius:3px;
-            box-shadow:0 1px 2px rgba(0,0,0,.1)">${conteudo}</div>
-          ${m.horario ? `<span style="font-size:.68rem;color:var(--muted);margin-top:2px">${m.horario}</span>` : ''}
-        </div>`;
-      }).join('');
+      box.innerHTML = renderMensagens(d.mensagens);
       if (atBottom) box.scrollTop = box.scrollHeight;
     } catch {}
   }
@@ -1188,6 +1289,38 @@
   // ═══════ HELPERS ═══════
   function esc(s) { return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
   function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'); }
+
+  // Renderiza lista de mensagens no estilo WhatsApp Web
+  function renderMensagens(mensagens) {
+    if (!mensagens || !mensagens.length) return '<div class="loading-msg">Nenhuma mensagem.</div>';
+    let html = '';
+    let ultimaData = null;
+    mensagens.forEach(m => {
+      const isCliente = m.role === 'user';
+      const dir = isCliente ? 'in' : 'out';   // cliente=esquerda, bot=direita
+      const matchFunc = m.conteudo.match(/^\[([^\]]+)\]:\s*/);
+      const conteudo = escHtml(matchFunc ? m.conteudo.replace(matchFunc[0], '') : m.conteudo);
+      const remetente = matchFunc ? matchFunc[1] : null;
+      const hora = m.horario || '';
+      // Separador de data
+      const dataStr = hora ? hora.split(' ')[0] : null;
+      if (dataStr && dataStr !== ultimaData) {
+        ultimaData = dataStr;
+        html += `<div class="wsp-date-divider"><span>${dataStr}</span></div>`;
+      }
+      // Tick: ✓✓ para bot, nada para cliente
+      const tick = !isCliente ? `<span class="wsp-tick">✓✓</span>` : '';
+      const remetenteHtml = remetente ? `<div class="wsp-sender">👤 ${escHtml(remetente)}</div>` : '';
+      html += `<div class="wsp-row ${dir}">
+        <div class="wsp-bubble">
+          ${remetenteHtml}
+          ${conteudo}
+          <div class="wsp-meta">${hora ? hora.split(' ')[1]||hora : ''} ${tick}</div>
+        </div>
+      </div>`;
+    });
+    return html;
+  }
   function labMod(m) { return {financiamento:'Financiamento',refinanciamento:'Refinanciamento',indefinido:'Indefinido'}[m]||m; }
   function labSt(s) { return {em_atendimento:'Atend. IA',qualificado:'Qualificado',assumido:'Assumido',proposta_enviada:'Proposta',fechado:'Fechado',perdido:'Perdido',desqualificado:'Fora escopo'}[s]||s; }
   function tempoRelativo(dt) {
