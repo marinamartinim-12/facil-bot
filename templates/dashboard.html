@@ -948,6 +948,12 @@
       if ((lead.status === 'fechado' || lead.status === 'perdido') && isAdmin)
         acoes += `<button class="btn btn-sm btn-outline" onclick="moverLeadModal(${leadId},'assumido')">↩ Reabrir</button>`;
 
+      // Ações exclusivas de admin
+      if (isAdmin) {
+        acoes += `<button class="btn btn-sm" style="background:#6366f1;color:#fff" onclick="abrirModalAtribuir(${leadId})">🔁 Trocar atendente</button>`;
+        acoes += `<button class="btn btn-sm" style="background:#dc2626;color:#fff" onclick="excluirLead(${leadId})">🗑 Excluir</button>`;
+      }
+
       document.getElementById('modalAcoes').innerHTML = acoes || '<span style="font-size:.78rem;color:var(--muted)">Nenhuma ação disponível</span>';
 
       // Chat
@@ -1451,6 +1457,68 @@
   // ═══════ INIT ═══════
   verificarSessao();
 
+  // ═══════ EXCLUIR LEAD ═══════
+  async function excluirLead(leadId) {
+    if (!confirm('⚠️ Excluir este lead permanentemente?\n\nTodas as mensagens também serão apagadas. Esta ação não pode ser desfeita.')) return;
+    try {
+      const r = await fetch(`/api/leads/${leadId}`, { method: 'DELETE' });
+      if (!r.ok) { const d = await r.json(); alert(d.detail || 'Erro ao excluir.'); return; }
+      closeModal();
+      await refresh();
+    } catch { alert('Erro de rede.'); }
+  }
+
+  // ═══════ TROCAR ATENDENTE ═══════
+  let _atribuirLeadId = null;
+  async function abrirModalAtribuir(leadId) {
+    _atribuirLeadId = leadId;
+    document.getElementById('atribuirErro').textContent = '';
+    // Carrega lista de usuários ativos
+    try {
+      const r = await fetch('/api/usuarios');
+      const usuarios = await r.json();
+      const sel = document.getElementById('atribuirSelect');
+      const lead = allLeads.find(l => l.id === leadId);
+      sel.innerHTML = '<option value="">— Sem responsável —</option>' +
+        usuarios.filter(u => u.ativo).map(u =>
+          `<option value="${u.id}" ${lead?.responsavel?.id === u.id ? 'selected' : ''}>${escHtml(u.nome)} (${u.role})</option>`
+        ).join('');
+    } catch { document.getElementById('atribuirErro').textContent = 'Erro ao carregar usuários.'; }
+    document.getElementById('modalAtribuir').style.display = 'flex';
+  }
+
+  function fecharModalAtribuir() {
+    document.getElementById('modalAtribuir').style.display = 'none';
+  }
+
+  async function salvarAtribuicao() {
+    if (!_atribuirLeadId) return;
+    const usuario_id = document.getElementById('atribuirSelect').value || null;
+    const btn = document.getElementById('btnSalvarAtribuir');
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      const r = await fetch(`/api/leads/${_atribuirLeadId}/atribuir`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ usuario_id: usuario_id ? parseInt(usuario_id) : null }),
+      });
+      if (!r.ok) { const d = await r.json(); document.getElementById('atribuirErro').textContent = d.detail || 'Erro.'; return; }
+      const lead = await r.json();
+      // Atualiza localmente
+      const idx = allLeads.findIndex(l => l.id === _atribuirLeadId);
+      if (idx !== -1) allLeads[idx] = lead;
+      fecharModalAtribuir();
+      await verLead(_atribuirLeadId);
+      await refresh();
+    } catch { document.getElementById('atribuirErro').textContent = 'Erro de rede.'; }
+    finally { btn.disabled = false; btn.textContent = 'Salvar'; }
+  }
+
+  window.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('modalAtribuir').addEventListener('click', function(e) {
+      if (e.target === this) fecharModalAtribuir();
+    });
+  });
+
   // ═══════ SINCRONIZAR CHATS ═══════
   async function sincronizarChats() {
     const btn = document.getElementById('btnSincronizar');
@@ -1522,6 +1590,25 @@
     }
   }
 </script>
+
+<!-- ── MODAL: Trocar Atendente ── -->
+<div id="modalAtribuir" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.25);width:100%;max-width:380px;padding:1.75rem 2rem;display:flex;flex-direction:column;gap:1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h3 style="margin:0;font-size:1.05rem;color:var(--navy)">🔁 Trocar Atendente</h3>
+      <button onclick="fecharModalAtribuir()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--muted);line-height:1">×</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:.4rem">
+      <label style="font-size:.82rem;font-weight:600;color:var(--navy)">Atribuir para</label>
+      <select id="atribuirSelect" style="border:1px solid var(--border);border-radius:8px;padding:.6rem .85rem;font-size:.95rem;outline:none;background:#fff"></select>
+    </div>
+    <p id="atribuirErro" style="margin:0;font-size:.82rem;color:#c0392b;min-height:1rem"></p>
+    <div style="display:flex;gap:.75rem;justify-content:flex-end">
+      <button onclick="fecharModalAtribuir()" class="btn btn-sm" style="background:var(--border);color:var(--navy)">Cancelar</button>
+      <button id="btnSalvarAtribuir" onclick="salvarAtribuicao()" class="btn btn-primary btn-sm" style="padding:.5rem 1.25rem">Salvar</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── MODAL: Nova Conversa ── -->
 <div id="modalNovaConversa" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center">

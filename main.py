@@ -574,6 +574,50 @@ async def sincronizar_chats(
     return {"criados": criados, "ignorados": ignorados, "total_paginas": page}
 
 
+@app.delete("/api/leads/{lead_id}")
+async def excluir_lead(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Exclui permanentemente um lead e todas as suas mensagens. Apenas admin."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    db.query(MensagemConversa).filter(MensagemConversa.telefone == lead.telefone).delete()
+    db.delete(lead)
+    db.commit()
+    return {"status": "excluido"}
+
+
+@app.put("/api/leads/{lead_id}/atribuir")
+async def atribuir_lead(
+    lead_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Troca o atendente responsável por um lead. Apenas admin."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    body = await request.json()
+    usuario_id = body.get("usuario_id")
+    if usuario_id:
+        u = db.query(Usuario).filter(Usuario.id == usuario_id, Usuario.ativo == True).first()
+        if not u:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        lead.atribuido_para = u.id
+        lead.assumido_em = lead.assumido_em or datetime.utcnow()
+        if lead.status == StatusLeadEnum.em_atendimento or lead.status == StatusLeadEnum.qualificado:
+            lead.status = StatusLeadEnum.assumido
+    else:
+        lead.atribuido_para = None
+    lead.atualizado_em = datetime.utcnow()
+    db.commit()
+    return _serial_lead(lead, db)
+
+
 @app.get("/api/stats")
 async def estatisticas(
     db: Session = Depends(get_db),
