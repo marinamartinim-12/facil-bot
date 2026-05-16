@@ -695,6 +695,7 @@
     }
     refresh();
     setInterval(refresh, 30000);
+    iniciarPollingInbox();  // Atualiza lista de conversas a cada 5s
   }
 
   document.getElementById('loginSenha').addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); });
@@ -1112,6 +1113,8 @@
   let chatLeadAtivo = null;
   let inboxLeads = [];
   let chatPollingInterval = null;
+  let inboxPollingInterval = null;
+  let ultimasMensagensConhecidas = {};  // leadId → último horario visto
 
   const statusCorInbox = {
     em_atendimento: '#3b82f6', qualificado: '#22c55e', assumido: '#F5C400',
@@ -1122,15 +1125,57 @@
     proposta_enviada: '📄', fechado: '🏁', perdido: '❌'
   };
 
+  // Som de notificação (Web Audio API)
+  function tocarNotificacao() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.setValueAtTime(660, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.4);
+    } catch {}
+  }
+
   async function carregarInbox() {
     try {
       const r = await fetch('/api/inbox');
-      inboxLeads = await r.json();
+      const novosLeads = await r.json();
+
+      // Detecta novas mensagens em qualquer conversa
+      let temNovo = false;
+      novosLeads.forEach(l => {
+        const chave = l.id;
+        const ultimaConhecida = ultimasMensagensConhecidas[chave];
+        if (ultimaConhecida && l.ultima_hora && l.ultima_hora !== ultimaConhecida) {
+          // Mensagem nova — notifica se não for a conversa ativa
+          if (!chatLeadAtivo || chatLeadAtivo.id !== l.id) {
+            l._temNovo = true;
+            temNovo = true;
+          }
+        }
+        ultimasMensagensConhecidas[chave] = l.ultima_hora || '';
+      });
+
+      if (temNovo) tocarNotificacao();
+
+      inboxLeads = novosLeads;
       renderInboxList();
       const badge = document.getElementById('badgeInbox');
-      if (inboxLeads.length > 0) { badge.textContent = inboxLeads.length; badge.style.display = ''; }
+      const ativos = inboxLeads.filter(l => !['fechado','perdido','desqualificado'].includes(l.status));
+      if (ativos.length > 0) { badge.textContent = ativos.length; badge.style.display = ''; }
       else { badge.style.display = 'none'; }
     } catch {}
+  }
+
+  // Inicia polling automático da lista de conversas
+  function iniciarPollingInbox() {
+    if (inboxPollingInterval) clearInterval(inboxPollingInterval);
+    inboxPollingInterval = setInterval(carregarInbox, 5000);
   }
 
   function renderInboxList() {
@@ -1146,14 +1191,15 @@
       const avatarColors = ['#128C7E','#075e54','#25D366','#34B7F1','#6c47ff'];
       const avatarColor = avatarColors[(nome.charCodeAt(0)||0) % avatarColors.length];
       const preview = l.ultima_mensagem ? (l.ultima_mensagem.length > 38 ? l.ultima_mensagem.slice(0,35)+'…' : l.ultima_mensagem) : '';
+      const novo = l._temNovo ? `<span style="min-width:18px;height:18px;background:#25D366;border-radius:99px;color:#fff;font-size:.65rem;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 5px">●</span>` : '';
       return `<div onclick="abrirChat(${l.id})" class="wsp-conv-item${ativo?' active':''}">
         <div class="wsp-conv-avatar" style="background:${avatarColor}">${nome[0].toUpperCase()}</div>
         <div class="wsp-conv-body">
           <div class="wsp-conv-top">
             <span class="wsp-conv-name">${esc(nome)}</span>
-            <span class="wsp-conv-time">${l.ultima_hora||''}</span>
+            <span class="wsp-conv-time" style="${l._temNovo?'color:#25D366;font-weight:700':''}">${l.ultima_hora||''}</span>
           </div>
-          <div class="wsp-conv-preview">${icon} ${esc(preview)}</div>
+          <div class="wsp-conv-preview" style="display:flex;align-items:center;justify-content:space-between">${icon} ${esc(preview)} ${novo}</div>
         </div>
       </div>`;
     }).join('');

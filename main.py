@@ -231,9 +231,13 @@ async def obter_conversa(
         MensagemConversa.telefone == lead.telefone
     ).order_by(MensagemConversa.id).all()
     return {
-        "lead": {"nome": lead.nome, "telefone": lead.telefone},
+        "lead": _serial_lead(lead, db),
         "mensagens": [
-            {"role": m.role, "conteudo": m.conteudo, "horario": m.criado_em.strftime("%H:%M") if m.criado_em else ""}
+            {
+                "role": m.role,
+                "conteudo": m.conteudo,
+                "horario": m.criado_em.strftime("%d/%m/%Y %H:%M") if m.criado_em else "",
+            }
             for m in msgs
         ],
     }
