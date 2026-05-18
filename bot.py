@@ -281,16 +281,19 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
     # Salva mensagem do cliente
     _salvar_mensagem(db, telefone, "user", mensagem_cliente)
 
-    # Aviso de horário (só na finalização)
+    # Aviso de horário — injetado SOMENTE quando o bot está prestes a transferir
+    # (estado coletando_carro → próximo passo é transferido).
+    # Em todos os outros estados, nada é dito sobre horário.
     aviso_horario = ""
-    prox = _proximo_horario_atendimento()
-    if prox:
-        aviso_horario = (
-            f"\n\nATENÇÃO: Estamos fora do horário agora. "
-            f"Na mensagem de finalização, acrescente: "
-            f"'No momento estamos fora do horário. Funcionamos seg-sex das 09h às 18h e sáb das 09h às 13h. "
-            f"Entraremos em contato assim que possível! 🕘'"
-        )
+    if lead.estado_conversa == EstadoConversaEnum.coletando_carro:
+        prox = _proximo_horario_atendimento()
+        if prox:
+            aviso_horario = (
+                f"\n\nATENÇÃO: Estamos fora do horário agora. "
+                f"Após a mensagem 'Ótimo! Já tenho os dados...', acrescente UMA mensagem adicional: "
+                f"'No momento estamos fora do horário. Funcionamos seg-sex das 09h às 18h e sáb das 09h às 13h. "
+                f"Entraremos em contato assim que possível! 🕘'"
+            )
 
     # System com contexto do estado atual
     system = (
