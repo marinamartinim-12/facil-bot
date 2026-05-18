@@ -139,37 +139,54 @@ transferido | desqualificado
 # HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Ordem dos estados — protege contra regressão
-# Fluxo: inicio → nome → modalidade → [cidade →] cpf → nasc → carro → transferido
-_ORDEM_ESTADOS = [
-    EstadoConversaEnum.inicio,
-    EstadoConversaEnum.aguardando_nome,
-    EstadoConversaEnum.aguardando_modalidade,
-    EstadoConversaEnum.coletando_cidade,   # opcional (só financiamento)
-    EstadoConversaEnum.coletando_cpf,
-    EstadoConversaEnum.coletando_data_nasc,
-    EstadoConversaEnum.coletando_carro,
-    EstadoConversaEnum.finalizado,
+# ── Opção 3: Mensagens do estado "inicio" 100% fixas (sem Claude) ──
+MENSAGENS_INICIO = [
+    "Olá ! Seja bem-vindo à Fácil Financiamentos, eleita a melhor plataforma de financiamentos de MG, há 23 anos no mercado.",
+    "Meu nome é Maria, sou assistente virtual da Fácil Financiamentos. 🧕",
+    "Qual o seu nome ?",
 ]
+
 _ESTADOS_TERMINAIS = {
     EstadoConversaEnum.transferido,
     EstadoConversaEnum.desqualificado,
     EstadoConversaEnum.finalizado,
 }
 
+# ── Opção 2: Transições válidas por estado ──
+# Se Claude sugerir algo fora desta lista, o código corrige automaticamente.
+_TRANSICOES_VALIDAS: dict[str, list[str]] = {
+    EstadoConversaEnum.inicio:                ["aguardando_nome"],
+    EstadoConversaEnum.aguardando_nome:       ["aguardando_modalidade"],
+    EstadoConversaEnum.aguardando_modalidade: ["coletando_cidade", "coletando_cpf"],
+    EstadoConversaEnum.coletando_cidade:      ["coletando_cpf", "coletando_cidade", "desqualificado"],
+    EstadoConversaEnum.coletando_cpf:         ["coletando_data_nasc"],
+    EstadoConversaEnum.coletando_data_nasc:   ["coletando_carro"],
+    EstadoConversaEnum.coletando_carro:       ["transferido"],
+}
+
 
 def _validar_proximo_estado(estado_atual: str, proximo_estado: str) -> str:
+    """Garante que a transição de estado é válida. Corrige automaticamente se Claude errar."""
+    # Estados terminais sempre são permitidos
     if proximo_estado in _ESTADOS_TERMINAIS:
         return proximo_estado
-    try:
-        idx_atual   = _ORDEM_ESTADOS.index(estado_atual)
-        idx_proximo = _ORDEM_ESTADOS.index(proximo_estado)
-    except ValueError:
-        return estado_atual
-    if idx_proximo < idx_atual:
-        print(f"⚠️  Regressão bloqueada: {estado_atual} → {proximo_estado}")
-        return estado_atual
-    return proximo_estado
+
+    validos = _TRANSICOES_VALIDAS.get(estado_atual)
+    if validos is None:
+        return estado_atual  # estado não mapeado, mantém
+
+    if proximo_estado in validos:
+        return proximo_estado
+
+    # Claude sugeriu transição inválida — corrige
+    if len(validos) == 1:
+        correto = validos[0]
+        print(f"⚠️  Transição inválida {estado_atual} → {proximo_estado}, forçando {correto}")
+        return correto
+
+    # Múltiplas opções possíveis e nenhuma bateu — mantém estado atual
+    print(f"⚠️  Transição inválida {estado_atual} → {proximo_estado}, mantendo {estado_atual}")
+    return estado_atual
 
 
 def _formatar_cpf(cpf: str) -> str:
@@ -270,16 +287,23 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
         nome = f" {lead.nome}" if lead.nome else ""
         return [f"Olá{nome}! Em breve uma atendente entrará em contato. 😊"]
 
-    # Histórico (antes de salvar a mensagem atual)
+    # Salva mensagem do cliente
+    _salvar_mensagem(db, telefone, "user", mensagem_cliente)
+
+    # ── Opção 3: ESTADO "inicio" 100% determinístico — zero Claude ──
+    if lead.estado_conversa == EstadoConversaEnum.inicio:
+        _atualizar_lead(db, lead, {}, EstadoConversaEnum.aguardando_nome, True)
+        for msg in MENSAGENS_INICIO:
+            _salvar_mensagem(db, telefone, "assistant", msg)
+        return MENSAGENS_INICIO
+
+    # Histórico (usado pelos demais estados)
     historico = (
         db.query(MensagemConversa)
         .filter(MensagemConversa.telefone == telefone)
         .order_by(MensagemConversa.id)
         .all()
     )
-
-    # Salva mensagem do cliente
-    _salvar_mensagem(db, telefone, "user", mensagem_cliente)
 
     # Aviso de horário — injetado SOMENTE quando o bot está prestes a transferir
     # (estado coletando_carro → próximo passo é transferido).
@@ -317,7 +341,7 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
     # Chama o Claude
     try:
         response = client.messages.create(
-            model="claude-haiku-4-5",
+            model="claude-sonnet-4-6",
             max_tokens=1024,
             system=system,
             messages=messages,
