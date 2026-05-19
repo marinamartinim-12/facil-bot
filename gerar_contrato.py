@@ -13,8 +13,30 @@ from pathlib import Path
 from fpdf import FPDF
 from PIL import Image
 
-CONTRATOS_DIR = Path(os.getenv("CONTRATOS_DIR", "/data/contratos"))
-CONTRATOS_DIR.mkdir(parents=True, exist_ok=True)
+def _resolver_contratos_dir():
+    candidatos = [
+        os.getenv("CONTRATOS_DIR"),
+        "/data/contratos",
+        "/app/contratos",
+    ]
+    for c in candidatos:
+        if not c:
+            continue
+        p = Path(c)
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+            print(f"📁 CONTRATOS_DIR: {p}")
+            return p
+        except Exception as exc:
+            print(f"⚠️ Não foi possível criar {c}: {exc}")
+    # último recurso: diretório temporário
+    import tempfile
+    p = Path(tempfile.gettempdir()) / "contratos"
+    p.mkdir(parents=True, exist_ok=True)
+    print(f"📁 CONTRATOS_DIR (fallback tmp): {p}")
+    return p
+
+CONTRATOS_DIR = _resolver_contratos_dir()
 
 NAVY = (13, 43, 78)
 GOLD = (200, 155, 0)

@@ -920,7 +920,14 @@ async def gerar_contrato_endpoint(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
-    from gerar_contrato import gerar_pdf_contrato, salvar_pdf
+    import traceback
+    try:
+        from gerar_contrato import gerar_pdf_contrato, salvar_pdf
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"❌ Erro ao importar gerar_contrato: {tb}")
+        raise HTTPException(500, f"Erro ao importar módulo: {e}")
+
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(404, "Lead não encontrado")
@@ -936,17 +943,28 @@ async def gerar_contrato_endpoint(
     dados.setdefault("data_contrato",
         datetime.now().strftime("%d de %B de %Y").replace(
             "January","Janeiro").replace("February","Fevereiro").replace(
-            "March","Março").replace("April","Abril").replace(
+            "March","Marco").replace("April","Abril").replace(
             "May","Maio").replace("June","Junho").replace(
             "July","Julho").replace("August","Agosto").replace(
             "September","Setembro").replace("October","Outubro").replace(
             "November","Novembro").replace("December","Dezembro"))
 
-    doc_id = secrets.token_hex(8).upper()
-    pdf_bytes, hash_doc = gerar_pdf_contrato(dados, doc_id)
-    token = secrets.token_hex(32)
-    nome_arquivo = f"contrato_{lead_id}_{token[:8]}.pdf"
-    caminho = salvar_pdf(pdf_bytes, nome_arquivo)
+    try:
+        doc_id = secrets.token_hex(8).upper()
+        pdf_bytes, hash_doc = gerar_pdf_contrato(dados, doc_id)
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"❌ Erro ao gerar PDF do contrato:\n{tb}")
+        raise HTTPException(500, f"Erro ao gerar PDF: {e}")
+
+    try:
+        token = secrets.token_hex(32)
+        nome_arquivo = f"contrato_{lead_id}_{token[:8]}.pdf"
+        caminho = salvar_pdf(pdf_bytes, nome_arquivo)
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"❌ Erro ao salvar PDF:\n{tb}")
+        raise HTTPException(500, f"Erro ao salvar PDF: {e}")
 
     contrato = Contrato(
         lead_id=lead_id,
