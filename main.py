@@ -920,19 +920,30 @@ async def gerar_contrato_endpoint(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
-    from gerar_contrato import gerar_pdf_contrato, salvar_pdf, CONTRATOS_DIR
+    from gerar_contrato import gerar_pdf_contrato, salvar_pdf
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(404, "Lead não encontrado")
 
-    lead_data = {
-        "nome": lead.nome, "cpf": lead.cpf,
-        "data_nascimento": lead.data_nascimento,
-        "telefone": lead.telefone,
-        "carro_interesse": lead.carro_interesse,
-        "modalidade": lead.modalidade,
-    }
-    pdf_bytes, hash_doc = gerar_pdf_contrato(lead_data)
+    body = await request.json()
+    dados = body.get("dados", {})
+
+    # Pre-preenche com dados do lead se não fornecidos no form
+    dados.setdefault("req_nome",    lead.nome    or "")
+    dados.setdefault("req_cpf",     lead.cpf     or "")
+    dados.setdefault("req_celular", lead.telefone or "")
+    dados.setdefault("modalidade",  lead.modalidade or "refinanciamento")
+    dados.setdefault("data_contrato",
+        datetime.now().strftime("%d de %B de %Y").replace(
+            "January","Janeiro").replace("February","Fevereiro").replace(
+            "March","Março").replace("April","Abril").replace(
+            "May","Maio").replace("June","Junho").replace(
+            "July","Julho").replace("August","Agosto").replace(
+            "September","Setembro").replace("October","Outubro").replace(
+            "November","Novembro").replace("December","Dezembro"))
+
+    doc_id = secrets.token_hex(8).upper()
+    pdf_bytes, hash_doc = gerar_pdf_contrato(dados, doc_id)
     token = secrets.token_hex(32)
     nome_arquivo = f"contrato_{lead_id}_{token[:8]}.pdf"
     caminho = salvar_pdf(pdf_bytes, nome_arquivo)
@@ -943,6 +954,7 @@ async def gerar_contrato_endpoint(
         token=token,
         hash_doc=hash_doc,
         pdf_original=caminho,
+        dados_contrato=json.dumps(dados, ensure_ascii=False),
         status="pendente",
     )
     db.add(contrato)
@@ -951,7 +963,7 @@ async def gerar_contrato_endpoint(
 
     base_url = str(request.base_url).rstrip("/")
     link = f"{base_url}/assinar/{token}"
-    return {"contrato_id": contrato.id, "link": link, "hash": hash_doc}
+    return {"contrato_id": contrato.id, "link": link, "hash": hash_doc, "doc_id": doc_id}
 
 
 @app.get("/assinar/{token}", response_class=HTMLResponse)
@@ -968,41 +980,46 @@ async def conteudo_contrato(token: str, db: Session = Depends(get_db)):
     if contrato.status == "assinado":
         raise HTTPException(410, "Contrato já assinado")
 
-    # Lê o PDF e extrai texto simples do lead para exibir na tela
-    lead = contrato.lead
-    modalidade = (lead.modalidade or "indefinido").lower()
-    tipo = "Refinanciamento de Veículo" if "refin" in modalidade else "Financiamento de Veículo"
+    d = json.loads(contrato.dados_contrato or "{}") if contrato.dados_contrato else {}
+    modalidade = (d.get("modalidade") or "refinanciamento").lower()
+    verbo = "refinanciamento" if "refin" in modalidade else "financiamento da aquisição"
 
     texto = (
-        f"TERMO DE PRESTAÇÃO DE SERVIÇOS — {tipo.upper()}\n"
-        f"Fácil Financiamentos · Belo Horizonte, MG\n\n"
-        f"DADOS DO CLIENTE\n"
-        f"Nome: {lead.nome or '—'}\n"
-        f"CPF: {lead.cpf or '—'}\n"
-        f"Data de nascimento: {lead.data_nascimento or '—'}\n"
-        f"Telefone: {lead.telefone}\n\n"
-        f"SERVIÇO CONTRATADO\n"
-        f"Modalidade: {tipo}\n"
-        f"Veículo: {lead.carro_interesse or '—'}\n"
-        f"Data: {datetime.now().strftime('%d/%m/%Y')}\n\n"
-        f"OBJETO DO CONTRATO\n"
-        + (
-            "A Fácil Financiamentos obriga-se a prestar serviços de intermediação para obtenção de crédito "
-            "mediante refinanciamento de veículo automotor de propriedade do contratante, junto às instituições "
-            "financeiras credenciadas, nas melhores condições de taxas e prazos disponíveis. O processo ocorre "
-            "100% de forma digital."
-            if "refin" in modalidade else
-            "A Fácil Financiamentos obriga-se a prestar serviços de intermediação para aquisição de veículo "
-            "automotor novo ou usado de terceiros (particular para particular), junto às 9 melhores instituições "
-            "financeiras credenciadas do Brasil, buscando as melhores taxas e condições de parcelamento."
-        ) + "\n\n"
-        f"PROTEÇÃO DE DADOS — LGPD\n"
-        f"Os dados pessoais fornecidos serão utilizados exclusivamente para análise de crédito e intermediação "
-        f"contratual, em conformidade com a Lei 13.709/2018 (LGPD).\n\n"
-        f"ASSINATURA ELETRÔNICA\n"
-        f"Este documento será assinado eletronicamente com validade jurídica nos termos da Lei 14.063/2020. "
-        f"O registro de IP, geolocalização, horário e selfie constituem prova de autenticidade.\n\n"
-        f"Hash do documento (SHA-256):\n{contrato.hash_doc}"
+        f"REQUERIMENTO DE INTERMEDIAÇÃO — PRESTAÇÃO DE SERVIÇOS\n"
+        f"Fácil Financiamentos · Nº {d.get('doc_id','—')} · {d.get('data_contrato','')}\n"
+        f"{'='*60}\n\n"
+        f"DADOS DO REQUERENTE\n"
+        f"Nome: {d.get('req_nome','—')}\n"
+        f"CPF: {d.get('req_cpf','—')}   RG: {d.get('req_rg','—')}\n"
+        f"Endereço: {d.get('req_rua','—')}, Nº {d.get('req_numero','—')} – {d.get('req_bairro','—')} – CEP {d.get('req_cep','—')} – {d.get('req_cidade','—')}\n"
+        f"Celular: {d.get('req_celular','—')}\n\n"
+        f"DADOS DO VEÍCULO\n"
+        f"Marca/Modelo: {d.get('vei_modelo','—')}   Placa: {d.get('vei_placa','—')}   Ano: {d.get('vei_ano','—')}   Cor: {d.get('vei_cor','—')}\n"
+        f"RENAVAM: {d.get('vei_renavam','—')}   Chassi: {d.get('vei_chassi','—')}\n\n"
+        f"OBJETO DO REQUERIMENTO\n"
+        f"Eu {d.get('req_nome','—')}, requeiro que seja INTERMEDIADO o {verbo} do veículo de marca "
+        f"{d.get('vei_modelo','—')}, placa {d.get('vei_placa','—')}, ano {d.get('vei_ano','—')}, "
+        f"cor {d.get('vei_cor','—')}, RENAVAM {d.get('vei_renavam','—')}, CHASSI {d.get('vei_chassi','—')}, "
+        f"adquirido fruto de negociação direta com o seu legítimo proprietário/representante.\n\n"
+        f"DADOS DO PROPRIETÁRIO / VENDEDOR\n"
+        f"Nome: {d.get('prop_nome','—')}\n"
+        f"CPF: {d.get('prop_cpf','—')}   Telefone: {d.get('prop_telefone','—')}\n\n"
+        f"CONDIÇÕES FINANCEIRAS\n"
+        f"Valor líquido: R$ {d.get('fin_valor_liquido','—')}\n"
+        f"Parcelas: {d.get('fin_parcelas','—')}x de R$ {d.get('fin_valor_parcela','—')}   1º venc.: {d.get('fin_vencimento','—')}\n"
+        f"Banco: {d.get('fin_banco','—')}\n\n"
+        f"O valor líquido já está descontado de todas as despesas, consultoria, comissões, taxas, impostos e intermediação.\n"
+        f"Neste ato o requerente que NÃO adquiriu o veículo junto à empresa, sendo que a mesma não se responsabiliza pela documentação e qualidade do mesmo.\n\n"
+        f"{'='*60}\n"
+        f"DECLARO AINDA, QUE NADA MAIS ME FOI PROMETIDO ALÉM DO QUE ESTÁ ESPECIFICADO NESTE REQUERIMENTO.\n"
+        f"{'='*60}\n\n"
+        f"AUTORIZAÇÃO DE PAGAMENTO\n"
+        f"Autorizo o pagamento de R$ {d.get('pag_valor','—')} na conta:\n"
+        f"Beneficiário: {d.get('pag_nome_beneficiario','—')}   CPF: {d.get('pag_cpf_beneficiario','—')}\n"
+        f"Banco: {d.get('pag_banco','—')}   Agência: {d.get('pag_agencia','—')}   Conta: {d.get('pag_conta','—')}\n"
+        f"PIX: {d.get('pag_pix','—')}\n\n"
+        f"Documento assinado eletronicamente (Lei 14.063/2020)\n"
+        f"Hash SHA-256: {contrato.hash_doc}"
     )
     return {"texto": texto, "hash": contrato.hash_doc}
 
@@ -1034,6 +1051,7 @@ async def submeter_assinatura(token: str, request: Request, db: Session = Depend
     # Gera PDF de auditoria
     agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     lead  = contrato.lead
+    d_contrato = json.loads(contrato.dados_contrato or "{}") if contrato.dados_contrato else {}
     audit_bytes = gerar_pdf_assinado(
         pdf_original_bytes=Pt(contrato.pdf_original).read_bytes() if contrato.pdf_original else b"",
         selfie_path=selfie_path,
@@ -1043,9 +1061,10 @@ async def submeter_assinatura(token: str, request: Request, db: Session = Depend
             "ip": ip,
             "geo": geo or "não fornecida",
             "hash_doc": contrato.hash_doc,
-            "nome": lead.nome or "—",
-            "cpf": lead.cpf or "—",
+            "nome": d_contrato.get("req_nome") or lead.nome or "—",
+            "cpf":  d_contrato.get("req_cpf")  or lead.cpf  or "—",
         },
+        doc_id=d_contrato.get("doc_id", ""),
     )
     audit_path = str(base) + "_auditoria.pdf"
     Pt(audit_path).write_bytes(audit_bytes)

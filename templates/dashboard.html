@@ -249,6 +249,21 @@
     .data-item label { display: block; font-size: .68rem; color: var(--muted); font-weight: 600; text-transform: uppercase; margin-bottom: 1px; }
     .data-item span { font-size: .82rem; font-weight: 600; color: var(--text); word-break: break-all; }
     .data-item.full { grid-column: 1 / -1; }
+    /* ── Formulário contrato ── */
+    .fc-secao {
+      font-size: .75rem; font-weight: 700; color: var(--white);
+      background: var(--navy); padding: .3rem .7rem; border-radius: 6px;
+      letter-spacing: .03em; margin-top: .25rem;
+    }
+    .fc-group { display: flex; flex-direction: column; gap: 2px; }
+    .fc-label { font-size: .7rem; font-weight: 600; color: var(--muted); text-transform: uppercase; }
+    .fc-input {
+      border: 1.5px solid var(--border); border-radius: 7px;
+      padding: .42rem .6rem; font-size: .83rem; font-family: inherit;
+      outline: none; transition: border .15s; background: #fff; color: var(--text);
+    }
+    .fc-input:focus { border-color: var(--navy); }
+
     .obs-textarea {
       width: 100%; border: 1.5px solid var(--border); border-radius: 8px;
       padding: .55rem .75rem; font-size: .83rem; font-family: inherit;
@@ -1072,19 +1087,56 @@
     }
   }
 
-  async function gerarContrato() {
+  function gerarContrato() {
     if (!modalLeadId) return;
-    if (!confirm('Gerar um novo contrato para este lead?')) return;
+    const lead = allLeads.find(l => l.id === modalLeadId) || {};
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val && val !== '—') el.value = val; };
+    set('fc_req_nome',    lead.nome);
+    set('fc_req_cpf',     lead.cpf);
+    set('fc_req_celular', lead.telefone);
+    const mod = (lead.modalidade || '').toLowerCase();
+    const sel = document.getElementById('fc_modalidade');
+    if (sel) sel.value = mod.includes('refin') ? 'refinanciamento' : 'financiamento';
+    document.getElementById('modalContrato').classList.add('open');
+  }
+
+  async function submitGerarContrato() {
+    const g = id => document.getElementById(id)?.value?.trim() || '';
+    const dados = {
+      modalidade:            document.getElementById('fc_modalidade')?.value,
+      req_nome:              g('fc_req_nome'),   req_cpf:      g('fc_req_cpf'),
+      req_rg:                g('fc_req_rg'),     req_rua:      g('fc_req_rua'),
+      req_numero:            g('fc_req_numero'), req_bairro:   g('fc_req_bairro'),
+      req_cep:               g('fc_req_cep'),    req_cidade:   g('fc_req_cidade'),
+      req_celular:           g('fc_req_celular'),
+      vei_modelo:            g('fc_vei_modelo'), vei_placa:    g('fc_vei_placa'),
+      vei_ano:               g('fc_vei_ano'),    vei_cor:      g('fc_vei_cor'),
+      vei_renavam:           g('fc_vei_renavam'),vei_chassi:   g('fc_vei_chassi'),
+      prop_nome:             g('fc_prop_nome'),  prop_cpf:     g('fc_prop_cpf'),
+      prop_telefone:         g('fc_prop_telefone'),
+      fin_valor_liquido:     g('fc_fin_valor'),  fin_parcelas: g('fc_fin_parcelas'),
+      fin_valor_parcela:     g('fc_fin_parcela'),fin_vencimento:g('fc_fin_vencimento'),
+      fin_banco:             g('fc_fin_banco'),
+      pag_nome_beneficiario: g('fc_pag_nome'),   pag_cpf_beneficiario: g('fc_pag_cpf'),
+      pag_banco:             g('fc_pag_banco'),  pag_agencia:  g('fc_pag_agencia'),
+      pag_conta:             g('fc_pag_conta'),  pag_pix:      g('fc_pag_pix'),
+      pag_valor:             g('fc_pag_valor'),  pag_banco_negociador: g('fc_fin_banco'),
+    };
+    const btn = document.getElementById('btnGerarContrato');
+    btn.disabled = true; btn.textContent = '⏳ Gerando…';
     try {
-      const r = await fetch(`/api/leads/${modalLeadId}/contrato`, { method: 'POST' });
+      const r = await fetch(`/api/leads/${modalLeadId}/contrato`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ dados })
+      });
       const d = await r.json();
       if (r.ok) {
+        document.getElementById('modalContrato').classList.remove('open');
         await carregarContratos(modalLeadId);
-        if (confirm(`✅ Contrato gerado!\n\nDeseja copiar o link de assinatura agora?\n\n${d.link}`)) {
-          copiarLink(d.link);
-        }
+        if (confirm('✅ Contrato gerado!\n\nCopiar link de assinatura para enviar ao cliente?')) copiarLink(d.link);
       } else { alert(d.detail || 'Erro ao gerar contrato.'); }
     } catch { alert('Erro ao gerar contrato.'); }
+    btn.disabled = false; btn.textContent = '📄 Gerar contrato';
   }
 
   function copiarLink(link) {
@@ -1693,6 +1745,118 @@
     }
   }
 </script>
+
+<!-- ── MODAL: Gerar Contrato ── -->
+<div class="overlay" id="modalContrato" onclick="if(event.target===this)this.classList.remove('open')">
+  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:780px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
+    <!-- Header -->
+    <div style="background:var(--navy);color:#fff;padding:1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div>
+        <div style="font-weight:700;font-size:1rem">📄 Gerar Requerimento de Intermediação</div>
+        <div style="font-size:.75rem;opacity:.65;margin-top:2px">Preencha os dados para gerar o contrato PDF</div>
+      </div>
+      <button onclick="document.getElementById('modalContrato').classList.remove('open')" style="background:none;border:none;color:#fff;font-size:1.4rem;cursor:pointer;opacity:.7;line-height:1">✕</button>
+    </div>
+    <!-- Body com scroll -->
+    <div style="overflow-y:auto;padding:1.25rem 1.5rem;flex:1">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
+
+        <!-- ── COL 1 ── -->
+        <div style="display:flex;flex-direction:column;gap:1rem">
+
+          <!-- Modalidade -->
+          <div class="fc-secao">⚙️ Modalidade do Serviço</div>
+          <div class="fc-group">
+            <label class="fc-label">Modalidade</label>
+            <select id="fc_modalidade" class="fc-input">
+              <option value="refinanciamento">Refinanciamento</option>
+              <option value="financiamento">Financiamento</option>
+            </select>
+          </div>
+
+          <!-- Requerente -->
+          <div class="fc-secao">👤 Dados do Requerente (Cliente)</div>
+          <div class="fc-group"><label class="fc-label">Nome completo *</label><input id="fc_req_nome" class="fc-input" placeholder="Nome completo"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+            <div class="fc-group"><label class="fc-label">CPF *</label><input id="fc_req_cpf" class="fc-input" placeholder="000.000.000-00"></div>
+            <div class="fc-group"><label class="fc-label">RG</label><input id="fc_req_rg" class="fc-input" placeholder="RG"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:.5rem">
+            <div class="fc-group"><label class="fc-label">Rua / Av.</label><input id="fc_req_rua" class="fc-input" placeholder="Nome da rua"></div>
+            <div class="fc-group"><label class="fc-label">Número</label><input id="fc_req_numero" class="fc-input" placeholder="Nº"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+            <div class="fc-group"><label class="fc-label">Bairro</label><input id="fc_req_bairro" class="fc-input" placeholder="Bairro"></div>
+            <div class="fc-group"><label class="fc-label">CEP</label><input id="fc_req_cep" class="fc-input" placeholder="00000-000"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:.5rem">
+            <div class="fc-group"><label class="fc-label">Cidade / UF</label><input id="fc_req_cidade" class="fc-input" placeholder="Cidade/UF"></div>
+            <div class="fc-group"><label class="fc-label">Celular *</label><input id="fc_req_celular" class="fc-input" placeholder="(00) 00000-0000"></div>
+          </div>
+
+          <!-- Proprietário / Vendedor -->
+          <div class="fc-secao">🤝 Proprietário / Vendedor</div>
+          <div class="fc-group"><label class="fc-label">Nome completo</label><input id="fc_prop_nome" class="fc-input" placeholder="Nome do proprietário"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+            <div class="fc-group"><label class="fc-label">CPF</label><input id="fc_prop_cpf" class="fc-input" placeholder="000.000.000-00"></div>
+            <div class="fc-group"><label class="fc-label">Telefone</label><input id="fc_prop_telefone" class="fc-input" placeholder="(00) 00000-0000"></div>
+          </div>
+
+        </div>
+
+        <!-- ── COL 2 ── -->
+        <div style="display:flex;flex-direction:column;gap:1rem">
+
+          <!-- Veículo -->
+          <div class="fc-secao">🚗 Dados do Veículo</div>
+          <div class="fc-group"><label class="fc-label">Marca / Modelo *</label><input id="fc_vei_modelo" class="fc-input" placeholder="Ex: CHEVROLET/ONIX 1.4MT LTZ"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
+            <div class="fc-group"><label class="fc-label">Placa *</label><input id="fc_vei_placa" class="fc-input" placeholder="ABC1D23" style="text-transform:uppercase"></div>
+            <div class="fc-group"><label class="fc-label">Ano</label><input id="fc_vei_ano" class="fc-input" placeholder="2020/2021"></div>
+            <div class="fc-group"><label class="fc-label">Cor</label><input id="fc_vei_cor" class="fc-input" placeholder="Prata"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+            <div class="fc-group"><label class="fc-label">RENAVAM</label><input id="fc_vei_renavam" class="fc-input" placeholder="00000000000"></div>
+            <div class="fc-group"><label class="fc-label">Chassi</label><input id="fc_vei_chassi" class="fc-input" placeholder="9BWZZZ377VT004251" style="text-transform:uppercase"></div>
+          </div>
+
+          <!-- Condições financeiras -->
+          <div class="fc-secao">💰 Condições Financeiras</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+            <div class="fc-group"><label class="fc-label">Valor líquido (R$) *</label><input id="fc_fin_valor" class="fc-input" placeholder="44.000,00"></div>
+            <div class="fc-group"><label class="fc-label">Banco negociador</label><input id="fc_fin_banco" class="fc-input" placeholder="BV, Santander..."></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
+            <div class="fc-group"><label class="fc-label">Nº parcelas</label><input id="fc_fin_parcelas" class="fc-input" placeholder="60"></div>
+            <div class="fc-group"><label class="fc-label">Valor parcela</label><input id="fc_fin_parcela" class="fc-input" placeholder="1.524,00"></div>
+            <div class="fc-group"><label class="fc-label">1º vencimento</label><input id="fc_fin_vencimento" class="fc-input" placeholder="25/03/2026"></div>
+          </div>
+
+          <!-- Dados bancários -->
+          <div class="fc-secao">🏦 Dados Bancários (Pagamento ao Proprietário)</div>
+          <div class="fc-group"><label class="fc-label">Nome do beneficiário *</label><input id="fc_pag_nome" class="fc-input" placeholder="Nome completo"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+            <div class="fc-group"><label class="fc-label">CPF beneficiário</label><input id="fc_pag_cpf" class="fc-input" placeholder="000.000.000-00"></div>
+            <div class="fc-group"><label class="fc-label">Banco</label><input id="fc_pag_banco" class="fc-input" placeholder="Nubank, Itaú..."></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
+            <div class="fc-group"><label class="fc-label">Agência</label><input id="fc_pag_agencia" class="fc-input" placeholder="0001"></div>
+            <div class="fc-group"><label class="fc-label">Conta</label><input id="fc_pag_conta" class="fc-input" placeholder="00000000-0"></div>
+            <div class="fc-group"><label class="fc-label">Valor (R$)</label><input id="fc_pag_valor" class="fc-input" placeholder="44.000,00"></div>
+          </div>
+          <div class="fc-group"><label class="fc-label">PIX</label><input id="fc_pag_pix" class="fc-input" placeholder="CPF, telefone ou chave"></div>
+
+        </div>
+      </div><!-- /grid -->
+    </div><!-- /body scroll -->
+
+    <!-- Footer -->
+    <div style="padding:.9rem 1.5rem;border-top:1px solid var(--border);display:flex;gap:.75rem;justify-content:flex-end;flex-shrink:0;background:#fafbfd">
+      <button onclick="document.getElementById('modalContrato').classList.remove('open')" class="btn btn-outline btn-sm">Cancelar</button>
+      <button id="btnGerarContrato" onclick="submitGerarContrato()" class="btn btn-primary" style="padding:.6rem 1.4rem">📄 Gerar contrato</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── MODAL: Trocar Atendente ── -->
 <div id="modalAtribuir" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center">

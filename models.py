@@ -129,6 +129,7 @@ class Contrato(Base):
     hash_doc        = Column(String(64), nullable=False)
     pdf_original    = Column(String(300), nullable=True)
     pdf_assinado    = Column(String(300), nullable=True)
+    dados_contrato  = Column(Text, nullable=True)          # JSON com todos os campos do formulário
     selfie_path     = Column(String(300), nullable=True)
     assinatura_path = Column(String(300), nullable=True)
     ip_cliente      = Column(String(50), nullable=True)
