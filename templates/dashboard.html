@@ -1133,13 +1133,16 @@
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ dados })
       });
-      const d = await r.json();
+      // Lê o body como texto primeiro para nunca perder a mensagem de erro
+      const txt = await r.text();
+      let d = {};
+      try { d = JSON.parse(txt); } catch { d = { detail: txt }; }
       if (r.ok) {
         document.getElementById('modalContrato').classList.remove('open');
         await carregarContratos(modalLeadId);
         if (confirm('✅ Contrato gerado!\n\nCopiar link de assinatura para enviar ao cliente?')) copiarLink(d.link);
-      } else { alert(d.detail || 'Erro ao gerar contrato.'); }
-    } catch { alert('Erro ao gerar contrato.'); }
+      } else { alert('Erro ao gerar contrato:\n' + (d.detail || txt || r.status)); }
+    } catch(err) { alert('Erro ao gerar contrato:\n' + (err.message || String(err))); }
     btn.disabled = false; btn.textContent = '📄 Gerar contrato';
   }
 

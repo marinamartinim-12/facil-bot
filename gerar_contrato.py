@@ -144,7 +144,7 @@ class RequerimentoPDF(FPDF):
         self.set_text_color(30, 30, 30)
         self.write(6.5, rotulo + ": ")
         self.set_font("Helvetica", "", 10)
-        self.write(6.5, str(valor or "—"))
+        self.write(6.5, str(valor or "-"))
         self.ln(7)
 
     def campo_valor(self, rotulo, valor):
@@ -153,7 +153,7 @@ class RequerimentoPDF(FPDF):
         self.write(6.5, rotulo + ": ")
         self.set_font("Helvetica", "B", 11)
         self.set_text_color(*NAVY)
-        self.write(6.5, str(valor or "—"))
+        self.write(6.5, str(valor or "-"))
         self.ln(8)
 
     def assinatura(self, x, largura, label, nome=""):
@@ -407,18 +407,18 @@ def gerar_pdf_assinado(pdf_original_bytes, selfie_path, assinatura_path,
     audit.subtitulo("Assinatura Eletronica - Lei 14.063/2020 e MP 2.200-2/2001")
 
     audit.campo("Documento n.", doc_id)
-    audit.campo("Assinado em",     dados_auditoria.get("assinado_em", "—"))
-    audit.campo("IP do assinante", dados_auditoria.get("ip", "—"))
+    audit.campo("Assinado em",     dados_auditoria.get("assinado_em", "-"))
+    audit.campo("IP do assinante", dados_auditoria.get("ip", "-"))
     audit.campo("Geolocalizacao",  dados_auditoria.get("geo", "nao fornecida"))
-    audit.campo("Nome",            dados_auditoria.get("nome", "—"))
-    audit.campo("CPF",             dados_auditoria.get("cpf", "—"))
+    audit.campo("Nome",            dados_auditoria.get("nome", "-"))
+    audit.campo("CPF",             dados_auditoria.get("cpf", "-"))
     audit.ln(2)
     audit.set_font("Helvetica", "B", 8)
     audit.set_text_color(80, 80, 80)
     audit.write(5, "Hash SHA-256: ")
     audit.set_font("Helvetica", "", 7)
     audit.set_text_color(60, 60, 60)
-    audit.multi_cell(0, 5, dados_auditoria.get("hash_doc", "—"))
+    audit.multi_cell(0, 5, dados_auditoria.get("hash_doc", "-"))
     audit.ln(5)
 
     if selfie_path and Path(selfie_path).exists():
