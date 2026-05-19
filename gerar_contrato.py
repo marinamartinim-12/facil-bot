@@ -66,9 +66,12 @@ class RequerimentoPDF(FPDF):
 
     # ── Header ────────────────────────────────────────────────────────────────
     def header(self):
-        # Logo (se existir) ou círculo "F"
         if LOGO_PATH.exists():
-            self.image(str(LOGO_PATH), x=25, y=6, h=13)
+            # Logo proporcional: imagem 2341x1094 → ratio ≈ 2.14
+            logo_h = 14.0
+            logo_w = round(logo_h * 2.14, 1)   # ≈ 30mm
+            self.image(str(LOGO_PATH), x=25, y=5, w=logo_w, h=logo_h)
+            txt_x = 25 + logo_w + 4
         else:
             self.set_fill_color(*NAVY)
             self.ellipse(18, 5, 14, 14, "F")
@@ -76,21 +79,18 @@ class RequerimentoPDF(FPDF):
             self.set_text_color(255, 255, 255)
             self.set_xy(20, 9)
             self.cell(10, 5, "F", align="C")
+            txt_x = 35.0
 
-        # Nome da empresa
-        self.set_font("Helvetica", "B", 14)
-        self.set_text_color(*NAVY)
-        self.set_xy(35, 7)
-        self.cell(0, 7, "FACIL FINANCIAMENTOS", new_x="LMARGIN", new_y="NEXT")
-
+        # Endereço ao lado da logo
         self.set_font("Helvetica", "", 7)
         self.set_text_color(100, 110, 125)
-        self.set_x(35)
-        self.cell(
-            0, 4,
-            "Av. Vilarinho, 1560, sala 202 (Sobreloja do Varejao das Tintas) - Venda Nova - BH/MG",
-            new_x="LMARGIN", new_y="NEXT",
-        )
+        self.set_xy(txt_x, 10)
+        self.cell(0, 4,
+                  "Av. Vilarinho, 1560, sala 202 (Sobreloja do Varejao das Tintas)",
+                  new_x="LMARGIN", new_y="NEXT")
+        self.set_x(txt_x)
+        self.cell(0, 4, "Venda Nova - Belo Horizonte / MG",
+                  new_x="LMARGIN", new_y="NEXT")
 
         # Linha dourada
         self.set_draw_color(*GOLD)
