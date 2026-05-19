@@ -147,50 +147,30 @@
 <!-- ══════ ETAPA 2: ASSINATURA DOCUSIGN-STYLE ══════ -->
 <div id="etapa2" style="display:none" class="container">
 
-  <!-- Campo 1: Requerimento -->
   <div class="doc-sheet">
     <div class="doc-sheet-top">
       <span class="doc-badge" id="badge1">Requerente</span>
-      <span class="doc-sheet-title">Requerimento de Intermediação</span>
+      <span class="doc-sheet-title" id="sigSheetTitle">Assinatura do Contrato</span>
     </div>
     <div class="sign-here-banner">
       <div class="sign-pulse"></div>
-      <p>☝️ Assine aqui com o dedo</p>
+      <p>☝️ Assine abaixo com o dedo — sua assinatura será aplicada no contrato</p>
     </div>
     <div class="sig-canvas-wrap" id="sigWrap1">
-      <canvas id="sigCanvas1" height="180"></canvas>
+      <canvas id="sigCanvas1" height="200"></canvas>
     </div>
     <div class="sig-line-bar">
       <div class="sig-name-block">
-        <div class="name" id="sigNome1">Requerente</div>
+        <div class="name" id="sigNome1">Assinante</div>
         <div class="role" id="sigRole1">Assinante</div>
       </div>
       <button class="btn-clear" onclick="limpar(1)">🗑 Limpar</button>
     </div>
   </div>
 
-  <!-- Campo 2: Dados da conta -->
-  <div class="doc-sheet">
-    <div class="doc-sheet-top">
-      <span class="doc-badge" id="badge2">Autorização</span>
-      <span class="doc-sheet-title">Dados da Conta — Autorização de Pagamento</span>
-    </div>
-    <div class="sign-here-banner">
-      <div class="sign-pulse"></div>
-      <p>☝️ Confirme a autorização assinando aqui</p>
-    </div>
-    <div class="sig-canvas-wrap" id="sigWrap2">
-      <canvas id="sigCanvas2" height="180"></canvas>
-    </div>
-    <div class="sig-line-bar">
-      <div class="sig-name-block">
-        <div class="name" id="sigNome2">Requerente</div>
-        <div class="role">Autorizo o pagamento acima</div>
-      </div>
-      <button class="btn-clear" onclick="limpar(2)">🗑 Limpar</button>
-    </div>
-  </div>
-
+  <p style="font-size:.74rem;color:var(--muted);text-align:center;margin:.4rem 0 .7rem">
+    🔒 Sua assinatura será inserida no local indicado no contrato (estilo DocuSign)
+  </p>
   <button class="btn-navy" id="btnProx2" onclick="irEtapa(3)" disabled>Continuar →</button>
 </div>
 
@@ -401,8 +381,8 @@ let role = 'requerente', nomeAssinante = '', telMascaradoGlobal = '';
 let selfieB64 = null, assinB64 = null, frenteB64 = null, versoB64 = null;
 let otpVerificado = false;
 let streams = {};
-let ctx1 = null, ctx2 = null;
-let tem1 = false, tem2 = false;
+let ctx1 = null;
+let tem1 = false;
 let drawing = false, lx = 0, ly = 0, activeCtx = null, activeCanvas = null;
 const prog = {1:'20%',2:'40%',3:'60%',4:'80%',5:'96%'};
 
@@ -437,8 +417,10 @@ async function init() {
 
     const label = isReq ? 'Requerente' : 'Proprietario / Vendedor';
     document.getElementById('badge1').textContent = label;
-    document.getElementById('badge2').textContent = label;
     document.getElementById('sigRole1').textContent = isReq ? 'Assinante / Solicitante' : 'Proprietario / Vendedor';
+    document.getElementById('sigSheetTitle').textContent = isReq
+      ? 'Requerimento de Intermediacao e Autorizacao de Pagamento'
+      : 'Assinatura do Proprietario / Vendedor';
 
     // Telefone mascarado para OTP
     telMascaradoGlobal = d.telefone_mascarado || '';
@@ -466,7 +448,6 @@ function irEtapa(n) {
 // ── Canvas ────────────────────────────────────────────────────────────────────
 function setupCanvas() {
   ctx1 = _initCanvas('sigCanvas1', 'sigWrap1', 1);
-  ctx2 = _initCanvas('sigCanvas2', 'sigWrap2', 2);
 }
 
 function _initCanvas(id, wrapId, num) {
@@ -501,17 +482,15 @@ function stroke(ctx, canvas, num, x, y) {
   ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(x,y); ctx.stroke();
   [lx,ly]=[x,y];
   if (num===1) { tem1=true; document.getElementById('sigWrap1').classList.add('signed'); assinB64=canvas.toDataURL('image/png'); }
-  if (num===2) { tem2=true; document.getElementById('sigWrap2').classList.add('signed'); }
-  document.getElementById('btnProx2').disabled = !(tem1&&tem2);
+  document.getElementById('btnProx2').disabled = !tem1;
 }
 
 function limpar(num) {
   const c = document.getElementById(`sigCanvas${num}`);
-  const ctx = num===1 ? ctx1 : ctx2;
-  ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
-  if (num===1) { tem1=false; assinB64=null; document.getElementById('sigWrap1').classList.remove('signed'); }
-  if (num===2) { tem2=false; document.getElementById('sigWrap2').classList.remove('signed'); }
-  document.getElementById('btnProx2').disabled = !(tem1&&tem2);
+  ctx1.fillStyle='#fff'; ctx1.fillRect(0,0,c.width,c.height);
+  tem1=false; assinB64=null;
+  document.getElementById('sigWrap1').classList.remove('signed');
+  document.getElementById('btnProx2').disabled = true;
 }
 
 // ── Câmera ────────────────────────────────────────────────────────────────────

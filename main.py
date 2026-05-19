@@ -1162,7 +1162,10 @@ async def verificar_codigo_otp(token: str, request: Request, db: Session = Depen
 async def submeter_assinatura(token: str, request: Request, db: Session = Depends(get_db)):
     import traceback as _tb
     try:
-        from gerar_contrato import base64_para_imagem, gerar_pdf_assinado, salvar_pdf, CONTRATOS_DIR
+        from gerar_contrato import (
+            base64_para_imagem, gerar_pdf_final_completo,
+            salvar_pdf, CONTRATOS_DIR,
+        )
         from pathlib import Path as Pt
 
         contrato, role = _detectar_role_contrato(token, db)
@@ -1174,13 +1177,13 @@ async def submeter_assinatura(token: str, request: Request, db: Session = Depend
             raise HTTPException(410, "Contrato ja assinado")
 
         body = await request.json()
-        selfie_b64    = body.get("selfie", "")
-        assin_b64     = body.get("assinatura", "")
+        selfie_b64     = body.get("selfie", "")
+        assin_b64      = body.get("assinatura", "")
         doc_frente_b64 = body.get("doc_frente", "")
         doc_verso_b64  = body.get("doc_verso", "")
-        geo           = body.get("geo", "")
-        ip            = request.client.host if request.client else "desconhecido"
-        agora         = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        geo            = body.get("geo", "")
+        ip             = request.client.host if request.client else "desconhecido"
+        agora          = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
         base = CONTRATOS_DIR / f"contrato_{contrato.lead_id}_{token[:8]}"
         d_contrato = json.loads(contrato.dados_contrato or "{}") if contrato.dados_contrato else {}
@@ -1196,29 +1199,11 @@ async def submeter_assinatura(token: str, request: Request, db: Session = Depend
             base64_para_imagem(doc_frente_b64, Pt(frente_path))
             base64_para_imagem(doc_verso_b64,  Pt(verso_path))
 
-            audit_bytes = gerar_pdf_assinado(
-                pdf_original_bytes=Pt(contrato.pdf_original).read_bytes() if contrato.pdf_original else b"",
-                selfie_path=selfie_path,
-                assinatura_path=assin_path,
-                dados_auditoria={
-                    "assinado_em": agora, "ip": ip, "geo": geo or "nao fornecida",
-                    "hash_doc": contrato.hash_doc,
-                    "nome": d_contrato.get("req_nome") or (contrato.lead.nome if contrato.lead else "-") or "-",
-                    "cpf":  d_contrato.get("req_cpf")  or (contrato.lead.cpf  if contrato.lead else "-") or "-",
-                    "role": "Requerente",
-                },
-                doc_id=d_contrato.get("doc_id", ""),
-                verificacao_url=f"{base_url}/verificar/{contrato.token}",
-            )
-            audit_path = str(base) + "_audit_req.pdf"
-            Pt(audit_path).write_bytes(audit_bytes)
-
             contrato.status              = "assinado"
             contrato.selfie_path         = selfie_path
             contrato.assinatura_path     = assin_path
             contrato.doc_frente_req_path = frente_path
             contrato.doc_verso_req_path  = verso_path
-            contrato.pdf_assinado        = audit_path
             contrato.ip_cliente          = ip
             contrato.geolocalizacao      = geo
             contrato.assinado_em         = datetime.utcnow()
@@ -1233,23 +1218,6 @@ async def submeter_assinatura(token: str, request: Request, db: Session = Depend
             base64_para_imagem(doc_frente_b64, Pt(frente_path))
             base64_para_imagem(doc_verso_b64,  Pt(verso_path))
 
-            audit_bytes = gerar_pdf_assinado(
-                pdf_original_bytes=Pt(contrato.pdf_original).read_bytes() if contrato.pdf_original else b"",
-                selfie_path=selfie_path,
-                assinatura_path=assin_path,
-                dados_auditoria={
-                    "assinado_em": agora, "ip": ip, "geo": geo or "nao fornecida",
-                    "hash_doc": contrato.hash_doc,
-                    "nome": d_contrato.get("prop_nome", "-"),
-                    "cpf":  d_contrato.get("prop_cpf",  "-"),
-                    "role": "Proprietario / Vendedor",
-                },
-                doc_id=d_contrato.get("doc_id", ""),
-                verificacao_url=f"{base_url}/verificar/{contrato.token_prop}",
-            )
-            audit_path = str(base) + "_audit_prop.pdf"
-            Pt(audit_path).write_bytes(audit_bytes)
-
             contrato.status_prop          = "assinado"
             contrato.selfie_prop_path     = selfie_path
             contrato.assinatura_prop_path = assin_path
@@ -1260,6 +1228,53 @@ async def submeter_assinatura(token: str, request: Request, db: Session = Depend
             contrato.assinado_prop_em     = datetime.utcnow()
 
         db.commit()
+        db.refresh(contrato)
+
+        # ── Gera PDF final unificado com todas as assinaturas disponíveis ──────
+        if not contrato.pdf_original or not Pt(contrato.pdf_original).exists():
+            raise HTTPException(500, "PDF original nao encontrado")
+
+        dados_req  = None
+        dados_prop = None
+
+        if contrato.status == "assinado":
+            dados_req = {
+                "assinado_em": contrato.assinado_em.strftime("%d/%m/%Y %H:%M:%S") if contrato.assinado_em else agora,
+                "ip": contrato.ip_cliente or ip,
+                "geo": contrato.geolocalizacao or "nao fornecida",
+                "hash_doc": contrato.hash_doc,
+                "nome": d_contrato.get("req_nome") or (contrato.lead.nome if contrato.lead else "-") or "-",
+                "cpf":  d_contrato.get("req_cpf")  or (contrato.lead.cpf  if contrato.lead else "-") or "-",
+            }
+
+        if contrato.status_prop == "assinado":
+            dados_prop = {
+                "assinado_em": contrato.assinado_prop_em.strftime("%d/%m/%Y %H:%M:%S") if contrato.assinado_prop_em else agora,
+                "ip": contrato.ip_prop or ip,
+                "geo": contrato.geo_prop or "nao fornecida",
+                "hash_doc": contrato.hash_doc,
+                "nome": d_contrato.get("prop_nome", "-"),
+                "cpf":  d_contrato.get("prop_cpf",  "-"),
+            }
+
+        pdf_final = gerar_pdf_final_completo(
+            contrato.pdf_original,
+            assin_req_path=contrato.assinatura_path,
+            selfie_req_path=contrato.selfie_path,
+            dados_req=dados_req,
+            assin_prop_path=contrato.assinatura_prop_path,
+            selfie_prop_path=contrato.selfie_prop_path,
+            dados_prop=dados_prop,
+            doc_id=d_contrato.get("doc_id", ""),
+            verificacao_url_req=f"{base_url}/verificar/{contrato.token}",
+            verificacao_url_prop=f"{base_url}/verificar/{contrato.token_prop}" if contrato.token_prop else "",
+        )
+
+        pdf_final_path = str(base) + "_assinado_final.pdf"
+        Pt(pdf_final_path).write_bytes(pdf_final)
+        contrato.pdf_assinado = pdf_final_path
+        db.commit()
+
         return {"status": "ok", "assinado_em": agora, "role": role}
 
     except HTTPException:
