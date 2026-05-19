@@ -1061,9 +1061,7 @@
   async function carregarContratos(leadId) {
     const el = document.getElementById('listaContratos');
     try {
-      const r = await fetch(`/api/leads/${leadId}/contratos`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const r = await fetch(`/api/leads/${leadId}/contratos`);
       if (!r.ok) { el.innerHTML = '<span style="font-size:.78rem;color:var(--muted);font-style:italic">Nenhum contrato gerado.</span>'; return; }
       const lista = await r.json();
       if (!lista.length) {
@@ -1130,7 +1128,7 @@
     try {
       const r = await fetch(`/api/leads/${modalLeadId}/contrato`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dados })
       });
       // Lê o body como texto primeiro para nunca perder a mensagem de erro
