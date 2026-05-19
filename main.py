@@ -10,12 +10,13 @@ import re
 import httpx
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, Depends, HTTPException, Query, Response
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
+import secrets
 from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, Configuracao, criar_tabelas, get_db, StatusLeadEnum, RoleEnum, EstadoConversaEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, criar_tabelas, get_db, StatusLeadEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
@@ -908,6 +909,193 @@ async def dashboard():
 @app.get("/")
 async def root():
     return {"app": "Fácil Financiamentos Bot v2", "status": "online", "dashboard": "/dashboard"}
+
+
+# ─── Contratos / Assinatura Digital ─────────────────────────────────────────────
+
+@app.post("/api/leads/{lead_id}/contrato")
+async def gerar_contrato_endpoint(
+    lead_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    from gerar_contrato import gerar_pdf_contrato, salvar_pdf, CONTRATOS_DIR
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead não encontrado")
+
+    lead_data = {
+        "nome": lead.nome, "cpf": lead.cpf,
+        "data_nascimento": lead.data_nascimento,
+        "telefone": lead.telefone,
+        "carro_interesse": lead.carro_interesse,
+        "modalidade": lead.modalidade,
+    }
+    pdf_bytes, hash_doc = gerar_pdf_contrato(lead_data)
+    token = secrets.token_hex(32)
+    nome_arquivo = f"contrato_{lead_id}_{token[:8]}.pdf"
+    caminho = salvar_pdf(pdf_bytes, nome_arquivo)
+
+    contrato = Contrato(
+        lead_id=lead_id,
+        criado_por_id=usuario.id,
+        token=token,
+        hash_doc=hash_doc,
+        pdf_original=caminho,
+        status="pendente",
+    )
+    db.add(contrato)
+    db.commit()
+    db.refresh(contrato)
+
+    base_url = str(request.base_url).rstrip("/")
+    link = f"{base_url}/assinar/{token}"
+    return {"contrato_id": contrato.id, "link": link, "hash": hash_doc}
+
+
+@app.get("/assinar/{token}", response_class=HTMLResponse)
+async def pagina_assinar(token: str):
+    caminho = Path("templates/assinar.html")
+    return HTMLResponse(caminho.read_text(encoding="utf-8"))
+
+
+@app.get("/assinar/{token}/conteudo")
+async def conteudo_contrato(token: str, db: Session = Depends(get_db)):
+    contrato = db.query(Contrato).filter(Contrato.token == token).first()
+    if not contrato:
+        raise HTTPException(404, "Contrato não encontrado")
+    if contrato.status == "assinado":
+        raise HTTPException(410, "Contrato já assinado")
+
+    # Lê o PDF e extrai texto simples do lead para exibir na tela
+    lead = contrato.lead
+    modalidade = (lead.modalidade or "indefinido").lower()
+    tipo = "Refinanciamento de Veículo" if "refin" in modalidade else "Financiamento de Veículo"
+
+    texto = (
+        f"TERMO DE PRESTAÇÃO DE SERVIÇOS — {tipo.upper()}\n"
+        f"Fácil Financiamentos · Belo Horizonte, MG\n\n"
+        f"DADOS DO CLIENTE\n"
+        f"Nome: {lead.nome or '—'}\n"
+        f"CPF: {lead.cpf or '—'}\n"
+        f"Data de nascimento: {lead.data_nascimento or '—'}\n"
+        f"Telefone: {lead.telefone}\n\n"
+        f"SERVIÇO CONTRATADO\n"
+        f"Modalidade: {tipo}\n"
+        f"Veículo: {lead.carro_interesse or '—'}\n"
+        f"Data: {datetime.now().strftime('%d/%m/%Y')}\n\n"
+        f"OBJETO DO CONTRATO\n"
+        + (
+            "A Fácil Financiamentos obriga-se a prestar serviços de intermediação para obtenção de crédito "
+            "mediante refinanciamento de veículo automotor de propriedade do contratante, junto às instituições "
+            "financeiras credenciadas, nas melhores condições de taxas e prazos disponíveis. O processo ocorre "
+            "100% de forma digital."
+            if "refin" in modalidade else
+            "A Fácil Financiamentos obriga-se a prestar serviços de intermediação para aquisição de veículo "
+            "automotor novo ou usado de terceiros (particular para particular), junto às 9 melhores instituições "
+            "financeiras credenciadas do Brasil, buscando as melhores taxas e condições de parcelamento."
+        ) + "\n\n"
+        f"PROTEÇÃO DE DADOS — LGPD\n"
+        f"Os dados pessoais fornecidos serão utilizados exclusivamente para análise de crédito e intermediação "
+        f"contratual, em conformidade com a Lei 13.709/2018 (LGPD).\n\n"
+        f"ASSINATURA ELETRÔNICA\n"
+        f"Este documento será assinado eletronicamente com validade jurídica nos termos da Lei 14.063/2020. "
+        f"O registro de IP, geolocalização, horário e selfie constituem prova de autenticidade.\n\n"
+        f"Hash do documento (SHA-256):\n{contrato.hash_doc}"
+    )
+    return {"texto": texto, "hash": contrato.hash_doc}
+
+
+@app.post("/assinar/{token}")
+async def submeter_assinatura(token: str, request: Request, db: Session = Depends(get_db)):
+    from gerar_contrato import base64_para_imagem, gerar_pdf_assinado, salvar_pdf, CONTRATOS_DIR
+    from pathlib import Path as Pt
+
+    contrato = db.query(Contrato).filter(Contrato.token == token).first()
+    if not contrato:
+        raise HTTPException(404, "Contrato não encontrado")
+    if contrato.status == "assinado":
+        raise HTTPException(410, "Contrato já foi assinado")
+
+    body = await request.json()
+    selfie_b64  = body.get("selfie", "")
+    assin_b64   = body.get("assinatura", "")
+    geo         = body.get("geo", "")
+    ip          = request.client.host if request.client else "desconhecido"
+
+    base = CONTRATOS_DIR / f"contrato_{contrato.lead_id}_{token[:8]}"
+    selfie_path  = str(base) + "_selfie.jpg"
+    assin_path   = str(base) + "_assinatura.png"
+
+    base64_para_imagem(selfie_b64, Pt(selfie_path))
+    base64_para_imagem(assin_b64,  Pt(assin_path))
+
+    # Gera PDF de auditoria
+    agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    lead  = contrato.lead
+    audit_bytes = gerar_pdf_assinado(
+        pdf_original_bytes=Pt(contrato.pdf_original).read_bytes() if contrato.pdf_original else b"",
+        selfie_path=selfie_path,
+        assinatura_path=assin_path,
+        dados_auditoria={
+            "assinado_em": agora,
+            "ip": ip,
+            "geo": geo or "não fornecida",
+            "hash_doc": contrato.hash_doc,
+            "nome": lead.nome or "—",
+            "cpf": lead.cpf or "—",
+        },
+    )
+    audit_path = str(base) + "_auditoria.pdf"
+    Pt(audit_path).write_bytes(audit_bytes)
+
+    contrato.status          = "assinado"
+    contrato.selfie_path     = selfie_path
+    contrato.assinatura_path = assin_path
+    contrato.pdf_assinado    = audit_path
+    contrato.ip_cliente      = ip
+    contrato.geolocalizacao  = geo
+    contrato.assinado_em     = datetime.utcnow()
+    db.commit()
+
+    return {"status": "ok", "assinado_em": agora}
+
+
+@app.get("/api/leads/{lead_id}/contratos")
+async def listar_contratos(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    contratos = db.query(Contrato).filter(Contrato.lead_id == lead_id).order_by(Contrato.criado_em.desc()).all()
+    return [
+        {
+            "id": c.id,
+            "status": c.status,
+            "criado_em": c.criado_em.strftime("%d/%m/%Y %H:%M") if c.criado_em else "—",
+            "assinado_em": c.assinado_em.strftime("%d/%m/%Y %H:%M") if c.assinado_em else None,
+            "link": f"/assinar/{c.token}",
+        }
+        for c in contratos
+    ]
+
+
+@app.get("/api/contratos/{contrato_id}/pdf")
+async def baixar_pdf_assinado(
+    contrato_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    c = db.query(Contrato).filter(Contrato.id == contrato_id).first()
+    if not c:
+        raise HTTPException(404, "Contrato não encontrado")
+    if c.status != "assinado" or not c.pdf_assinado:
+        raise HTTPException(400, "Contrato ainda não assinado")
+    p = Path(c.pdf_assinado)
+    if not p.exists():
+        raise HTTPException(404, "Arquivo não encontrado")
+    return FileResponse(str(p), media_type="application/pdf", filename=f"contrato_assinado_{contrato_id}.pdf")
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────────

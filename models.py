@@ -117,6 +117,29 @@ class MensagemConversa(Base):
     criado_em = Column(DateTime, default=datetime.utcnow)
 
 
+class Contrato(Base):
+    """Contrato gerado para assinatura digital do lead."""
+    __tablename__ = "contratos"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    lead_id         = Column(Integer, ForeignKey("leads.id"), nullable=False)
+    criado_por_id   = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    token           = Column(String(64), unique=True, nullable=False)
+    status          = Column(String(20), default="pendente")   # pendente | assinado | expirado
+    hash_doc        = Column(String(64), nullable=False)
+    pdf_original    = Column(String(300), nullable=True)
+    pdf_assinado    = Column(String(300), nullable=True)
+    selfie_path     = Column(String(300), nullable=True)
+    assinatura_path = Column(String(300), nullable=True)
+    ip_cliente      = Column(String(50), nullable=True)
+    geolocalizacao  = Column(String(200), nullable=True)
+    criado_em       = Column(DateTime, default=datetime.utcnow)
+    assinado_em     = Column(DateTime, nullable=True)
+
+    lead    = relationship("Lead")
+    criador = relationship("Usuario")
+
+
 class Configuracao(Base):
     """Configurações editáveis do bot pelo painel admin."""
     __tablename__ = "configuracoes"

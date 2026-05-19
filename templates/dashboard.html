@@ -645,6 +645,12 @@
             <span id="obsMsg" style="font-size:.75rem"></span>
           </div>
         </div>
+        <!-- Contratos -->
+        <div class="modal-section">
+          <h4 style="margin-bottom:.6rem">📄 Contratos</h4>
+          <div id="listaContratos" style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.6rem"></div>
+          <button class="btn btn-primary btn-sm" onclick="gerarContrato()" style="width:100%">📄 Gerar novo contrato</button>
+        </div>
         <!-- Botões de ação -->
         <div class="modal-section" id="modalAcoes" style="display:flex;flex-wrap:wrap;gap:.4rem"></div>
       </div>
@@ -905,6 +911,7 @@
     document.getElementById('listaObs').innerHTML = '';
     document.getElementById('modalChat').innerHTML = '<div class="loading-msg">Carregando conversa…</div>';
     document.getElementById('modalAcoes').innerHTML = '';
+    document.getElementById('listaContratos').innerHTML = '<span style="font-size:.78rem;color:var(--muted)">Carregando…</span>';
     document.getElementById('obsMsg').textContent = '';
     document.getElementById('modalOverlay').classList.add('open');
 
@@ -961,6 +968,9 @@
       }
 
       document.getElementById('modalAcoes').innerHTML = acoes || '<span style="font-size:.78rem;color:var(--muted)">Nenhuma ação disponível</span>';
+
+      // Contratos
+      carregarContratos(leadId);
 
       // Chat
       if (!conv.mensagens.length) {
@@ -1030,6 +1040,55 @@
       } else { msg.textContent = '⚠️ Erro ao salvar'; msg.style.color = 'var(--red)'; }
     } catch { msg.textContent = '⚠️ Erro'; msg.style.color = 'var(--red)'; }
     setTimeout(() => { msg.textContent = ''; }, 3000);
+  }
+
+  // ═══ CONTRATOS ═══
+  async function carregarContratos(leadId) {
+    const el = document.getElementById('listaContratos');
+    try {
+      const r = await fetch(`/api/leads/${leadId}/contratos`);
+      const lista = await r.json();
+      if (!lista.length) {
+        el.innerHTML = '<span style="font-size:.78rem;color:var(--muted);font-style:italic">Nenhum contrato gerado.</span>';
+        return;
+      }
+      el.innerHTML = lista.map(c => {
+        const badge = c.status === 'assinado'
+          ? '<span style="color:#16a34a;font-weight:700">✅ Assinado</span>'
+          : '<span style="color:#f59e0b;font-weight:700">⏳ Aguardando</span>';
+        const link = c.status !== 'assinado'
+          ? `<button onclick="copiarLink('${location.origin}/assinar/${c.link.split('/').pop()}')" class="btn btn-sm btn-outline" style="font-size:.7rem;padding:.2rem .5rem">🔗 Copiar link</button>`
+          : `<a href="/api/contratos/${c.id}/pdf" target="_blank" class="btn btn-sm btn-outline" style="font-size:.7rem;padding:.2rem .5rem">⬇️ Baixar PDF</a>`;
+        return `<div style="background:var(--bg2);border-radius:8px;padding:.5rem .75rem;font-size:.8rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+          <div>
+            ${badge}<br>
+            <span style="color:var(--muted);font-size:.72rem">Gerado ${c.criado_em}${c.assinado_em ? ' · Assinado ' + c.assinado_em : ''}</span>
+          </div>
+          ${link}
+        </div>`;
+      }).join('');
+    } catch {
+      el.innerHTML = '<span style="font-size:.78rem;color:var(--red)">Erro ao carregar.</span>';
+    }
+  }
+
+  async function gerarContrato() {
+    if (!modalLeadId) return;
+    if (!confirm('Gerar um novo contrato para este lead?')) return;
+    try {
+      const r = await fetch(`/api/leads/${modalLeadId}/contrato`, { method: 'POST' });
+      const d = await r.json();
+      if (r.ok) {
+        await carregarContratos(modalLeadId);
+        if (confirm(`✅ Contrato gerado!\n\nDeseja copiar o link de assinatura agora?\n\n${d.link}`)) {
+          copiarLink(d.link);
+        }
+      } else { alert(d.detail || 'Erro ao gerar contrato.'); }
+    } catch { alert('Erro ao gerar contrato.'); }
+  }
+
+  function copiarLink(link) {
+    navigator.clipboard.writeText(link).then(() => alert('✅ Link copiado!\n\nEnvie pelo WhatsApp para o cliente assinar.')).catch(() => prompt('Copie o link abaixo:', link));
   }
 
   async function moverLeadModal(id, novoStatus) {
