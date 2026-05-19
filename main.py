@@ -920,68 +920,65 @@ async def gerar_contrato_endpoint(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
-    import traceback
+    import traceback as _tb
     try:
+        # ── 1. importar módulo ────────────────────────────────────────────
         from gerar_contrato import gerar_pdf_contrato, salvar_pdf
-    except Exception as e:
-        tb = traceback.format_exc()
-        print(f"❌ Erro ao importar gerar_contrato: {tb}")
-        raise HTTPException(500, f"Erro ao importar módulo: {e}")
 
-    lead = db.query(Lead).filter(Lead.id == lead_id).first()
-    if not lead:
-        raise HTTPException(404, "Lead não encontrado")
+        # ── 2. lead ──────────────────────────────────────────────────────
+        lead = db.query(Lead).filter(Lead.id == lead_id).first()
+        if not lead:
+            raise HTTPException(404, "Lead não encontrado")
 
-    body = await request.json()
-    dados = body.get("dados", {})
+        body = await request.json()
+        dados = body.get("dados", {})
 
-    # Pre-preenche com dados do lead se não fornecidos no form
-    dados.setdefault("req_nome",    lead.nome    or "")
-    dados.setdefault("req_cpf",     lead.cpf     or "")
-    dados.setdefault("req_celular", lead.telefone or "")
-    dados.setdefault("modalidade",  lead.modalidade or "refinanciamento")
-    dados.setdefault("data_contrato",
-        datetime.now().strftime("%d de %B de %Y").replace(
-            "January","Janeiro").replace("February","Fevereiro").replace(
-            "March","Marco").replace("April","Abril").replace(
-            "May","Maio").replace("June","Junho").replace(
-            "July","Julho").replace("August","Agosto").replace(
-            "September","Setembro").replace("October","Outubro").replace(
-            "November","Novembro").replace("December","Dezembro"))
+        dados.setdefault("req_nome",    lead.nome     or "")
+        dados.setdefault("req_cpf",     lead.cpf      or "")
+        dados.setdefault("req_celular", lead.telefone or "")
+        dados.setdefault("modalidade",  lead.modalidade or "refinanciamento")
+        dados.setdefault("data_contrato",
+            datetime.now().strftime("%d de %B de %Y")
+            .replace("January","Janeiro").replace("February","Fevereiro")
+            .replace("March","Marco").replace("April","Abril")
+            .replace("May","Maio").replace("June","Junho")
+            .replace("July","Julho").replace("August","Agosto")
+            .replace("September","Setembro").replace("October","Outubro")
+            .replace("November","Novembro").replace("December","Dezembro"))
 
-    try:
+        # ── 3. gerar PDF ─────────────────────────────────────────────────
         doc_id = secrets.token_hex(8).upper()
         pdf_bytes, hash_doc = gerar_pdf_contrato(dados, doc_id)
-    except Exception as e:
-        tb = traceback.format_exc()
-        print(f"❌ Erro ao gerar PDF do contrato:\n{tb}")
-        raise HTTPException(500, f"Erro ao gerar PDF: {e}")
 
-    try:
-        token = secrets.token_hex(32)
-        nome_arquivo = f"contrato_{lead_id}_{token[:8]}.pdf"
+        # ── 4. salvar arquivo ────────────────────────────────────────────
+        tok = secrets.token_hex(32)
+        nome_arquivo = f"contrato_{lead_id}_{tok[:8]}.pdf"
         caminho = salvar_pdf(pdf_bytes, nome_arquivo)
-    except Exception as e:
-        tb = traceback.format_exc()
-        print(f"❌ Erro ao salvar PDF:\n{tb}")
-        raise HTTPException(500, f"Erro ao salvar PDF: {e}")
 
-    contrato = Contrato(
-        lead_id=lead_id,
-        criado_por_id=usuario.id,
-        token=token,
-        hash_doc=hash_doc,
-        pdf_original=caminho,
-        dados_contrato=json.dumps(dados, ensure_ascii=False),
-        status="pendente",
-    )
-    db.add(contrato)
-    db.commit()
-    db.refresh(contrato)
+        # ── 5. persistir no banco ────────────────────────────────────────
+        contrato = Contrato(
+            lead_id=lead_id,
+            criado_por_id=usuario.id,
+            token=tok,
+            hash_doc=hash_doc,
+            pdf_original=caminho,
+            dados_contrato=json.dumps(dados, ensure_ascii=False),
+            status="pendente",
+        )
+        db.add(contrato)
+        db.commit()
+        db.refresh(contrato)
 
-    base_url = str(request.base_url).rstrip("/")
-    link = f"{base_url}/assinar/{token}"
-    return {"contrato_id": contrato.id, "link": link, "hash": hash_doc, "doc_id": doc_id}
+        base_url = str(request.base_url).rstrip("/")
+        link = f"{base_url}/assinar/{tok}"
+        return {"contrato_id": contrato.id, "link": link, "hash": hash_doc, "doc_id": doc_id}
+
+    except HTTPException:
+        raise  # re-lança 404 normalmente
+    except Exception as exc:
+        tb_str = _tb.format_exc()
+        print(f"❌ Erro em gerar_contrato_endpoint:\n{tb_str}")
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}")
 
 
 @app.get("/assinar/{token}", response_class=HTMLResponse)
