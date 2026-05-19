@@ -609,6 +609,26 @@ async def adicionar_observacao(
     return {"status": "ok", "observacoes": lista}
 
 
+@app.delete("/api/leads/{lead_id}/observacoes/{idx}")
+async def deletar_observacao(
+    lead_id: int,
+    idx: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(requer_admin),
+):
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    lista = _parse_observacoes(lead.observacoes)
+    if idx < 0 or idx >= len(lista):
+        raise HTTPException(status_code=400, detail="Índice inválido")
+    lista.pop(idx)
+    lead.observacoes = json.dumps(lista, ensure_ascii=False)
+    lead.atualizado_em = datetime.utcnow()
+    db.commit()
+    return {"status": "ok", "observacoes": lista}
+
+
 @app.post("/api/leads/{lead_id}/fechar")
 async def fechar_lead(
     lead_id: int,
