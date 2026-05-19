@@ -1078,6 +1078,7 @@ async def submeter_assinatura(token: str, request: Request, db: Session = Depend
     agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     lead  = contrato.lead
     d_contrato = json.loads(contrato.dados_contrato or "{}") if contrato.dados_contrato else {}
+    base_url = str(request.base_url).rstrip("/")
     audit_bytes = gerar_pdf_assinado(
         pdf_original_bytes=Pt(contrato.pdf_original).read_bytes() if contrato.pdf_original else b"",
         selfie_path=selfie_path,
@@ -1085,12 +1086,13 @@ async def submeter_assinatura(token: str, request: Request, db: Session = Depend
         dados_auditoria={
             "assinado_em": agora,
             "ip": ip,
-            "geo": geo or "não fornecida",
+            "geo": geo or "nao fornecida",
             "hash_doc": contrato.hash_doc,
-            "nome": d_contrato.get("req_nome") or lead.nome or "—",
-            "cpf":  d_contrato.get("req_cpf")  or lead.cpf  or "—",
+            "nome": d_contrato.get("req_nome") or lead.nome or "-",
+            "cpf":  d_contrato.get("req_cpf")  or lead.cpf  or "-",
         },
         doc_id=d_contrato.get("doc_id", ""),
+        verificacao_url=f"{base_url}/verificar/{token}",
     )
     audit_path = str(base) + "_auditoria.pdf"
     Pt(audit_path).write_bytes(audit_bytes)
@@ -1105,6 +1107,82 @@ async def submeter_assinatura(token: str, request: Request, db: Session = Depend
     db.commit()
 
     return {"status": "ok", "assinado_em": agora}
+
+
+# ── Verificação pública de assinatura ────────────────────────────────────────
+@app.get("/verificar/{token}", response_class=HTMLResponse)
+async def verificar_assinatura(token: str, db: Session = Depends(get_db)):
+    c = db.query(Contrato).filter(Contrato.token == token).first()
+    if not c:
+        return HTMLResponse("<h1>Contrato não encontrado</h1>", status_code=404)
+
+    d = json.loads(c.dados_contrato or "{}") if c.dados_contrato else {}
+    nome = d.get("req_nome") or (c.lead.nome if c.lead else "-") or "-"
+    cpf  = d.get("req_cpf")  or (c.lead.cpf  if c.lead else "-") or "-"
+    assinado_em_br = c.assinado_em.strftime("%d/%m/%Y %H:%M:%S") if c.assinado_em else "-"
+    criado_em_br   = c.criado_em.strftime("%d/%m/%Y %H:%M") if c.criado_em else "-"
+
+    status_badge = (
+        '<span style="background:#16a34a;color:#fff;padding:.3rem .9rem;border-radius:99px;font-weight:700;font-size:.9rem">✅ ASSINADO</span>'
+        if c.status == "assinado" else
+        '<span style="background:#f59e0b;color:#fff;padding:.3rem .9rem;border-radius:99px;font-weight:700;font-size:.9rem">⏳ PENDENTE</span>'
+    )
+
+    html = f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Verificação de Assinatura — Fácil Financiamentos</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{font-family:'Segoe UI',system-ui,sans-serif;background:#f4f6fb;color:#1a202c}}
+  .header{{background:#0d2b4e;color:#fff;padding:1.25rem;text-align:center}}
+  .header h1{{font-size:1.1rem;font-weight:700}}
+  .header p{{font-size:.78rem;opacity:.65;margin-top:3px}}
+  .container{{max-width:560px;margin:1.5rem auto;padding:0 1rem 2rem}}
+  .card{{background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.08);padding:1.5rem;margin-bottom:1rem}}
+  .card h2{{font-size:.95rem;color:#0d2b4e;margin-bottom:1rem;display:flex;align-items:center;gap:.4rem}}
+  .row{{display:flex;justify-content:space-between;align-items:flex-start;padding:.55rem 0;border-bottom:1px solid #f1f5f9;font-size:.85rem}}
+  .row:last-child{{border-bottom:none}}
+  .row .lbl{{color:#64748b;font-weight:500}}
+  .row .val{{color:#1a202c;font-weight:600;text-align:right;max-width:60%;word-break:break-all}}
+  .hash{{font-size:.68rem;color:#64748b;word-break:break-all;line-height:1.5;margin-top:.5rem;padding:.5rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0}}
+  .status-area{{text-align:center;padding:.5rem 0 1rem}}
+  .footer{{text-align:center;font-size:.72rem;color:#94a3b8;margin-top:1.5rem}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Fácil Financiamentos</h1>
+  <p>Verificação de Assinatura Eletrônica</p>
+</div>
+<div class="container">
+  <div class="card">
+    <div class="status-area">{status_badge}</div>
+    <h2>📄 Dados do Documento</h2>
+    <div class="row"><span class="lbl">Nº do documento</span><span class="val">{d.get("doc_id", c.id)}</span></div>
+    <div class="row"><span class="lbl">Gerado em</span><span class="val">{criado_em_br}</span></div>
+    <div class="row"><span class="lbl">Assinado em</span><span class="val">{assinado_em_br}</span></div>
+    <div class="row"><span class="lbl">IP do assinante</span><span class="val">{c.ip_cliente or "-"}</span></div>
+  </div>
+  <div class="card">
+    <h2>👤 Assinante</h2>
+    <div class="row"><span class="lbl">Nome</span><span class="val">{nome.upper()}</span></div>
+    <div class="row"><span class="lbl">CPF</span><span class="val">{cpf}</span></div>
+  </div>
+  <div class="card">
+    <h2>🔒 Integridade</h2>
+    <p style="font-size:.8rem;color:#64748b;margin-bottom:.5rem">Hash SHA-256 do documento original:</p>
+    <div class="hash">{c.hash_doc}</div>
+  </div>
+  <div class="footer">
+    Assinado eletronicamente nos termos da Lei 14.063/2020 e MP 2.200-2/2001.<br>
+    Fácil Financiamentos · Rua Lauro Ignacio Ponte, 08, Sala 202 · BH/MG
+  </div>
+</div>
+</body></html>"""
+    return HTMLResponse(html)
 
 
 @app.get("/api/leads/{lead_id}/contratos")

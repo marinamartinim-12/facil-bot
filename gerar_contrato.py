@@ -395,23 +395,66 @@ def base64_para_imagem(b64, caminho):
         return False
 
 
+def _gerar_qr_png(url):
+    """Gera QR code como BytesIO PNG (navy sobre branco)."""
+    try:
+        import qrcode
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=5,
+            border=3,
+        )
+        qr.add_data(url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color=(13, 43, 78), back_color=(255, 255, 255))
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return buf
+    except Exception as e:
+        print(f"Erro ao gerar QR: {e}")
+        return None
+
+
 def gerar_pdf_assinado(pdf_original_bytes, selfie_path, assinatura_path,
-                       dados_auditoria, doc_id=""):
+                       dados_auditoria, doc_id="", verificacao_url=""):
     from pypdf import PdfWriter, PdfReader
 
-    # Página de auditoria
+    # ── Página de auditoria ───────────────────────────────────────────────
     audit = RequerimentoPDF(doc_id=doc_id)
     audit.add_page()
 
     audit.titulo("PAGINA DE AUDITORIA")
     audit.subtitulo("Assinatura Eletronica - Lei 14.063/2020 e MP 2.200-2/2001")
 
-    audit.campo("Documento n.", doc_id)
+    # Dados de identificação (coluna esquerda) + QR code (coluna direita)
+    y_inicio = audit.get_y()
+
+    audit.campo("Documento",       doc_id)
     audit.campo("Assinado em",     dados_auditoria.get("assinado_em", "-"))
     audit.campo("IP do assinante", dados_auditoria.get("ip", "-"))
     audit.campo("Geolocalizacao",  dados_auditoria.get("geo", "nao fornecida"))
     audit.campo("Nome",            dados_auditoria.get("nome", "-"))
     audit.campo("CPF",             dados_auditoria.get("cpf", "-"))
+
+    # QR code — posicionado à direita dos campos
+    if verificacao_url:
+        qr_buf = _gerar_qr_png(verificacao_url)
+        if qr_buf:
+            try:
+                qr_size = 42
+                qr_x = audit.w - 25 - qr_size
+                audit.image(qr_buf, x=qr_x, y=y_inicio, w=qr_size, h=qr_size)
+                audit.set_y(y_inicio + qr_size + 1)
+                audit.set_font("Helvetica", "", 6.5)
+                audit.set_text_color(100, 100, 100)
+                audit.set_x(qr_x)
+                audit.cell(qr_size, 4, "Verificar assinatura", align="C")
+                audit.set_y(audit.get_y() + 5)
+            except Exception as e:
+                print(f"Erro ao inserir QR no PDF: {e}")
+
     audit.ln(2)
     audit.set_font("Helvetica", "B", 8)
     audit.set_text_color(80, 80, 80)
@@ -421,26 +464,58 @@ def gerar_pdf_assinado(pdf_original_bytes, selfie_path, assinatura_path,
     audit.multi_cell(0, 5, dados_auditoria.get("hash_doc", "-"))
     audit.ln(5)
 
-    if selfie_path and Path(selfie_path).exists():
-        audit.para("Selfie do assinante:", bold=True, after=2)
-        try:
-            audit.image(selfie_path, x=25, w=55, h=70)
-            audit.ln(3)
-        except Exception:
-            audit.para("(selfie nao disponivel)")
+    # Selfie e assinatura lado a lado quando possível
+    tem_selfie = selfie_path and Path(selfie_path).exists()
+    tem_assin  = assinatura_path and Path(assinatura_path).exists()
 
-    if assinatura_path and Path(assinatura_path).exists():
-        audit.para("Assinatura manuscrita digital:", bold=True, after=2)
-        try:
-            audit.image(assinatura_path, x=25, w=110, h=44)
-            audit.ln(3)
-        except Exception:
-            audit.para("(assinatura nao disponivel)")
+    if tem_selfie or tem_assin:
+        # Linha separadora
+        audit.set_draw_color(*GOLD)
+        audit.set_line_width(0.5)
+        audit.line(25, audit.get_y(), audit.w - 25, audit.get_y())
+        audit.ln(4)
 
-    audit.ln(4)
-    audit.set_font("Helvetica", "I", 8.5)
-    audit.set_text_color(80, 80, 80)
-    audit.multi_cell(0, 5.5,
+    if tem_selfie:
+        audit.set_font("Helvetica", "B", 8.5)
+        audit.set_text_color(*NAVY)
+        audit.cell(0, 5, "Selfie do assinante", new_x="LMARGIN", new_y="NEXT")
+        audit.ln(1)
+        try:
+            # Borda ao redor da selfie
+            audit.set_draw_color(200, 200, 200)
+            audit.set_line_width(0.3)
+            audit.rect(25, audit.get_y(), 58, 73)
+            audit.image(selfie_path, x=25.5, y=audit.get_y() + 0.5, w=57, h=72)
+            audit.set_y(audit.get_y() + 76)
+        except Exception:
+            audit.para("(selfie nao disponivel)", after=2)
+
+    if tem_assin:
+        audit.set_font("Helvetica", "B", 8.5)
+        audit.set_text_color(*NAVY)
+        audit.cell(0, 5, "Assinatura manuscrita digital", new_x="LMARGIN", new_y="NEXT")
+        audit.ln(1)
+        try:
+            # Fundo branco + borda para a assinatura
+            sig_x, sig_y, sig_w, sig_h = 25, audit.get_y(), 120, 50
+            audit.set_fill_color(255, 255, 255)
+            audit.set_draw_color(180, 180, 180)
+            audit.set_line_width(0.3)
+            audit.rect(sig_x, sig_y, sig_w, sig_h, "DF")
+            audit.image(assinatura_path, x=sig_x + 2, y=sig_y + 2, w=sig_w - 4, h=sig_h - 4)
+            audit.set_y(sig_y + sig_h + 3)
+        except Exception:
+            audit.para("(assinatura nao disponivel)", after=2)
+
+    audit.ln(3)
+    audit.set_draw_color(220, 220, 220)
+    audit.set_line_width(0.3)
+    audit.line(25, audit.get_y(), audit.w - 25, audit.get_y())
+    audit.ln(3)
+
+    audit.set_font("Helvetica", "I", 8)
+    audit.set_text_color(100, 100, 100)
+    audit.multi_cell(0, 5,
         "Documento assinado eletronicamente em conformidade com a MP 2.200-2/2001 "
         "e Lei 14.063/2020. O hash SHA-256 garante a integridade do documento original. "
         "IP, geolocalizacao, selfie e assinatura constituem prova de autoria e consentimento.",
