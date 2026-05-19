@@ -1381,8 +1381,9 @@ async def listar_contratos(
             "status_prop":     c.status_prop or "pendente",
             "assinado_prop_em": c.assinado_prop_em.strftime("%d/%m/%Y %H:%M") if c.assinado_prop_em else None,
             "link_prop":       f"{base_url}/assinar/{c.token_prop}" if c.token_prop else None,
-            # PDF assinado (disponível quando requerente assinar)
-            "pdf_id":          c.id if c.status == "assinado" else None,
+            # PDF disponível assim que qualquer parte assinar
+            "pdf_id":          c.id if c.pdf_assinado else None,
+            "ambos_assinaram": c.status == "assinado" and c.status_prop == "assinado",
         }
         for c in contratos
     ]
@@ -1397,7 +1398,7 @@ async def baixar_pdf_assinado(
     c = db.query(Contrato).filter(Contrato.id == contrato_id).first()
     if not c:
         raise HTTPException(404, "Contrato não encontrado")
-    if c.status != "assinado" or not c.pdf_assinado:
+    if not c.pdf_assinado:
         raise HTTPException(400, "Contrato ainda não assinado")
     p = Path(c.pdf_assinado)
     if not p.exists():
