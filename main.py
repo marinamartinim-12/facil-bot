@@ -165,15 +165,26 @@ async def startup():
     finally:
         pass
 
-    # Migração: adiciona coluna followup_em se não existir
-    try:
-        from sqlalchemy import text
-        with db_startup.bind.connect() as conn:
-            conn.execute(text("ALTER TABLE leads ADD COLUMN followup_em DATETIME"))
-            conn.commit()
-        print("✅ Coluna followup_em adicionada")
-    except Exception:
-        pass  # Coluna já existe
+    # Migrações de schema (colunas novas adicionadas após criação inicial)
+    from sqlalchemy import text
+    _migracoes = [
+        ("leads",     "followup_em",      "DATETIME"),
+        ("contratos", "dados_contrato",   "TEXT"),
+        ("contratos", "selfie_path",      "VARCHAR(300)"),
+        ("contratos", "assinatura_path",  "VARCHAR(300)"),
+        ("contratos", "ip_cliente",       "VARCHAR(50)"),
+        ("contratos", "geolocalizacao",   "VARCHAR(200)"),
+        ("contratos", "pdf_assinado",     "VARCHAR(300)"),
+        ("contratos", "assinado_em",      "DATETIME"),
+    ]
+    for tabela, coluna, tipo in _migracoes:
+        try:
+            with db_startup.bind.connect() as conn:
+                conn.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}"))
+                conn.commit()
+            print(f"✅ Migração: {tabela}.{coluna} adicionada")
+        except Exception:
+            pass  # coluna já existe — ignorar
 
     # Configurações padrão do bot
     _criar_config_padrao(db_startup)
