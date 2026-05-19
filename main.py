@@ -998,6 +998,24 @@ async def pagina_assinar(token: str):
     return HTMLResponse(caminho.read_text(encoding="utf-8"))
 
 
+@app.get("/assinar/{token}/pdf-original")
+async def pdf_preview_contrato(token: str, db: Session = Depends(get_db)):
+    """Serve o PDF original para embed na página de assinatura (sem auth — token é o segredo)."""
+    c = db.query(Contrato).filter(Contrato.token == token).first()
+    if not c:
+        raise HTTPException(404, "Contrato não encontrado")
+    if not c.pdf_original:
+        raise HTTPException(404, "PDF não disponível")
+    p = Path(c.pdf_original)
+    if not p.exists():
+        raise HTTPException(404, "Arquivo não encontrado no servidor")
+    return FileResponse(
+        str(p),
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline"},
+    )
+
+
 @app.get("/assinar/{token}/conteudo")
 async def conteudo_contrato(token: str, db: Session = Depends(get_db)):
     contrato = db.query(Contrato).filter(Contrato.token == token).first()
@@ -1062,17 +1080,21 @@ async def submeter_assinatura(token: str, request: Request, db: Session = Depend
         raise HTTPException(410, "Contrato já foi assinado")
 
     body = await request.json()
-    selfie_b64  = body.get("selfie", "")
-    assin_b64   = body.get("assinatura", "")
-    geo         = body.get("geo", "")
-    ip          = request.client.host if request.client else "desconhecido"
+    selfie_b64   = body.get("selfie", "")
+    assin_b64    = body.get("assinatura", "")
+    assin2_b64   = body.get("assinatura2", "")  # segunda assinatura (pagamento)
+    geo          = body.get("geo", "")
+    ip           = request.client.host if request.client else "desconhecido"
 
     base = CONTRATOS_DIR / f"contrato_{contrato.lead_id}_{token[:8]}"
     selfie_path  = str(base) + "_selfie.jpg"
     assin_path   = str(base) + "_assinatura.png"
+    assin2_path  = str(base) + "_assinatura2.png"
 
-    base64_para_imagem(selfie_b64, Pt(selfie_path))
-    base64_para_imagem(assin_b64,  Pt(assin_path))
+    base64_para_imagem(selfie_b64,  Pt(selfie_path))
+    base64_para_imagem(assin_b64,   Pt(assin_path))
+    if assin2_b64:
+        base64_para_imagem(assin2_b64, Pt(assin2_path))
 
     # Gera PDF de auditoria
     agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
