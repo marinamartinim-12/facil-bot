@@ -1061,7 +1061,10 @@
   async function carregarContratos(leadId) {
     const el = document.getElementById('listaContratos');
     try {
-      const r = await fetch(`/api/leads/${leadId}/contratos`);
+      const r = await fetch(`/api/leads/${leadId}/contratos`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!r.ok) { el.innerHTML = '<span style="font-size:.78rem;color:var(--muted);font-style:italic">Nenhum contrato gerado.</span>'; return; }
       const lista = await r.json();
       if (!lista.length) {
         el.innerHTML = '<span style="font-size:.78rem;color:var(--muted);font-style:italic">Nenhum contrato gerado.</span>';
@@ -1126,7 +1129,8 @@
     btn.disabled = true; btn.textContent = '⏳ Gerando…';
     try {
       const r = await fetch(`/api/leads/${modalLeadId}/contrato`, {
-        method: 'POST', headers: {'Content-Type':'application/json'},
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ dados })
       });
       const d = await r.json();
