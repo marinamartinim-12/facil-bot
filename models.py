@@ -152,6 +152,12 @@ class Contrato(Base):
     geo_prop             = Column(String(200), nullable=True)
     assinado_prop_em     = Column(DateTime, nullable=True)
 
+    # ── OTP de confirmação ────────────────────────────────────────────────────
+    codigo_req         = Column(String(10), nullable=True)
+    codigo_req_expira  = Column(DateTime, nullable=True)
+    codigo_prop        = Column(String(10), nullable=True)
+    codigo_prop_expira = Column(DateTime, nullable=True)
+
     lead    = relationship("Lead")
     criador = relationship("Usuario")
 

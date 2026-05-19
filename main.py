@@ -187,6 +187,10 @@ async def startup():
         ("contratos", "ip_prop",               "VARCHAR(50)"),
         ("contratos", "geo_prop",              "VARCHAR(200)"),
         ("contratos", "assinado_prop_em",      "DATETIME"),
+        ("contratos", "codigo_req",            "VARCHAR(10)"),
+        ("contratos", "codigo_req_expira",     "DATETIME"),
+        ("contratos", "codigo_prop",           "VARCHAR(10)"),
+        ("contratos", "codigo_prop_expira",    "DATETIME"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -1057,14 +1061,101 @@ async def conteudo_contrato(token: str, db: Session = Depends(get_db)):
     d = json.loads(contrato.dados_contrato or "{}") if contrato.dados_contrato else {}
     nome_req  = d.get("req_nome",  "-")
     nome_prop = d.get("prop_nome", "-")
+
+    # Mascara o telefone do lead para exibir na tela de confirmação
+    lead = db.query(Lead).filter(Lead.id == contrato.lead_id).first()
+    tel_mascarado = ""
+    if lead and lead.telefone:
+        t = re.sub(r'\D', '', lead.telefone)
+        if len(t) >= 8:
+            tel_mascarado = f"(*****){t[-4:]}"
+
     return {
-        "hash":       contrato.hash_doc,
-        "role":       role,
-        "nome_req":   nome_req,
-        "nome_prop":  nome_prop,
-        "doc_id":     d.get("doc_id", ""),
-        "data":       d.get("data_contrato", ""),
+        "hash":              contrato.hash_doc,
+        "role":              role,
+        "nome_req":          nome_req,
+        "nome_prop":         nome_prop,
+        "doc_id":            d.get("doc_id", ""),
+        "data":              d.get("data_contrato", ""),
+        "telefone_mascarado": tel_mascarado,
     }
+
+
+@app.post("/assinar/{token}/enviar-codigo")
+async def enviar_codigo_otp(token: str, db: Session = Depends(get_db)):
+    """Gera e envia código OTP de 6 dígitos via WhatsApp para confirmação de assinatura."""
+    import random
+    contrato, role = _detectar_role_contrato(token, db)
+    if not contrato:
+        raise HTTPException(404, "Contrato não encontrado")
+
+    codigo = str(random.randint(100000, 999999))
+    expira = datetime.utcnow() + timedelta(minutes=10)
+
+    if role == "requerente":
+        contrato.codigo_req        = codigo
+        contrato.codigo_req_expira = expira
+    else:
+        contrato.codigo_prop        = codigo
+        contrato.codigo_prop_expira = expira
+    db.commit()
+
+    lead = db.query(Lead).filter(Lead.id == contrato.lead_id).first()
+    telefone = lead.telefone if lead else None
+
+    if telefone:
+        msg = (
+            f"🔐 *Código de confirmação — Fácil Financiamentos*\n\n"
+            f"Olá! Seu código para confirmar a assinatura do contrato é:\n\n"
+            f"*{codigo}*\n\n"
+            f"⏱ Válido por 10 minutos.\n"
+            f"Não compartilhe este código com ninguém."
+        )
+        await enviar_zapi(telefone, msg)
+
+    tel_mascarado = ""
+    if telefone:
+        t = re.sub(r'\D', '', telefone)
+        if len(t) >= 4:
+            tel_mascarado = f"(*****){t[-4:]}"
+
+    return {"ok": True, "telefone_mascarado": tel_mascarado}
+
+
+@app.post("/assinar/{token}/verificar-codigo")
+async def verificar_codigo_otp(token: str, request: Request, db: Session = Depends(get_db)):
+    """Valida o código OTP digitado pelo assinante."""
+    body = await request.json()
+    codigo_digitado = str(body.get("codigo", "")).strip()
+
+    contrato, role = _detectar_role_contrato(token, db)
+    if not contrato:
+        raise HTTPException(404, "Contrato não encontrado")
+
+    if role == "requerente":
+        codigo_salvo = contrato.codigo_req
+        expira       = contrato.codigo_req_expira
+    else:
+        codigo_salvo = contrato.codigo_prop
+        expira       = contrato.codigo_prop_expira
+
+    if not codigo_salvo:
+        raise HTTPException(400, detail="Nenhum código foi enviado. Solicite um novo código.")
+    if not expira or datetime.utcnow() > expira:
+        raise HTTPException(400, detail="Código expirado. Solicite um novo código.")
+    if codigo_digitado != codigo_salvo:
+        raise HTTPException(400, detail="Código incorreto. Verifique e tente novamente.")
+
+    # Invalida o código após uso bem-sucedido
+    if role == "requerente":
+        contrato.codigo_req        = None
+        contrato.codigo_req_expira = None
+    else:
+        contrato.codigo_prop        = None
+        contrato.codigo_prop_expira = None
+    db.commit()
+
+    return {"ok": True}
 
 
 @app.post("/assinar/{token}")
