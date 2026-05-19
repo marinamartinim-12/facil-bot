@@ -633,11 +633,14 @@
           <h4>📋 Dados do Cliente</h4>
           <div class="data-grid" id="modalDados"></div>
         </div>
-        <div class="modal-section" style="flex:1">
+        <div class="modal-section" style="flex:1;display:flex;flex-direction:column;gap:.5rem">
           <h4>📝 Observações</h4>
-          <textarea class="obs-textarea" id="modalObs" placeholder="Anote aqui informações sobre este cliente ou atendimento…"></textarea>
-          <div style="margin-top:.5rem;display:flex;gap:.5rem;align-items:center">
-            <button class="btn btn-primary btn-sm" onclick="salvarObs()">💾 Salvar observação</button>
+          <!-- Lista somente leitura -->
+          <div id="listaObs" style="display:flex;flex-direction:column;gap:.4rem;max-height:180px;overflow-y:auto;"></div>
+          <!-- Nova observação -->
+          <textarea class="obs-textarea" id="novaObs" placeholder="Adicionar nova observação…" style="min-height:72px;margin-top:.25rem"></textarea>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <button class="btn btn-primary btn-sm" onclick="salvarObs()">💾 Adicionar observação</button>
             <span id="obsMsg" style="font-size:.75rem"></span>
           </div>
         </div>
@@ -924,7 +927,8 @@
       renderDadosLead(lead, false);
 
       // Observações
-      document.getElementById('modalObs').value = lead.observacoes || '';
+      renderObs(lead.observacoes || []);
+      document.getElementById('novaObs').value = '';
 
       // Botões de ação
       const isAdmin = currentUser.role === 'admin';
@@ -969,20 +973,41 @@
     }
   }
 
+  function renderObs(lista) {
+    const el = document.getElementById('listaObs');
+    if (!Array.isArray(lista) || lista.length === 0) {
+      el.innerHTML = '<div style="font-size:.8rem;color:var(--muted);font-style:italic">Nenhuma observação ainda.</div>';
+      return;
+    }
+    el.innerHTML = lista.map(o => `
+      <div style="background:var(--bg2);border-radius:8px;padding:.5rem .75rem;font-size:.83rem;line-height:1.45">
+        <div style="color:var(--text)">${escHtml(o.texto)}</div>
+        <div style="margin-top:.2rem;font-size:.72rem;color:var(--muted)">
+          👤 ${escHtml(o.usuario || '—')} &nbsp;·&nbsp; 🕐 ${escHtml(o.em || '—')}
+        </div>
+      </div>`).join('');
+    // Rola para última obs
+    el.scrollTop = el.scrollHeight;
+  }
+
   async function salvarObs() {
     if (!modalLeadId) return;
-    const obs = document.getElementById('modalObs').value;
+    const texto = (document.getElementById('novaObs').value || '').trim();
     const msg = document.getElementById('obsMsg');
+    if (!texto) { msg.textContent = '⚠️ Escreva algo primeiro'; msg.style.color = 'var(--red)'; setTimeout(() => msg.textContent = '', 2000); return; }
     try {
       const r = await fetch(`/api/leads/${modalLeadId}/observacoes`, {
-        method: 'PUT', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({observacoes: obs})
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({texto})
       });
       if (r.ok) {
-        msg.textContent = '✅ Salvo!'; msg.style.color = 'var(--green)';
-        // Atualiza no array local
+        const d = await r.json();
+        renderObs(d.observacoes);
+        document.getElementById('novaObs').value = '';
+        // Atualiza cache local
         const l = allLeads.find(x => x.id === modalLeadId);
-        if (l) l.observacoes = obs;
+        if (l) l.observacoes = d.observacoes;
+        msg.textContent = '✅ Adicionado!'; msg.style.color = 'var(--green)';
       } else { msg.textContent = '⚠️ Erro ao salvar'; msg.style.color = 'var(--red)'; }
     } catch { msg.textContent = '⚠️ Erro'; msg.style.color = 'var(--red)'; }
     setTimeout(() => { msg.textContent = ''; }, 3000);

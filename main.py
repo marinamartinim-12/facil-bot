@@ -582,8 +582,8 @@ async def editar_lead(
     return _serial_lead(lead, db)
 
 
-@app.put("/api/leads/{lead_id}/observacoes")
-async def salvar_observacoes(
+@app.post("/api/leads/{lead_id}/observacoes")
+async def adicionar_observacao(
     lead_id: int,
     request: Request,
     db: Session = Depends(get_db),
@@ -593,10 +593,20 @@ async def salvar_observacoes(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     body = await request.json()
-    lead.observacoes = body.get("observacoes", "")
+    texto = (body.get("texto") or "").strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail="Texto vazio")
+
+    lista = _parse_observacoes(lead.observacoes)
+    lista.append({
+        "texto": texto,
+        "usuario": usuario.nome,
+        "em": datetime.utcnow().strftime("%d/%m/%Y %H:%M"),
+    })
+    lead.observacoes = json.dumps(lista, ensure_ascii=False)
     lead.atualizado_em = datetime.utcnow()
     db.commit()
-    return {"status": "ok"}
+    return {"status": "ok", "observacoes": lista}
 
 
 @app.post("/api/leads/{lead_id}/fechar")
@@ -882,6 +892,22 @@ async def root():
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────────
 
+def _parse_observacoes(raw: str | None) -> list:
+    """Retorna observações como lista de dicts {texto, usuario, em}.
+    Compatível com formato antigo (texto puro) e novo (JSON array)."""
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return parsed
+        # Era um objeto único, converte
+        return [{"texto": str(parsed), "usuario": "—", "em": "—"}]
+    except Exception:
+        # Formato legado: texto puro → converte sem autor
+        return [{"texto": raw, "usuario": "—", "em": "—"}]
+
+
 def _serial_lead(l: Lead, db: Session) -> dict:
     responsavel = None
     if l.atribuido_para:
@@ -902,7 +928,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "assumido_em": l.assumido_em.strftime("%d/%m/%Y %H:%M") if l.assumido_em else None,
         "criado_em": l.criado_em.strftime("%d/%m/%Y %H:%M") if l.criado_em else "—",
         "atualizado_em": l.atualizado_em.strftime("%d/%m/%Y %H:%M") if l.atualizado_em else "—",
-        "observacoes": l.observacoes or "",
+        "observacoes": _parse_observacoes(l.observacoes),
     }
 
 
