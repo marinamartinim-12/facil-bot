@@ -124,18 +124,33 @@ class Contrato(Base):
     id              = Column(Integer, primary_key=True, index=True)
     lead_id         = Column(Integer, ForeignKey("leads.id"), nullable=False)
     criado_por_id   = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
-    token           = Column(String(64), unique=True, nullable=False)
-    status          = Column(String(20), default="pendente")   # pendente | assinado | expirado
     hash_doc        = Column(String(64), nullable=False)
     pdf_original    = Column(String(300), nullable=True)
     pdf_assinado    = Column(String(300), nullable=True)
-    dados_contrato  = Column(Text, nullable=True)          # JSON com todos os campos do formulário
-    selfie_path     = Column(String(300), nullable=True)
-    assinatura_path = Column(String(300), nullable=True)
+    dados_contrato  = Column(Text, nullable=True)
+    criado_em       = Column(DateTime, default=datetime.utcnow)
+
+    # ── Requerente (cliente) ──────────────────────────────────────────────
+    token           = Column(String(64), unique=True, nullable=False)
+    status          = Column(String(20), default="pendente")   # pendente | assinado
+    selfie_path         = Column(String(300), nullable=True)
+    assinatura_path     = Column(String(300), nullable=True)
+    doc_frente_req_path = Column(String(300), nullable=True)
+    doc_verso_req_path  = Column(String(300), nullable=True)
     ip_cliente      = Column(String(50), nullable=True)
     geolocalizacao  = Column(String(200), nullable=True)
-    criado_em       = Column(DateTime, default=datetime.utcnow)
     assinado_em     = Column(DateTime, nullable=True)
+
+    # ── Proprietário / Vendedor ───────────────────────────────────────────
+    token_prop           = Column(String(64), unique=True, nullable=True)
+    status_prop          = Column(String(20), default="pendente")
+    selfie_prop_path     = Column(String(300), nullable=True)
+    assinatura_prop_path = Column(String(300), nullable=True)
+    doc_frente_prop_path = Column(String(300), nullable=True)
+    doc_verso_prop_path  = Column(String(300), nullable=True)
+    ip_prop              = Column(String(50), nullable=True)
+    geo_prop             = Column(String(200), nullable=True)
+    assinado_prop_em     = Column(DateTime, nullable=True)
 
     lead    = relationship("Lead")
     criador = relationship("Usuario")

@@ -1068,21 +1068,22 @@
         el.innerHTML = '<span style="font-size:.78rem;color:var(--muted);font-style:italic">Nenhum contrato gerado.</span>';
         return;
       }
-      el.innerHTML = lista.map(c => {
-        const badge = c.status === 'assinado'
-          ? '<span style="color:#16a34a;font-weight:700">✅ Assinado</span>'
-          : '<span style="color:#f59e0b;font-weight:700">⏳ Aguardando</span>';
-        const link = c.status !== 'assinado'
-          ? `<button onclick="copiarLink('${location.origin}/assinar/${c.link.split('/').pop()}')" class="btn btn-sm btn-outline" style="font-size:.7rem;padding:.2rem .5rem">🔗 Copiar link</button>`
-          : `<a href="/api/contratos/${c.id}/pdf" target="_blank" class="btn btn-sm btn-outline" style="font-size:.7rem;padding:.2rem .5rem">⬇️ Baixar PDF</a>`;
-        return `<div style="background:var(--bg2);border-radius:8px;padding:.5rem .75rem;font-size:.8rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem">
-          <div>
-            ${badge}<br>
-            <span style="color:var(--muted);font-size:.72rem">Gerado ${c.criado_em}${c.assinado_em ? ' · Assinado ' + c.assinado_em : ''}</span>
+      const badge = (status) => status === 'assinado'
+        ? '<span style="color:#16a34a;font-size:.7rem;font-weight:700">✅ Assinado</span>'
+        : '<span style="color:#f59e0b;font-size:.7rem;font-weight:700">⏳ Pendente</span>';
+      el.innerHTML = lista.map(c => `
+        <div style="background:var(--bg2);border-radius:8px;padding:.6rem .75rem;font-size:.78rem;margin-bottom:.35rem">
+          <div style="color:var(--muted);font-size:.7rem;margin-bottom:.4rem">📄 Gerado ${c.criado_em}</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem">
+            <div><strong style="font-size:.72rem">Requerente (cliente)</strong> ${badge(c.status_req)}</div>
+            <button onclick="copiarLink('${c.link_req}')" class="btn btn-sm btn-outline" style="font-size:.68rem;padding:.15rem .45rem">🔗 Link</button>
           </div>
-          ${link}
-        </div>`;
-      }).join('');
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div><strong style="font-size:.72rem">Proprietário / Vendedor</strong> ${badge(c.status_prop)}</div>
+            ${c.link_prop ? `<button onclick="copiarLink('${c.link_prop}')" class="btn btn-sm btn-outline" style="font-size:.68rem;padding:.15rem .45rem">🔗 Link</button>` : ''}
+          </div>
+          ${c.pdf_id ? `<a href="/api/contratos/${c.pdf_id}/pdf" target="_blank" class="btn btn-sm btn-outline" style="font-size:.68rem;padding:.15rem .45rem;display:inline-block;margin-top:.35rem">⬇️ Baixar PDF assinado</a>` : ''}
+        </div>`).join('');
     } catch {
       el.innerHTML = '<span style="font-size:.78rem;color:var(--red)">Erro ao carregar.</span>';
     }
@@ -1138,7 +1139,8 @@
       if (r.ok) {
         document.getElementById('modalContrato').classList.remove('open');
         await carregarContratos(modalLeadId);
-        if (confirm('✅ Contrato gerado!\n\nCopiar link de assinatura para enviar ao cliente?')) copiarLink(d.link);
+        const msg = `✅ Contrato gerado!\n\nLink do REQUERENTE (cliente):\n${d.link_requerente}\n\nLink do PROPRIETÁRIO/VENDEDOR:\n${d.link_proprietario}\n\nCopiar link do cliente?`;
+        if (confirm(msg)) copiarLink(d.link_requerente);
       } else { alert('Erro ao gerar contrato:\n' + (d.detail || txt || r.status)); }
     } catch(err) { alert('Erro ao gerar contrato:\n' + (err.message || String(err))); }
     btn.disabled = false; btn.textContent = '📄 Gerar contrato';

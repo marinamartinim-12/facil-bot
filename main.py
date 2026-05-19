@@ -168,14 +168,25 @@ async def startup():
     # Migrações de schema (colunas novas adicionadas após criação inicial)
     from sqlalchemy import text
     _migracoes = [
-        ("leads",     "followup_em",      "DATETIME"),
-        ("contratos", "dados_contrato",   "TEXT"),
-        ("contratos", "selfie_path",      "VARCHAR(300)"),
-        ("contratos", "assinatura_path",  "VARCHAR(300)"),
-        ("contratos", "ip_cliente",       "VARCHAR(50)"),
-        ("contratos", "geolocalizacao",   "VARCHAR(200)"),
-        ("contratos", "pdf_assinado",     "VARCHAR(300)"),
-        ("contratos", "assinado_em",      "DATETIME"),
+        ("leads",     "followup_em",           "DATETIME"),
+        ("contratos", "dados_contrato",        "TEXT"),
+        ("contratos", "selfie_path",           "VARCHAR(300)"),
+        ("contratos", "assinatura_path",       "VARCHAR(300)"),
+        ("contratos", "ip_cliente",            "VARCHAR(50)"),
+        ("contratos", "geolocalizacao",        "VARCHAR(200)"),
+        ("contratos", "pdf_assinado",          "VARCHAR(300)"),
+        ("contratos", "assinado_em",           "DATETIME"),
+        ("contratos", "doc_frente_req_path",   "VARCHAR(300)"),
+        ("contratos", "doc_verso_req_path",    "VARCHAR(300)"),
+        ("contratos", "token_prop",            "VARCHAR(64)"),
+        ("contratos", "status_prop",           "VARCHAR(20)"),
+        ("contratos", "selfie_prop_path",      "VARCHAR(300)"),
+        ("contratos", "assinatura_prop_path",  "VARCHAR(300)"),
+        ("contratos", "doc_frente_prop_path",  "VARCHAR(300)"),
+        ("contratos", "doc_verso_prop_path",   "VARCHAR(300)"),
+        ("contratos", "ip_prop",               "VARCHAR(50)"),
+        ("contratos", "geo_prop",              "VARCHAR(200)"),
+        ("contratos", "assinado_prop_em",      "DATETIME"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -967,22 +978,32 @@ async def gerar_contrato_endpoint(
         caminho = salvar_pdf(pdf_bytes, nome_arquivo)
 
         # ── 5. persistir no banco ────────────────────────────────────────
+        tok_prop = secrets.token_hex(32)
         contrato = Contrato(
             lead_id=lead_id,
             criado_por_id=usuario.id,
             token=tok,
+            token_prop=tok_prop,
             hash_doc=hash_doc,
             pdf_original=caminho,
             dados_contrato=json.dumps(dados, ensure_ascii=False),
             status="pendente",
+            status_prop="pendente",
         )
         db.add(contrato)
         db.commit()
         db.refresh(contrato)
 
         base_url = str(request.base_url).rstrip("/")
-        link = f"{base_url}/assinar/{tok}"
-        return {"contrato_id": contrato.id, "link": link, "hash": hash_doc, "doc_id": doc_id}
+        return {
+            "contrato_id": contrato.id,
+            "hash": hash_doc,
+            "doc_id": doc_id,
+            "link_requerente":   f"{base_url}/assinar/{tok}",
+            "link_proprietario": f"{base_url}/assinar/{tok_prop}",
+            # compat retroativa
+            "link": f"{base_url}/assinar/{tok}",
+        }
 
     except HTTPException:
         raise  # re-lança 404 normalmente
@@ -998,10 +1019,20 @@ async def pagina_assinar(token: str):
     return HTMLResponse(caminho.read_text(encoding="utf-8"))
 
 
+def _detectar_role_contrato(token: str, db):
+    """Retorna (contrato, role) onde role = 'requerente' | 'proprietario'."""
+    c = db.query(Contrato).filter(Contrato.token == token).first()
+    if c:
+        return c, "requerente"
+    c = db.query(Contrato).filter(Contrato.token_prop == token).first()
+    if c:
+        return c, "proprietario"
+    return None, None
+
+
 @app.get("/assinar/{token}/pdf-original")
 async def pdf_preview_contrato(token: str, db: Session = Depends(get_db)):
-    """Serve o PDF original para embed na página de assinatura (sem auth — token é o segredo)."""
-    c = db.query(Contrato).filter(Contrato.token == token).first()
+    c, _ = _detectar_role_contrato(token, db)
     if not c:
         raise HTTPException(404, "Contrato não encontrado")
     if not c.pdf_original:
@@ -1009,126 +1040,142 @@ async def pdf_preview_contrato(token: str, db: Session = Depends(get_db)):
     p = Path(c.pdf_original)
     if not p.exists():
         raise HTTPException(404, "Arquivo não encontrado no servidor")
-    return FileResponse(
-        str(p),
-        media_type="application/pdf",
-        headers={"Content-Disposition": "inline"},
-    )
+    return FileResponse(str(p), media_type="application/pdf",
+                        headers={"Content-Disposition": "inline"})
 
 
 @app.get("/assinar/{token}/conteudo")
 async def conteudo_contrato(token: str, db: Session = Depends(get_db)):
-    contrato = db.query(Contrato).filter(Contrato.token == token).first()
+    contrato, role = _detectar_role_contrato(token, db)
     if not contrato:
         raise HTTPException(404, "Contrato não encontrado")
-    if contrato.status == "assinado":
-        raise HTTPException(410, "Contrato já assinado")
+    if role == "requerente"   and contrato.status      == "assinado":
+        raise HTTPException(410, "Contrato ja assinado")
+    if role == "proprietario" and contrato.status_prop == "assinado":
+        raise HTTPException(410, "Contrato ja assinado")
 
     d = json.loads(contrato.dados_contrato or "{}") if contrato.dados_contrato else {}
-    modalidade = (d.get("modalidade") or "refinanciamento").lower()
-    verbo = "refinanciamento" if "refin" in modalidade else "financiamento da aquisição"
-
-    texto = (
-        f"REQUERIMENTO DE INTERMEDIAÇÃO — PRESTAÇÃO DE SERVIÇOS\n"
-        f"Fácil Financiamentos · Nº {d.get('doc_id','—')} · {d.get('data_contrato','')}\n"
-        f"{'='*60}\n\n"
-        f"DADOS DO REQUERENTE\n"
-        f"Nome: {d.get('req_nome','—')}\n"
-        f"CPF: {d.get('req_cpf','—')}   RG: {d.get('req_rg','—')}\n"
-        f"Endereço: {d.get('req_rua','—')}, Nº {d.get('req_numero','—')} – {d.get('req_bairro','—')} – CEP {d.get('req_cep','—')} – {d.get('req_cidade','—')}\n"
-        f"Celular: {d.get('req_celular','—')}\n\n"
-        f"DADOS DO VEÍCULO\n"
-        f"Marca/Modelo: {d.get('vei_modelo','—')}   Placa: {d.get('vei_placa','—')}   Ano: {d.get('vei_ano','—')}   Cor: {d.get('vei_cor','—')}\n"
-        f"RENAVAM: {d.get('vei_renavam','—')}   Chassi: {d.get('vei_chassi','—')}\n\n"
-        f"OBJETO DO REQUERIMENTO\n"
-        f"Eu {d.get('req_nome','—')}, requeiro que seja INTERMEDIADO o {verbo} do veículo de marca "
-        f"{d.get('vei_modelo','—')}, placa {d.get('vei_placa','—')}, ano {d.get('vei_ano','—')}, "
-        f"cor {d.get('vei_cor','—')}, RENAVAM {d.get('vei_renavam','—')}, CHASSI {d.get('vei_chassi','—')}, "
-        f"adquirido fruto de negociação direta com o seu legítimo proprietário/representante.\n\n"
-        f"DADOS DO PROPRIETÁRIO / VENDEDOR\n"
-        f"Nome: {d.get('prop_nome','—')}\n"
-        f"CPF: {d.get('prop_cpf','—')}   Telefone: {d.get('prop_telefone','—')}\n\n"
-        f"CONDIÇÕES FINANCEIRAS\n"
-        f"Valor líquido: R$ {d.get('fin_valor_liquido','—')}\n"
-        f"Parcelas: {d.get('fin_parcelas','—')}x de R$ {d.get('fin_valor_parcela','—')}   1º venc.: {d.get('fin_vencimento','—')}\n"
-        f"Banco: {d.get('fin_banco','—')}\n\n"
-        f"O valor líquido já está descontado de todas as despesas, consultoria, comissões, taxas, impostos e intermediação.\n"
-        f"Neste ato o requerente que NÃO adquiriu o veículo junto à empresa, sendo que a mesma não se responsabiliza pela documentação e qualidade do mesmo.\n\n"
-        f"{'='*60}\n"
-        f"DECLARO AINDA, QUE NADA MAIS ME FOI PROMETIDO ALÉM DO QUE ESTÁ ESPECIFICADO NESTE REQUERIMENTO.\n"
-        f"{'='*60}\n\n"
-        f"AUTORIZAÇÃO DE PAGAMENTO\n"
-        f"Autorizo o pagamento de R$ {d.get('pag_valor','—')} na conta:\n"
-        f"Beneficiário: {d.get('pag_nome_beneficiario','—')}   CPF: {d.get('pag_cpf_beneficiario','—')}\n"
-        f"Banco: {d.get('pag_banco','—')}   Agência: {d.get('pag_agencia','—')}   Conta: {d.get('pag_conta','—')}\n"
-        f"PIX: {d.get('pag_pix','—')}\n\n"
-        f"Documento assinado eletronicamente (Lei 14.063/2020)\n"
-        f"Hash SHA-256: {contrato.hash_doc}"
-    )
-    return {"texto": texto, "hash": contrato.hash_doc}
+    nome_req  = d.get("req_nome",  "-")
+    nome_prop = d.get("prop_nome", "-")
+    return {
+        "hash":       contrato.hash_doc,
+        "role":       role,
+        "nome_req":   nome_req,
+        "nome_prop":  nome_prop,
+        "doc_id":     d.get("doc_id", ""),
+        "data":       d.get("data_contrato", ""),
+    }
 
 
 @app.post("/assinar/{token}")
 async def submeter_assinatura(token: str, request: Request, db: Session = Depends(get_db)):
-    from gerar_contrato import base64_para_imagem, gerar_pdf_assinado, salvar_pdf, CONTRATOS_DIR
-    from pathlib import Path as Pt
+    import traceback as _tb
+    try:
+        from gerar_contrato import base64_para_imagem, gerar_pdf_assinado, salvar_pdf, CONTRATOS_DIR
+        from pathlib import Path as Pt
 
-    contrato = db.query(Contrato).filter(Contrato.token == token).first()
-    if not contrato:
-        raise HTTPException(404, "Contrato não encontrado")
-    if contrato.status == "assinado":
-        raise HTTPException(410, "Contrato já foi assinado")
+        contrato, role = _detectar_role_contrato(token, db)
+        if not contrato:
+            raise HTTPException(404, "Contrato nao encontrado")
+        if role == "requerente"   and contrato.status      == "assinado":
+            raise HTTPException(410, "Contrato ja assinado")
+        if role == "proprietario" and contrato.status_prop == "assinado":
+            raise HTTPException(410, "Contrato ja assinado")
 
-    body = await request.json()
-    selfie_b64   = body.get("selfie", "")
-    assin_b64    = body.get("assinatura", "")
-    assin2_b64   = body.get("assinatura2", "")  # segunda assinatura (pagamento)
-    geo          = body.get("geo", "")
-    ip           = request.client.host if request.client else "desconhecido"
+        body = await request.json()
+        selfie_b64    = body.get("selfie", "")
+        assin_b64     = body.get("assinatura", "")
+        doc_frente_b64 = body.get("doc_frente", "")
+        doc_verso_b64  = body.get("doc_verso", "")
+        geo           = body.get("geo", "")
+        ip            = request.client.host if request.client else "desconhecido"
+        agora         = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
-    base = CONTRATOS_DIR / f"contrato_{contrato.lead_id}_{token[:8]}"
-    selfie_path  = str(base) + "_selfie.jpg"
-    assin_path   = str(base) + "_assinatura.png"
-    assin2_path  = str(base) + "_assinatura2.png"
+        base = CONTRATOS_DIR / f"contrato_{contrato.lead_id}_{token[:8]}"
+        d_contrato = json.loads(contrato.dados_contrato or "{}") if contrato.dados_contrato else {}
+        base_url = str(request.base_url).rstrip("/")
 
-    base64_para_imagem(selfie_b64,  Pt(selfie_path))
-    base64_para_imagem(assin_b64,   Pt(assin_path))
-    if assin2_b64:
-        base64_para_imagem(assin2_b64, Pt(assin2_path))
+        if role == "requerente":
+            selfie_path = str(base) + "_selfie_req.jpg"
+            assin_path  = str(base) + "_assin_req.png"
+            frente_path = str(base) + "_doc_frente_req.jpg"
+            verso_path  = str(base) + "_doc_verso_req.jpg"
+            base64_para_imagem(selfie_b64,     Pt(selfie_path))
+            base64_para_imagem(assin_b64,      Pt(assin_path))
+            base64_para_imagem(doc_frente_b64, Pt(frente_path))
+            base64_para_imagem(doc_verso_b64,  Pt(verso_path))
 
-    # Gera PDF de auditoria
-    agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    lead  = contrato.lead
-    d_contrato = json.loads(contrato.dados_contrato or "{}") if contrato.dados_contrato else {}
-    base_url = str(request.base_url).rstrip("/")
-    audit_bytes = gerar_pdf_assinado(
-        pdf_original_bytes=Pt(contrato.pdf_original).read_bytes() if contrato.pdf_original else b"",
-        selfie_path=selfie_path,
-        assinatura_path=assin_path,
-        dados_auditoria={
-            "assinado_em": agora,
-            "ip": ip,
-            "geo": geo or "nao fornecida",
-            "hash_doc": contrato.hash_doc,
-            "nome": d_contrato.get("req_nome") or lead.nome or "-",
-            "cpf":  d_contrato.get("req_cpf")  or lead.cpf  or "-",
-        },
-        doc_id=d_contrato.get("doc_id", ""),
-        verificacao_url=f"{base_url}/verificar/{token}",
-    )
-    audit_path = str(base) + "_auditoria.pdf"
-    Pt(audit_path).write_bytes(audit_bytes)
+            audit_bytes = gerar_pdf_assinado(
+                pdf_original_bytes=Pt(contrato.pdf_original).read_bytes() if contrato.pdf_original else b"",
+                selfie_path=selfie_path,
+                assinatura_path=assin_path,
+                dados_auditoria={
+                    "assinado_em": agora, "ip": ip, "geo": geo or "nao fornecida",
+                    "hash_doc": contrato.hash_doc,
+                    "nome": d_contrato.get("req_nome") or (contrato.lead.nome if contrato.lead else "-") or "-",
+                    "cpf":  d_contrato.get("req_cpf")  or (contrato.lead.cpf  if contrato.lead else "-") or "-",
+                    "role": "Requerente",
+                },
+                doc_id=d_contrato.get("doc_id", ""),
+                verificacao_url=f"{base_url}/verificar/{contrato.token}",
+            )
+            audit_path = str(base) + "_audit_req.pdf"
+            Pt(audit_path).write_bytes(audit_bytes)
 
-    contrato.status          = "assinado"
-    contrato.selfie_path     = selfie_path
-    contrato.assinatura_path = assin_path
-    contrato.pdf_assinado    = audit_path
-    contrato.ip_cliente      = ip
-    contrato.geolocalizacao  = geo
-    contrato.assinado_em     = datetime.utcnow()
-    db.commit()
+            contrato.status              = "assinado"
+            contrato.selfie_path         = selfie_path
+            contrato.assinatura_path     = assin_path
+            contrato.doc_frente_req_path = frente_path
+            contrato.doc_verso_req_path  = verso_path
+            contrato.pdf_assinado        = audit_path
+            contrato.ip_cliente          = ip
+            contrato.geolocalizacao      = geo
+            contrato.assinado_em         = datetime.utcnow()
 
-    return {"status": "ok", "assinado_em": agora}
+        else:  # proprietario
+            selfie_path = str(base) + "_selfie_prop.jpg"
+            assin_path  = str(base) + "_assin_prop.png"
+            frente_path = str(base) + "_doc_frente_prop.jpg"
+            verso_path  = str(base) + "_doc_verso_prop.jpg"
+            base64_para_imagem(selfie_b64,     Pt(selfie_path))
+            base64_para_imagem(assin_b64,      Pt(assin_path))
+            base64_para_imagem(doc_frente_b64, Pt(frente_path))
+            base64_para_imagem(doc_verso_b64,  Pt(verso_path))
+
+            audit_bytes = gerar_pdf_assinado(
+                pdf_original_bytes=Pt(contrato.pdf_original).read_bytes() if contrato.pdf_original else b"",
+                selfie_path=selfie_path,
+                assinatura_path=assin_path,
+                dados_auditoria={
+                    "assinado_em": agora, "ip": ip, "geo": geo or "nao fornecida",
+                    "hash_doc": contrato.hash_doc,
+                    "nome": d_contrato.get("prop_nome", "-"),
+                    "cpf":  d_contrato.get("prop_cpf",  "-"),
+                    "role": "Proprietario / Vendedor",
+                },
+                doc_id=d_contrato.get("doc_id", ""),
+                verificacao_url=f"{base_url}/verificar/{contrato.token_prop}",
+            )
+            audit_path = str(base) + "_audit_prop.pdf"
+            Pt(audit_path).write_bytes(audit_bytes)
+
+            contrato.status_prop          = "assinado"
+            contrato.selfie_prop_path     = selfie_path
+            contrato.assinatura_prop_path = assin_path
+            contrato.doc_frente_prop_path = frente_path
+            contrato.doc_verso_prop_path  = verso_path
+            contrato.ip_prop              = ip
+            contrato.geo_prop             = geo
+            contrato.assinado_prop_em     = datetime.utcnow()
+
+        db.commit()
+        return {"status": "ok", "assinado_em": agora, "role": role}
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"Erro em submeter_assinatura: {_tb.format_exc()}")
+        raise HTTPException(500, f"{type(exc).__name__}: {exc}")
 
 
 # ── Verificação pública de assinatura ────────────────────────────────────────
@@ -1210,17 +1257,26 @@ async def verificar_assinatura(token: str, db: Session = Depends(get_db)):
 @app.get("/api/leads/{lead_id}/contratos")
 async def listar_contratos(
     lead_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
     contratos = db.query(Contrato).filter(Contrato.lead_id == lead_id).order_by(Contrato.criado_em.desc()).all()
+    base_url = str(request.base_url).rstrip("/")
     return [
         {
             "id": c.id,
-            "status": c.status,
-            "criado_em": c.criado_em.strftime("%d/%m/%Y %H:%M") if c.criado_em else "—",
-            "assinado_em": c.assinado_em.strftime("%d/%m/%Y %H:%M") if c.assinado_em else None,
-            "link": f"/assinar/{c.token}",
+            "criado_em":       c.criado_em.strftime("%d/%m/%Y %H:%M") if c.criado_em else "-",
+            # Requerente
+            "status_req":      c.status or "pendente",
+            "assinado_req_em": c.assinado_em.strftime("%d/%m/%Y %H:%M") if c.assinado_em else None,
+            "link_req":        f"{base_url}/assinar/{c.token}",
+            # Proprietário
+            "status_prop":     c.status_prop or "pendente",
+            "assinado_prop_em": c.assinado_prop_em.strftime("%d/%m/%Y %H:%M") if c.assinado_prop_em else None,
+            "link_prop":       f"{base_url}/assinar/{c.token_prop}" if c.token_prop else None,
+            # PDF assinado (disponível quando requerente assinar)
+            "pdf_id":          c.id if c.status == "assinado" else None,
         }
         for c in contratos
     ]

@@ -6,659 +6,565 @@
 <title>Assinar Contrato — Fácil Financiamentos</title>
 <style>
   :root {
-    --navy: #0d2b4e; --navy2: #1a4a7a; --gold: #c89b00;
-    --green: #16a34a; --red: #ef4444;
-    --bg: #f0f3f8; --white: #fff; --border: #e2e8f0;
-    --text: #1a202c; --muted: #64748b; --radius: 14px;
+    --navy:#0d2b4e; --navy2:#1a4a7a; --gold:#c89b00;
+    --green:#16a34a; --red:#ef4444;
+    --bg:#f0f3f8; --white:#fff; --border:#e2e8f0;
+    --text:#1a202c; --muted:#64748b;
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text)}
 
-  /* ── Header ── */
-  .header {
-    background: var(--navy); color: #fff; padding: 1rem 1.25rem;
-    display: flex; align-items: center; gap: .75rem;
-  }
-  .header-logo {
-    width: 38px; height: 38px; background: var(--gold); border-radius: 9px;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 900; font-size: 1.15rem; color: var(--navy); flex-shrink: 0;
-  }
-  .header-text h1 { font-size: 1rem; font-weight: 700; }
-  .header-text p  { font-size: .72rem; opacity: .65; margin-top: 1px; }
+  /* Header */
+  .hdr{background:var(--navy);color:#fff;display:flex;align-items:center;gap:.7rem;padding:.8rem 1rem}
+  .hdr-logo{width:34px;height:34px;background:var(--gold);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:1rem;color:var(--navy);flex-shrink:0}
+  .hdr h1{font-size:.95rem;font-weight:700}
+  .hdr p{font-size:.68rem;opacity:.6;margin-top:1px}
 
-  /* ── Steps ── */
-  .steps-wrap { background: var(--navy); padding: 0 1rem .9rem; }
-  .steps { display: flex; gap: 0; }
-  .step {
-    flex: 1; text-align: center; padding: .4rem .2rem;
-    font-size: .65rem; font-weight: 600; color: rgba(255,255,255,.4);
-    border-bottom: 3px solid rgba(255,255,255,.15); transition: all .2s;
-  }
-  .step.active { color: #fff; border-color: var(--gold); }
-  .step.done   { color: rgba(255,255,255,.7); border-color: var(--green); }
+  /* Steps */
+  .steps-bar{background:var(--navy);padding:0 1rem .75rem;display:flex;gap:0}
+  .step{flex:1;text-align:center;padding:.35rem .15rem;font-size:.62rem;font-weight:600;color:rgba(255,255,255,.35);border-bottom:2.5px solid rgba(255,255,255,.12);transition:all .2s}
+  .step.active{color:#fff;border-color:var(--gold)}
+  .step.done{color:rgba(255,255,255,.6);border-color:var(--green)}
 
-  /* ── Progress ── */
-  .progress-bar { height: 3px; background: var(--border); overflow: hidden; }
-  .progress-fill { height: 100%; background: var(--gold); transition: width .35s ease; }
+  /* Progress */
+  .prog-bar{height:3px;background:var(--border)}
+  .prog-fill{height:100%;background:var(--gold);transition:width .35s ease}
 
-  /* ── Container ── */
-  .container { max-width: 640px; margin: 0 auto; padding: .9rem .9rem 2rem; }
+  /* ── PDF full-width ── */
+  #etapa1{display:flex;flex-direction:column;height:calc(100vh - 110px)}
+  .pdf-zone{flex:1;position:relative;background:#525659;overflow:hidden}
+  .pdf-zone iframe{width:100%;height:100%;border:none;display:block}
+  .pdf-fallback{display:none;position:absolute;inset:0;background:#525659;flex-direction:column;align-items:center;justify-content:center;gap:.75rem}
+  .pdf-fallback p{color:#fff;font-size:.82rem;opacity:.8;text-align:center;padding:0 1.5rem}
+  .btn-pdf-open{background:var(--gold);color:var(--navy);padding:.6rem 1.3rem;border-radius:8px;font-size:.85rem;font-weight:700;text-decoration:none}
 
-  /* ── Card ── */
-  .card {
-    background: var(--white); border-radius: var(--radius);
-    box-shadow: 0 2px 16px rgba(0,0,0,.07); margin-bottom: .85rem; overflow: hidden;
-  }
-  .card-header {
-    background: var(--navy); color: #fff;
-    padding: .75rem 1rem; font-size: .88rem; font-weight: 700;
-    display: flex; align-items: center; gap: .45rem;
-  }
-  .card-body { padding: 1rem; }
+  /* Sticky bottom bar (etapa 1) */
+  .pdf-footer{background:#fff;border-top:1px solid var(--border);padding:.7rem 1rem;flex-shrink:0}
+  .aceite-row{display:flex;gap:.65rem;align-items:flex-start;margin-bottom:.6rem}
+  .aceite-row input[type=checkbox]{width:19px;height:19px;margin-top:1px;accent-color:var(--navy);flex-shrink:0;cursor:pointer}
+  .aceite-row label{font-size:.78rem;line-height:1.45;cursor:pointer}
 
-  /* ── PDF Viewer ── */
-  .pdf-wrap {
-    border-radius: 8px; overflow: hidden; border: 1px solid var(--border);
-    background: #525659; position: relative;
-  }
-  .pdf-wrap iframe {
-    width: 100%; height: 460px; display: block; border: none;
-  }
-  .pdf-fallback {
-    display: none; padding: 2rem; text-align: center; background: #f8fafc;
-  }
-  .pdf-fallback p { font-size: .83rem; color: var(--muted); margin-bottom: .75rem; }
-  .btn-abrir-pdf {
-    display: inline-block; padding: .6rem 1.2rem;
-    background: var(--navy); color: #fff; border-radius: 8px;
-    font-size: .85rem; font-weight: 600; text-decoration: none;
-  }
-  .scroll-hint { font-size: .72rem; color: var(--muted); text-align: center; margin-top: .5rem; }
+  /* Container para demais etapas */
+  .container{max-width:640px;margin:0 auto;padding:.9rem .9rem 2rem}
 
-  /* ── Aceite ── */
-  .aceite-row {
-    display: flex; gap: .75rem; align-items: flex-start; padding: .9rem 1rem;
-    border-top: 1px solid var(--border); background: #fafbfd;
-  }
-  .aceite-row input[type=checkbox] {
-    width: 20px; height: 20px; margin-top: 1px; flex-shrink: 0;
-    accent-color: var(--navy); cursor: pointer;
-  }
-  .aceite-row label { font-size: .82rem; line-height: 1.5; cursor: pointer; }
+  /* Card */
+  .card{background:#fff;border-radius:12px;box-shadow:0 2px 14px rgba(0,0,0,.07);margin-bottom:.8rem;overflow:hidden}
+  .card-hdr{background:var(--navy);color:#fff;padding:.65rem 1rem;font-size:.85rem;font-weight:700;display:flex;align-items:center;gap:.4rem}
+  .card-body{padding:1rem}
 
-  /* ── Campo de Assinatura ── */
-  .doc-page {
-    background: #fff; border: 1px solid #dde3ec; border-radius: 10px;
-    padding: 1.25rem; margin-bottom: .85rem;
-    box-shadow: 0 2px 10px rgba(0,0,0,.06);
-  }
-  .doc-title {
-    font-size: .72rem; font-weight: 700; color: var(--navy);
-    text-transform: uppercase; letter-spacing: .08em; margin-bottom: .6rem;
-  }
-  .sig-area-label {
-    font-size: .75rem; color: var(--muted); margin-bottom: .4rem;
-  }
-  .sig-field {
-    background: #fff; border-radius: 8px; border: 2px dashed #c8d3e0;
-    overflow: hidden; position: relative; touch-action: none;
-  }
-  .sig-field canvas {
-    display: block; width: 100%; height: 140px; cursor: crosshair;
-  }
-  .sig-field.signed { border-color: var(--navy); border-style: solid; }
-  .sig-field-footer {
-    border-top: 2px solid var(--navy); padding: .5rem .75rem .35rem;
-    display: flex; justify-content: space-between; align-items: center;
-    background: #f8fafc;
-  }
-  .sig-field-name { font-size: .72rem; color: var(--navy); font-weight: 700; }
-  .sig-field-role { font-size: .68rem; color: var(--muted); }
-  .btn-limpar {
-    font-size: .72rem; color: var(--muted); background: none; border: none;
-    cursor: pointer; padding: .2rem .5rem; border-radius: 6px;
-  }
-  .btn-limpar:hover { background: #f1f5f9; }
-  .sig-hint {
-    font-size: .72rem; color: var(--muted); text-align: center;
-    margin-top: .5rem; display: flex; align-items: center; justify-content: center; gap: .3rem;
-  }
+  /* ── Campo de assinatura DocuSign-style ── */
+  .doc-sheet{background:#fff;border:1px solid #d0d9e8;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.06);margin-bottom:.8rem;overflow:hidden}
+  .doc-sheet-top{background:#f8fafc;border-bottom:1px solid var(--border);padding:.6rem 1rem;display:flex;align-items:center;gap:.5rem}
+  .doc-badge{background:var(--navy);color:#fff;font-size:.65rem;font-weight:700;padding:.2rem .55rem;border-radius:4px;text-transform:uppercase}
+  .doc-sheet-title{font-size:.8rem;color:var(--navy);font-weight:600}
+
+  .sign-here-banner{background:#fffbeb;border-bottom:1px solid #fde68a;padding:.6rem 1rem;display:flex;align-items:center;gap:.6rem}
+  .sign-pulse{width:10px;height:10px;background:#f59e0b;border-radius:50%;animation:pulse 1.4s infinite}
+  @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.45);opacity:.6}}
+  .sign-here-banner p{font-size:.78rem;color:#92400e;font-weight:600}
+
+  .sig-canvas-wrap{background:#fff;position:relative;cursor:crosshair;touch-action:none}
+  .sig-canvas-wrap canvas{display:block;width:100%}
+  .sig-canvas-wrap.signed{outline:2.5px solid var(--navy)}
+  .sig-line-bar{background:#f8fafc;border-top:3px solid var(--navy);padding:.55rem 1rem;display:flex;align-items:center;justify-content:space-between}
+  .sig-name-block .name{font-size:.75rem;color:var(--navy);font-weight:700;text-transform:uppercase}
+  .sig-name-block .role{font-size:.67rem;color:var(--muted)}
+  .btn-clear{background:none;border:1px solid var(--border);border-radius:6px;padding:.25rem .6rem;font-size:.72rem;color:var(--muted);cursor:pointer}
 
   /* ── Câmera ── */
-  .cam-wrap { position: relative; border-radius: 10px; overflow: hidden; background: #1a1a1a; }
-  .cam-wrap video, .cam-wrap img { width: 100%; display: block; max-height: 320px; object-fit: cover; }
-  .cam-overlay {
-    position: absolute; bottom: 0; left: 0; right: 0;
-    background: linear-gradient(transparent, rgba(0,0,0,.5));
-    padding: .75rem; pointer-events: none;
-  }
-  .cam-overlay p { color: #fff; font-size: .72rem; text-align: center; opacity: .9; }
-  .id-badge {
-    background: rgba(255,255,255,.12); backdrop-filter: blur(4px);
-    border: 1px solid rgba(255,255,255,.25); border-radius: 8px;
-    padding: .4rem .7rem; margin-bottom: .4rem; text-align: center;
-  }
-  .id-badge p { color: #fff; font-size: .72rem; }
+  .cam-instr{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.7rem .9rem;margin-bottom:.85rem}
+  .cam-instr p{font-size:.78rem;color:#92400e;font-weight:600;margin-bottom:.3rem}
+  .cam-instr ul{font-size:.76rem;color:#78350f;line-height:1.7;padding-left:1rem}
+  .cam-wrap{border-radius:10px;overflow:hidden;background:#111;position:relative}
+  .cam-wrap video,.cam-wrap img{width:100%;display:block;max-height:300px;object-fit:cover}
+  .cam-label{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.55));padding:.55rem;text-align:center}
+  .cam-label span{color:#fff;font-size:.72rem;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.3);border-radius:4px;padding:.2rem .5rem}
+  img.foto-preview{width:100%;border-radius:8px;margin-top:.4rem;border:1px solid var(--border);display:none}
 
-  /* ── Botões ── */
-  .btn-primary {
-    display: block; width: 100%; padding: .85rem 1rem;
-    background: var(--navy); color: #fff; font-size: .95rem; font-weight: 700;
-    border: none; border-radius: 10px; cursor: pointer; margin-top: .6rem;
-    transition: background .15s; text-align: center;
-  }
-  .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
-  .btn-primary:not(:disabled):active { background: var(--navy2); }
-  .btn-secondary {
-    display: block; width: 100%; padding: .7rem 1rem;
-    background: #f1f5f9; color: var(--text); font-size: .88rem; font-weight: 600;
-    border: 1.5px solid var(--border); border-radius: 10px; cursor: pointer; margin-top: .4rem;
-    text-align: center;
-  }
-  .btn-green {
-    display: block; width: 100%; padding: .95rem 1rem;
-    background: var(--green); color: #fff; font-size: 1rem; font-weight: 700;
-    border: none; border-radius: 10px; cursor: pointer; margin-top: .6rem;
-    transition: background .15s; text-align: center;
-  }
-  .btn-green:disabled { background: #94a3b8; cursor: not-allowed; }
+  /* Botões */
+  .btn-navy{display:block;width:100%;padding:.82rem;background:var(--navy);color:#fff;font-size:.92rem;font-weight:700;border:none;border-radius:10px;cursor:pointer;margin-top:.55rem;text-align:center}
+  .btn-navy:disabled{background:#94a3b8;cursor:not-allowed}
+  .btn-sec{display:block;width:100%;padding:.7rem;background:#f1f5f9;color:var(--text);font-size:.85rem;font-weight:600;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;margin-top:.4rem;text-align:center}
+  .btn-green{display:block;width:100%;padding:.9rem;background:var(--green);color:#fff;font-size:.95rem;font-weight:700;border:none;border-radius:10px;cursor:pointer;margin-top:.55rem;text-align:center}
+  .btn-green:disabled{background:#94a3b8;cursor:not-allowed}
 
-  /* ── Preview assinatura na confirmação ── */
-  .preview-assin {
-    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
-    margin-top: .5rem;
-  }
-  .preview-assin img { width: 100%; display: block; max-height: 90px; object-fit: contain; background: #fff; }
-  .preview-selfie img {
-    width: 80px; height: 80px; border-radius: 50%; object-fit: cover;
-    border: 3px solid var(--navy); flex-shrink: 0;
-  }
-  .confirm-row {
-    display: flex; align-items: center; gap: .85rem;
-    padding: .75rem; background: #f8fafc; border-radius: 10px; margin-bottom: .75rem;
-  }
-  .confirm-row .info { font-size: .82rem; }
-  .confirm-row .info strong { color: var(--navy); display: block; font-size: .78rem; margin-bottom: .2rem; }
+  /* Confirmação */
+  .conf-row{display:flex;align-items:center;gap:.8rem;padding:.65rem;background:#f8fafc;border-radius:9px;margin-bottom:.55rem}
+  .conf-thumb-sig img{width:100%;max-height:65px;object-fit:contain;background:#fff;border:1px solid var(--border);border-radius:6px;display:block}
+  .conf-thumb-selfie img{width:68px;height:68px;border-radius:50%;object-fit:cover;border:2.5px solid var(--navy)}
+  .conf-thumb-doc img{width:80px;height:52px;object-fit:cover;border-radius:6px;border:1px solid var(--border)}
+  .conf-info strong{font-size:.75rem;color:var(--navy);display:block;margin-bottom:.2rem}
+  .conf-info p{font-size:.76rem;color:var(--muted)}
 
-  /* ── Status ── */
-  .status-box { text-align: center; padding: 2.5rem 1rem; }
-  .status-icon { font-size: 3.5rem; margin-bottom: .75rem; }
-  .status-box h2 { font-size: 1.15rem; color: var(--navy); margin-bottom: .5rem; font-weight: 700; }
-  .status-box p  { font-size: .84rem; color: var(--muted); line-height: 1.5; }
+  /* Legal */
+  .legal-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.75rem;font-size:.76rem;color:#166534;line-height:1.55;margin-top:.65rem}
 
-  .spinner {
-    width: 36px; height: 36px; border: 3px solid var(--border);
-    border-top-color: var(--navy); border-radius: 50%;
-    animation: spin .7s linear infinite; margin: 0 auto 1rem;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  /* Status */
+  .status-box{text-align:center;padding:2.5rem 1rem}
+  .status-icon{font-size:3.5rem;margin-bottom:.75rem}
+  .status-box h2{font-size:1.15rem;color:var(--navy);margin-bottom:.5rem;font-weight:700}
+  .status-box p{font-size:.83rem;color:var(--muted);line-height:1.55}
+  .spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--navy);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 1rem}
+  @keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
 
 <!-- Header -->
-<div class="header">
-  <div class="header-logo">F</div>
-  <div class="header-text">
-    <h1>Fácil Financiamentos</h1>
-    <p>Assinatura digital de contrato</p>
-  </div>
+<div class="hdr">
+  <div class="hdr-logo">F</div>
+  <div><h1>Fácil Financiamentos</h1><p>Assinatura digital de contrato</p></div>
 </div>
 
 <!-- Steps -->
-<div class="steps-wrap">
-  <div class="steps" id="steps">
-    <div class="step active" id="step1">1. Contrato</div>
-    <div class="step"        id="step2">2. Assinar</div>
-    <div class="step"        id="step3">3. Identificação</div>
-    <div class="step"        id="step4">4. Confirmar</div>
+<div class="steps-bar" id="stepsBar">
+  <div class="step active" id="s1">1. Contrato</div>
+  <div class="step"        id="s2">2. Assinar</div>
+  <div class="step"        id="s3">3. Selfie</div>
+  <div class="step"        id="s4">4. Documento</div>
+  <div class="step"        id="s5">5. Confirmar</div>
+</div>
+<div class="prog-bar"><div class="prog-fill" id="progFill" style="width:20%"></div></div>
+
+<!-- ══════ ETAPA 1: PDF FULL-SCREEN ══════ -->
+<div id="etapa1">
+  <div class="pdf-zone">
+    <iframe id="pdfFrame" title="Contrato"></iframe>
+    <div class="pdf-fallback" id="pdfFallback" style="display:flex">
+      <p>Toque para abrir o contrato em nova aba e leia antes de continuar.</p>
+      <a id="pdfLink" href="#" target="_blank" class="btn-pdf-open">📄 Abrir contrato</a>
+    </div>
+  </div>
+  <div class="pdf-footer">
+    <div class="aceite-row">
+      <input type="checkbox" id="chkLeu" onchange="document.getElementById('btnProx1').disabled=!this.checked">
+      <label for="chkLeu">Li o contrato na íntegra e concordo com todos os termos.</label>
+    </div>
+    <button class="btn-navy" id="btnProx1" onclick="irEtapa(2)" disabled>Continuar para assinar →</button>
   </div>
 </div>
-<div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:25%"></div></div>
 
-<div class="container">
+<!-- ══════ ETAPA 2: ASSINATURA DOCUSIGN-STYLE ══════ -->
+<div id="etapa2" style="display:none" class="container">
 
-  <!-- ══════════ ETAPA 1: PDF DO CONTRATO ══════════ -->
-  <div id="etapa1">
-    <div class="card">
-      <div class="card-header">📄 Leia o contrato na íntegra</div>
-      <div class="card-body" style="padding:.75rem">
-        <div class="pdf-wrap" id="pdfWrap">
-          <iframe id="pdfIframe" title="Contrato"></iframe>
-          <div class="pdf-fallback" id="pdfFallback">
-            <p>Não foi possível exibir o PDF aqui.<br>Toque no botão para abrir em nova aba.</p>
-            <a id="pdfLink" href="#" target="_blank" class="btn-abrir-pdf">📄 Abrir contrato</a>
-          </div>
-        </div>
-        <p class="scroll-hint">↕ Role o documento para ler na íntegra antes de continuar</p>
-      </div>
-      <div class="aceite-row">
-        <input type="checkbox" id="chkLeu" onchange="verificarEtapa1()">
-        <label for="chkLeu">Li o contrato acima na sua totalidade e concordo com todos os termos apresentados.</label>
-      </div>
+  <!-- Campo 1: Requerimento -->
+  <div class="doc-sheet">
+    <div class="doc-sheet-top">
+      <span class="doc-badge" id="badge1">Requerente</span>
+      <span class="doc-sheet-title">Requerimento de Intermediação</span>
     </div>
-    <button class="btn-primary" id="btnProx1" onclick="irEtapa(2)" disabled>Continuar para assinatura →</button>
-  </div>
-
-  <!-- ══════════ ETAPA 2: ASSINATURA ══════════ -->
-  <div id="etapa2" style="display:none">
-
-    <div class="doc-page">
-      <div class="doc-title">📝 Requerimento de Intermediação — Campo de Assinatura</div>
-      <p style="font-size:.78rem;color:var(--muted);margin-bottom:.85rem;line-height:1.5">
-        Assine com o dedo no campo abaixo, exatamente como consta no seu documento de identidade.
-      </p>
-
-      <div class="sig-area-label">✍️ Assinatura do Requerente</div>
-      <div class="sig-field" id="sigField">
-        <canvas id="sigCanvas"></canvas>
-      </div>
-      <div class="sig-field-footer">
-        <div>
-          <div class="sig-field-name" id="sigNome">REQUERENTE</div>
-          <div class="sig-field-role">Assinante / Solicitante</div>
-        </div>
-        <button class="btn-limpar" onclick="limparAssinatura()">🗑 Limpar</button>
-      </div>
-      <p class="sig-hint">☝️ Deslize o dedo para assinar no campo acima</p>
+    <div class="sign-here-banner">
+      <div class="sign-pulse"></div>
+      <p>☝️ Assine aqui com o dedo</p>
     </div>
-
-    <!-- Segunda assinatura: dados bancários -->
-    <div class="doc-page">
-      <div class="doc-title">🏦 Dados da Conta para Pagamento — Autorização</div>
-      <p style="font-size:.78rem;color:var(--muted);margin-bottom:.85rem;line-height:1.5">
-        Confirme também a autorização de pagamento assinando abaixo.
-      </p>
-
-      <div class="sig-area-label">✍️ Assinatura de Autorização</div>
-      <div class="sig-field" id="sigField2">
-        <canvas id="sigCanvas2"></canvas>
-      </div>
-      <div class="sig-field-footer">
-        <div>
-          <div class="sig-field-name" id="sigNome2">REQUERENTE</div>
-          <div class="sig-field-role">Autorizo o pagamento acima</div>
-        </div>
-        <button class="btn-limpar" onclick="limparAssinatura2()">🗑 Limpar</button>
-      </div>
+    <div class="sig-canvas-wrap" id="sigWrap1">
+      <canvas id="sigCanvas1" height="180"></canvas>
     </div>
-
-    <button class="btn-primary" id="btnProx2" onclick="irEtapa(3)" disabled>Continuar →</button>
-  </div>
-
-  <!-- ══════════ ETAPA 3: SELFIE COM DOCUMENTO ══════════ -->
-  <div id="etapa3" style="display:none">
-    <div class="card">
-      <div class="card-header">🪪 Confirme sua identidade</div>
-      <div class="card-body">
-        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.75rem;margin-bottom:.9rem">
-          <p style="font-size:.8rem;color:#92400e;font-weight:600;margin-bottom:.3rem">📋 Como tirar a foto corretamente:</p>
-          <ul style="font-size:.78rem;color:#78350f;line-height:1.7;padding-left:1.1rem">
-            <li>Segure seu <strong>RG ou CNH</strong> ao lado do rosto</li>
-            <li>Verifique que o documento está <strong>legível e sem reflexo</strong></li>
-            <li>Olhe diretamente para a câmera</li>
-            <li>Ambiente com boa iluminação</li>
-          </ul>
-        </div>
-
-        <div class="cam-wrap" id="camWrap">
-          <video id="video" autoplay playsinline></video>
-          <div class="cam-overlay">
-            <div class="id-badge"><p>Segure seu RG ou CNH ao lado do rosto</p></div>
-          </div>
-          <canvas id="photoCanvas" style="display:none"></canvas>
-        </div>
-        <img id="selfiePreview" style="display:none;width:100%;border-radius:10px;margin-top:.5rem" alt="Selfie">
-
-        <button class="btn-primary" id="btnCapturar" onclick="capturarSelfie()" style="margin-top:.75rem">📸 Tirar foto com documento</button>
-        <button class="btn-secondary" id="btnRetake" style="display:none" onclick="refazerSelfie()">🔄 Refazer foto</button>
+    <div class="sig-line-bar">
+      <div class="sig-name-block">
+        <div class="name" id="sigNome1">Requerente</div>
+        <div class="role" id="sigRole1">Assinante</div>
       </div>
-    </div>
-    <button class="btn-primary" id="btnProx3" onclick="irEtapa(4)" disabled>Continuar →</button>
-  </div>
-
-  <!-- ══════════ ETAPA 4: CONFIRMAR ══════════ -->
-  <div id="etapa4" style="display:none">
-    <div class="card">
-      <div class="card-header">✅ Revise e confirme</div>
-      <div class="card-body">
-
-        <!-- Preview selfie + assinatura -->
-        <div class="confirm-row">
-          <div class="preview-selfie"><img id="previewSelfieThumb" src="" alt="Selfie"></div>
-          <div class="info">
-            <strong>📸 Selfie com documento</strong>
-            Foto de identidade capturada com sucesso.
-          </div>
-        </div>
-
-        <div class="confirm-row" style="flex-direction:column;align-items:stretch">
-          <strong style="font-size:.78rem;color:var(--navy);margin-bottom:.4rem">✍️ Assinatura digital</strong>
-          <div class="preview-assin"><img id="previewAssinThumb" src="" alt="Assinatura"></div>
-        </div>
-
-        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.75rem;margin-top:.6rem">
-          <p style="font-size:.78rem;color:#166534;line-height:1.5">
-            🔒 <strong>Validade jurídica:</strong> Esta assinatura é válida nos termos da
-            <strong>Lei 14.063/2020</strong> e MP 2.200-2/2001. Seu IP, geolocalização, selfie
-            e assinatura serão registrados como prova de autoria.
-          </p>
-        </div>
-
-        <div class="aceite-row" style="border-top:none;padding:0;margin-top:.85rem">
-          <input type="checkbox" id="chkFinal"
-            onchange="document.getElementById('btnAssinar').disabled = !this.checked">
-          <label for="chkFinal">
-            Confirmo que sou <strong id="confirmaNome">o requerente</strong>, li e concordo com
-            todos os termos, e assino eletronicamente este documento ciente de sua plena
-            validade jurídica.
-          </label>
-        </div>
-      </div>
-    </div>
-    <button id="btnAssinar" class="btn-green" disabled onclick="enviarAssinatura()">✍️ Assinar documento</button>
-  </div>
-
-  <!-- ══════════ ENVIANDO ══════════ -->
-  <div id="etapaEnviando" style="display:none">
-    <div class="card">
-      <div class="status-box">
-        <div class="spinner"></div>
-        <h2>Processando…</h2>
-        <p>Registrando sua assinatura.<br>Não feche esta tela.</p>
-      </div>
+      <button class="btn-clear" onclick="limpar(1)">🗑 Limpar</button>
     </div>
   </div>
 
-  <!-- ══════════ SUCESSO ══════════ -->
-  <div id="etapaSucesso" style="display:none">
-    <div class="card">
-      <div class="status-box">
-        <div class="status-icon">🎉</div>
-        <h2>Documento assinado!</h2>
-        <p>Sua assinatura foi registrada com sucesso.<br>
-          Em breve um dos nossos consultores entrará em contato.<br><br>
-          <span style="font-size:.75rem;color:#94a3b8">Fácil Financiamentos · BH/MG</span>
-        </p>
+  <!-- Campo 2: Dados da conta -->
+  <div class="doc-sheet">
+    <div class="doc-sheet-top">
+      <span class="doc-badge" id="badge2">Autorização</span>
+      <span class="doc-sheet-title">Dados da Conta — Autorização de Pagamento</span>
+    </div>
+    <div class="sign-here-banner">
+      <div class="sign-pulse"></div>
+      <p>☝️ Confirme a autorização assinando aqui</p>
+    </div>
+    <div class="sig-canvas-wrap" id="sigWrap2">
+      <canvas id="sigCanvas2" height="180"></canvas>
+    </div>
+    <div class="sig-line-bar">
+      <div class="sig-name-block">
+        <div class="name" id="sigNome2">Requerente</div>
+        <div class="role">Autorizo o pagamento acima</div>
       </div>
+      <button class="btn-clear" onclick="limpar(2)">🗑 Limpar</button>
     </div>
   </div>
 
-  <!-- ══════════ ERRO ══════════ -->
-  <div id="etapaErro" style="display:none">
-    <div class="card">
-      <div class="status-box">
-        <div class="status-icon">❌</div>
-        <h2>Ops, algo deu errado</h2>
-        <p id="msgErro">Tente novamente ou entre em contato pelo WhatsApp.</p>
+  <button class="btn-navy" id="btnProx2" onclick="irEtapa(3)" disabled>Continuar →</button>
+</div>
+
+<!-- ══════ ETAPA 3: SELFIE COM DOCUMENTO ══════ -->
+<div id="etapa3" style="display:none" class="container">
+  <div class="card">
+    <div class="card-hdr">📸 Selfie segurando o documento</div>
+    <div class="card-body">
+      <div class="cam-instr">
+        <p>Como tirar a foto:</p>
+        <ul>
+          <li>Segure seu <strong>RG ou CNH aberto</strong> ao lado do rosto</li>
+          <li>Documento legível, sem reflexo e sem cobrir o rosto</li>
+          <li>Olhe diretamente para a câmera</li>
+          <li>Boa iluminação — evite contraluz</li>
+        </ul>
       </div>
+      <div class="cam-wrap" id="camWrap3">
+        <video id="video3" autoplay playsinline></video>
+        <div class="cam-label"><span>Segure o documento ao lado do rosto</span></div>
+        <canvas id="canvas3" style="display:none"></canvas>
+      </div>
+      <img id="selfiePreview" class="foto-preview" alt="Selfie">
+      <button class="btn-navy" id="btnCaptura3" onclick="capturar(3)">📸 Tirar selfie</button>
+      <button class="btn-sec"  id="btnRefaz3"   style="display:none" onclick="refazer(3)">🔄 Refazer</button>
+    </div>
+  </div>
+  <button class="btn-navy" id="btnProx3" onclick="irEtapa(4)" disabled>Continuar →</button>
+</div>
+
+<!-- ══════ ETAPA 4: FOTOS DO DOCUMENTO ══════ -->
+<div id="etapa4" style="display:none" class="container">
+
+  <!-- Frente -->
+  <div class="card">
+    <div class="card-hdr">🪪 Frente do documento (RG / CNH)</div>
+    <div class="card-body">
+      <div class="cam-instr" style="margin-bottom:.7rem">
+        <p>Dica:</p>
+        <ul>
+          <li>Posicione o documento <strong>plano e bem iluminado</strong></li>
+          <li>Capture toda a frente — nome, foto e número visíveis</li>
+          <li>Evite reflexo e sombra</li>
+        </ul>
+      </div>
+      <div class="cam-wrap" id="camWrap4a">
+        <video id="video4a" autoplay playsinline></video>
+        <div class="cam-label"><span>Frente do documento</span></div>
+        <canvas id="canvas4a" style="display:none"></canvas>
+      </div>
+      <img id="frentePreview" class="foto-preview" alt="Frente">
+      <button class="btn-navy" id="btnCaptura4a" onclick="capturar('4a')">📸 Fotografar frente</button>
+      <button class="btn-sec"  id="btnRefaz4a"   style="display:none" onclick="refazer('4a')">🔄 Refazer</button>
     </div>
   </div>
 
-</div><!-- /container -->
+  <!-- Verso -->
+  <div class="card">
+    <div class="card-hdr">🪪 Verso do documento (RG / CNH)</div>
+    <div class="card-body">
+      <div class="cam-wrap" id="camWrap4b" style="display:none">
+        <video id="video4b" autoplay playsinline></video>
+        <div class="cam-label"><span>Verso do documento</span></div>
+        <canvas id="canvas4b" style="display:none"></canvas>
+      </div>
+      <img id="versoPreview" class="foto-preview" alt="Verso">
+      <div id="versoMsg" style="font-size:.8rem;color:var(--muted);text-align:center;padding:1rem 0">
+        Fotografe a frente primeiro para liberar o verso.
+      </div>
+      <button class="btn-navy" id="btnCaptura4b" style="display:none" onclick="capturar('4b')">📸 Fotografar verso</button>
+      <button class="btn-sec"  id="btnRefaz4b"   style="display:none" onclick="refazer('4b')">🔄 Refazer</button>
+    </div>
+  </div>
+
+  <button class="btn-navy" id="btnProx4" onclick="irEtapa(5)" disabled>Continuar →</button>
+</div>
+
+<!-- ══════ ETAPA 5: CONFIRMAR ══════ -->
+<div id="etapa5" style="display:none" class="container">
+  <div class="card">
+    <div class="card-hdr">✅ Revise antes de assinar</div>
+    <div class="card-body">
+
+      <div class="conf-row">
+        <div class="conf-thumb-selfie"><img id="confSelfie" src="" alt="Selfie"></div>
+        <div class="conf-info"><strong>📸 Selfie com documento</strong><p>Identidade confirmada</p></div>
+      </div>
+
+      <div class="conf-row" style="flex-direction:column;align-items:stretch">
+        <div class="conf-info" style="margin-bottom:.4rem"><strong>✍️ Assinatura digital</strong></div>
+        <div class="conf-thumb-sig"><img id="confAssin" src="" alt="Assinatura"></div>
+      </div>
+
+      <div style="display:flex;gap:.5rem">
+        <div class="conf-row" style="flex:1;justify-content:center;flex-direction:column;gap:.3rem">
+          <div class="conf-thumb-doc"><img id="confFrente" src="" alt="Frente doc"></div>
+          <div style="font-size:.67rem;color:var(--muted);text-align:center">Frente</div>
+        </div>
+        <div class="conf-row" style="flex:1;justify-content:center;flex-direction:column;gap:.3rem">
+          <div class="conf-thumb-doc"><img id="confVerso" src="" alt="Verso doc"></div>
+          <div style="font-size:.67rem;color:var(--muted);text-align:center">Verso</div>
+        </div>
+      </div>
+
+      <div class="legal-box">
+        🔒 Ao clicar em <strong>Assinar</strong>, você confirma que todas as informações
+        estão corretas e assina eletronicamente este documento nos termos da
+        <strong>Lei 14.063/2020</strong> e MP 2.200-2/2001.
+        Seu IP, geolocalização e imagens ficam registrados como prova de autoria.
+      </div>
+
+      <div class="aceite-row" style="margin-top:.85rem">
+        <input type="checkbox" id="chkFinal"
+          onchange="document.getElementById('btnAssinar').disabled=!this.checked">
+        <label for="chkFinal">
+          Confirmo que sou <strong id="confNome">o assinante</strong> e assino
+          este documento eletronicamente, ciente de sua plena validade jurídica.
+        </label>
+      </div>
+    </div>
+  </div>
+  <button class="btn-green" id="btnAssinar" disabled onclick="enviar()">✍️ Assinar documento</button>
+</div>
+
+<!-- Enviando -->
+<div id="etapaEnviando" style="display:none" class="container">
+  <div class="card"><div class="status-box"><div class="spinner"></div><h2>Processando…</h2><p>Não feche esta tela.</p></div></div>
+</div>
+
+<!-- Sucesso -->
+<div id="etapaSucesso" style="display:none" class="container">
+  <div class="card">
+    <div class="status-box">
+      <div class="status-icon">🎉</div>
+      <h2>Documento assinado!</h2>
+      <p>Sua assinatura foi registrada com sucesso.<br>
+        Em breve um consultor entrará em contato.<br><br>
+        <span style="font-size:.72rem;color:#94a3b8">Fácil Financiamentos · BH/MG</span></p>
+    </div>
+  </div>
+</div>
+
+<!-- Erro -->
+<div id="etapaErro" style="display:none" class="container">
+  <div class="card">
+    <div class="status-box">
+      <div class="status-icon">❌</div>
+      <h2>Algo deu errado</h2>
+      <p id="msgErro">Tente novamente ou entre em contato via WhatsApp.</p>
+    </div>
+  </div>
+</div>
 
 <script>
-// ── Globals ──────────────────────────────────────────────────────────────────
+// ── Estado global ────────────────────────────────────────────────────────────
 const urlToken = location.pathname.split('/').filter(Boolean).pop();
-let selfieBase64 = null;
-let assinaturaBase64 = null;   // primeira assinatura (requerimento)
-let assinatura2Base64 = null;  // segunda assinatura (pagamento)
-let stream = null;
+let role = 'requerente', nomeAssinante = '';
+let selfieB64 = null, assinB64 = null, frenteB64 = null, versoB64 = null;
+let streams = {};
 let ctx1 = null, ctx2 = null;
-let temAssin1 = false, temAssin2 = false;
-let drawing = false, lastX = 0, lastY = 0;
-let activeCtx = null;
+let tem1 = false, tem2 = false;
+let drawing = false, lx = 0, ly = 0, activeCtx = null, activeCanvas = null;
+const prog = {1:'20%',2:'40%',3:'60%',4:'80%',5:'96%'};
 
-// ── Carrega PDF ───────────────────────────────────────────────────────────────
-function carregarPDF() {
+// ── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
   const pdfUrl = `/assinar/${urlToken}/pdf-original`;
-  const iframe = document.getElementById('pdfIframe');
-  const fallback = document.getElementById('pdfFallback');
+  const fr = document.getElementById('pdfFrame');
+  const fb = document.getElementById('pdfFallback');
   document.getElementById('pdfLink').href = pdfUrl;
+  fr.src = pdfUrl;
+  fr.onload = () => { fb.style.display = 'none'; };
+  // timeout fallback para iOS que não dispara onload
+  setTimeout(() => { if (fb.style.display !== 'none') fb.style.display = 'none'; }, 2500);
 
-  iframe.src = pdfUrl;
-  iframe.onerror = () => {
-    iframe.style.display = 'none';
-    fallback.style.display = 'block';
-  };
-  // Fallback por timeout (mobile pode não disparar onerror)
-  setTimeout(() => {
-    if (!iframe.contentDocument && iframe.style.display !== 'none') {
-      iframe.style.display = 'none';
-      fallback.style.display = 'block';
-    }
-  }, 6000);
-}
-
-// Carrega nome do contrato para preencher campo de assinatura
-async function carregarDadosContrato() {
   try {
     const r = await fetch(`/assinar/${urlToken}/conteudo`);
     if (!r.ok) {
-      if (r.status === 410) mostrarErro('Este link já foi utilizado ou expirou.');
-      else mostrarErro('Link inválido ou expirado.');
+      const e = await r.json().catch(()=>({}));
+      if (r.status === 410) mostrarErro('Este link ja foi utilizado ou expirou.');
+      else mostrarErro(e.detail || 'Link invalido ou expirado.');
       return;
     }
     const d = await r.json();
-    // Extrai nome do texto para exibir no campo de assinatura
-    const match = d.texto && d.texto.match(/Nome:\s*([^\n]+)/);
-    if (match && match[1] && match[1].trim() !== '—') {
-      const nome = match[1].trim().toUpperCase();
-      document.getElementById('sigNome').textContent = nome;
-      document.getElementById('sigNome2').textContent = nome;
-      document.getElementById('confirmaNote') && (document.getElementById('confirmaNote').textContent = nome);
-      document.getElementById('confirmaNome').textContent = nome;
-    }
-  } catch {}
-}
+    role = d.role || 'requerente';
+    const isReq = role === 'requerente';
+    nomeAssinante = isReq ? (d.nome_req || 'Requerente') : (d.nome_prop || 'Proprietario');
 
-function verificarEtapa1() {
-  document.getElementById('btnProx1').disabled = !document.getElementById('chkLeu').checked;
+    // Campos de assinatura
+    document.getElementById('sigNome1').textContent = nomeAssinante.toUpperCase();
+    document.getElementById('sigNome2').textContent = nomeAssinante.toUpperCase();
+    document.getElementById('confNome').textContent = nomeAssinante;
+
+    const label = isReq ? 'Requerente' : 'Proprietario / Vendedor';
+    document.getElementById('badge1').textContent = label;
+    document.getElementById('badge2').textContent = label;
+    document.getElementById('sigRole1').textContent = isReq ? 'Assinante / Solicitante' : 'Proprietario / Vendedor';
+
+  } catch(e) { mostrarErro('Erro ao carregar o contrato: ' + e.message); }
 }
 
 // ── Navegação ─────────────────────────────────────────────────────────────────
-const progressos = { 1: '25%', 2: '50%', 3: '75%', 4: '95%' };
 function irEtapa(n) {
-  [1,2,3,4].forEach(i => {
-    document.getElementById(`etapa${i}`).style.display = i === n ? '' : 'none';
-    const s = document.getElementById(`step${i}`);
-    s.className = 'step' + (i < n ? ' done' : i === n ? ' active' : '');
+  [1,2,3,4,5].forEach(i => {
+    document.getElementById(`etapa${i}`).style.display = i===n ? '' : 'none';
+    const s = document.getElementById(`s${i}`);
+    s.className = 'step' + (i<n?' done':i===n?' active':'');
   });
-  document.getElementById('progressFill').style.width = progressos[n] || '25%';
-  if (n === 2) iniciarCanvas1();
-  if (n === 3) iniciarCamera();
-  if (n === 4) preencherConfirmacao();
-  window.scrollTo(0, 0);
+  document.getElementById('progFill').style.width = prog[n];
+  if (n===2) setupCanvas();
+  if (n===3) abrirCam('3', 'user');
+  if (n===4) abrirCam('4a', 'environment');
+  if (n===5) preencherConfirmacao();
+  window.scrollTo(0,0);
 }
 
-// ── Canvas de Assinatura ──────────────────────────────────────────────────────
-function _setupCanvas(canvas, ctxRef, fieldId, onDraw) {
+// ── Canvas ────────────────────────────────────────────────────────────────────
+function setupCanvas() {
+  ctx1 = _initCanvas('sigCanvas1', 'sigWrap1', 1);
+  ctx2 = _initCanvas('sigCanvas2', 'sigWrap2', 2);
+}
+
+function _initCanvas(id, wrapId, num) {
+  const c = document.getElementById(id);
   const ratio = window.devicePixelRatio || 1;
-  canvas.width  = canvas.offsetWidth  * ratio;
-  canvas.height = 140 * ratio;
-  const ctx = canvas.getContext('2d');
+  c.width  = c.offsetWidth * ratio;
+  c.height = 180 * ratio;
+  const ctx = c.getContext('2d');
   ctx.scale(ratio, ratio);
-  // Fundo branco
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.offsetWidth, 140);
-  // Estilo tinta azul marinho
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, c.offsetWidth, 180);
   ctx.strokeStyle = '#0d2b4e';
   ctx.lineWidth = 2.8;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
+  ctx.lineCap = ctx.lineJoin = 'round';
 
-  const getPos = (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const touch = e.touches ? e.touches[0] : e;
-    return [(touch.clientX - rect.left), (touch.clientY - rect.top)];
+  const gp = e => {
+    const r = c.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return [t.clientX - r.left, t.clientY - r.top];
   };
-
-  canvas.addEventListener('mousedown',  e => { drawing = true; activeCtx = ctx; [lastX, lastY] = getPos(e); });
-  canvas.addEventListener('mousemove',  e => { if (!drawing || activeCtx !== ctx) return; desenhar(ctx, ...getPos(e), canvas, fieldId, onDraw); });
-  canvas.addEventListener('mouseup',    () => { drawing = false; });
-  canvas.addEventListener('mouseleave', () => { drawing = false; });
-  canvas.addEventListener('touchstart', e => { e.preventDefault(); drawing = true; activeCtx = ctx; [lastX, lastY] = getPos(e); }, { passive: false });
-  canvas.addEventListener('touchmove',  e => { e.preventDefault(); if (!drawing || activeCtx !== ctx) return; desenhar(ctx, ...getPos(e), canvas, fieldId, onDraw); }, { passive: false });
-  canvas.addEventListener('touchend',   () => { drawing = false; });
-
+  c.addEventListener('mousedown',  e => { drawing=true; activeCtx=ctx; activeCanvas=c; [lx,ly]=gp(e); });
+  c.addEventListener('mousemove',  e => { if(!drawing||activeCtx!==ctx) return; stroke(ctx, c, num, ...gp(e)); });
+  c.addEventListener('mouseup',    () => drawing=false);
+  c.addEventListener('mouseleave', () => drawing=false);
+  c.addEventListener('touchstart', e => { e.preventDefault(); drawing=true; activeCtx=ctx; activeCanvas=c; [lx,ly]=gp(e); }, {passive:false});
+  c.addEventListener('touchmove',  e => { e.preventDefault(); if(!drawing||activeCtx!==ctx) return; stroke(ctx, c, num, ...gp(e)); }, {passive:false});
+  c.addEventListener('touchend',   () => drawing=false);
   return ctx;
 }
 
-function iniciarCanvas1() {
-  const canvas = document.getElementById('sigCanvas');
-  ctx1 = _setupCanvas(canvas, ctx1, 'sigField', () => {
-    temAssin1 = true;
-    document.getElementById('sigField').classList.add('signed');
-    assinaturaBase64 = canvas.toDataURL('image/png');
-    iniciarCanvas2();
-    _checarAssinaturas();
-  });
+function stroke(ctx, canvas, num, x, y) {
+  ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(x,y); ctx.stroke();
+  [lx,ly]=[x,y];
+  if (num===1) { tem1=true; document.getElementById('sigWrap1').classList.add('signed'); assinB64=canvas.toDataURL('image/png'); }
+  if (num===2) { tem2=true; document.getElementById('sigWrap2').classList.add('signed'); }
+  document.getElementById('btnProx2').disabled = !(tem1&&tem2);
 }
 
-function iniciarCanvas2() {
-  const canvas = document.getElementById('sigCanvas2');
-  if (ctx2) return; // já inicializado
-  ctx2 = _setupCanvas(canvas, ctx2, 'sigField2', () => {
-    temAssin2 = true;
-    document.getElementById('sigField2').classList.add('signed');
-    assinatura2Base64 = canvas.toDataURL('image/png');
-    _checarAssinaturas();
-  });
-}
-
-function desenhar(ctx, x, y, canvas, fieldId, onFirstStroke) {
-  ctx.beginPath();
-  ctx.moveTo(lastX, lastY);
-  ctx.lineTo(x, y);
-  ctx.stroke();
-  [lastX, lastY] = [x, y];
-  const isFirst1 = fieldId === 'sigField' && !temAssin1;
-  const isFirst2 = fieldId === 'sigField2' && !temAssin2;
-  if (isFirst1 || isFirst2) onFirstStroke();
-  if (fieldId === 'sigField') assinaturaBase64 = canvas.toDataURL('image/png');
-  if (fieldId === 'sigField2') assinatura2Base64 = canvas.toDataURL('image/png');
-}
-
-function _checarAssinaturas() {
-  document.getElementById('btnProx2').disabled = !(temAssin1 && temAssin2);
-}
-
-function limparAssinatura() {
-  const canvas = document.getElementById('sigCanvas');
-  ctx1.fillStyle = '#ffffff';
-  ctx1.fillRect(0, 0, canvas.width, canvas.height);
-  temAssin1 = false; assinaturaBase64 = null;
-  document.getElementById('sigField').classList.remove('signed');
-  _checarAssinaturas();
-}
-function limparAssinatura2() {
-  const canvas = document.getElementById('sigCanvas2');
-  ctx2.fillStyle = '#ffffff';
-  ctx2.fillRect(0, 0, canvas.width, canvas.height);
-  temAssin2 = false; assinatura2Base64 = null;
-  document.getElementById('sigField2').classList.remove('signed');
-  _checarAssinaturas();
+function limpar(num) {
+  const c = document.getElementById(`sigCanvas${num}`);
+  const ctx = num===1 ? ctx1 : ctx2;
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
+  if (num===1) { tem1=false; assinB64=null; document.getElementById('sigWrap1').classList.remove('signed'); }
+  if (num===2) { tem2=false; document.getElementById('sigWrap2').classList.remove('signed'); }
+  document.getElementById('btnProx2').disabled = !(tem1&&tem2);
 }
 
 // ── Câmera ────────────────────────────────────────────────────────────────────
-async function iniciarCamera() {
+async function abrirCam(id, facing) {
+  const vId = `video${id}`, wId = `camWrap${id}`;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 540 } },
-      audio: false,
+    if (streams[id]) streams[id].getTracks().forEach(t=>t.stop());
+    const s = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facing, width:{ideal:960}, height:{ideal:720} }, audio:false
     });
-    const video = document.getElementById('video');
-    video.srcObject = stream;
-    video.style.display = 'block';
-    document.getElementById('selfiePreview').style.display = 'none';
-    document.getElementById('btnCapturar').style.display = 'block';
-    document.getElementById('btnRetake').style.display = 'none';
-    document.getElementById('btnProx3').disabled = true;
-  } catch {
-    mostrarErro('Não foi possível acessar a câmera. Permita o acesso e tente novamente.');
+    streams[id] = s;
+    const v = document.getElementById(vId);
+    v.srcObject = s;
+    document.getElementById(wId).style.display = 'block';
+    document.getElementById(`btnCaptura${id}`).style.display = 'block';
+    document.getElementById(`btnRefaz${id}`).style.display = 'none';
+  } catch(e) {
+    mostrarErro('Nao foi possivel acessar a camera. Permita o acesso e tente novamente.');
   }
 }
 
-function capturarSelfie() {
-  const video = document.getElementById('video');
-  const canvas = document.getElementById('photoCanvas');
-  canvas.width  = video.videoWidth  || 720;
-  canvas.height = video.videoHeight || 540;
-  canvas.getContext('2d').drawImage(video, 0, 0);
-  selfieBase64 = canvas.toDataURL('image/jpeg', 0.85);
+function capturar(id) {
+  const v = document.getElementById(`video${id}`);
+  const c = document.getElementById(`canvas${id}`);
+  c.width = v.videoWidth||960; c.height = v.videoHeight||720;
+  c.getContext('2d').drawImage(v,0,0);
+  const b64 = c.toDataURL('image/jpeg', 0.87);
 
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  video.style.display = 'none';
-  document.getElementById('selfiePreview').src = selfieBase64;
-  document.getElementById('selfiePreview').style.display = 'block';
-  document.getElementById('btnCapturar').style.display = 'none';
-  document.getElementById('btnRetake').style.display = 'block';
-  document.getElementById('btnProx3').disabled = false;
+  if (streams[id]) streams[id].getTracks().forEach(t=>t.stop());
+  document.getElementById(`camWrap${id}`).style.display='none';
+
+  let prevId, btnRefazId;
+  if (id==='3')  { selfieB64=b64; prevId='selfiePreview'; document.getElementById('btnProx3').disabled=false; btnRefazId='btnRefaz3'; document.getElementById('btnCaptura3').style.display='none'; }
+  if (id==='4a') { frenteB64=b64; prevId='frentePreview'; btnRefazId='btnRefaz4a'; document.getElementById('btnCaptura4a').style.display='none';
+    // Libera câmera do verso
+    document.getElementById('versoMsg').style.display='none';
+    document.getElementById('camWrap4b').style.display='block';
+    document.getElementById('btnCaptura4b').style.display='block';
+    abrirCam('4b','environment');
+  }
+  if (id==='4b') { versoB64=b64; prevId='versoPreview'; btnRefazId='btnRefaz4b'; document.getElementById('btnCaptura4b').style.display='none';
+    document.getElementById('btnProx4').disabled=false;
+  }
+
+  const pr = document.getElementById(prevId);
+  pr.src=b64; pr.style.display='block';
+  document.getElementById(btnRefazId).style.display='block';
 }
 
-function refazerSelfie() { selfieBase64 = null; iniciarCamera(); }
+function refazer(id) {
+  const facing = (id==='3') ? 'user' : 'environment';
+  if (id==='3')  { selfieB64=null; document.getElementById('selfiePreview').style.display='none'; document.getElementById('btnProx3').disabled=true; }
+  if (id==='4a') { frenteB64=null; document.getElementById('frentePreview').style.display='none'; }
+  if (id==='4b') { versoB64=null;  document.getElementById('versoPreview').style.display='none'; document.getElementById('btnProx4').disabled=true; }
+  document.getElementById(`btnRefaz${id}`).style.display='none';
+  abrirCam(id, facing);
+}
 
 // ── Confirmação ───────────────────────────────────────────────────────────────
 function preencherConfirmacao() {
-  if (selfieBase64)    document.getElementById('previewSelfieThumb').src = selfieBase64;
-  if (assinaturaBase64) document.getElementById('previewAssinThumb').src  = assinaturaBase64;
+  if (selfieB64)  document.getElementById('confSelfie').src=selfieB64;
+  if (assinB64)   document.getElementById('confAssin').src=assinB64;
+  if (frenteB64)  document.getElementById('confFrente').src=frenteB64;
+  if (versoB64)   document.getElementById('confVerso').src=versoB64;
 }
 
 // ── Envio ─────────────────────────────────────────────────────────────────────
-async function enviarAssinatura() {
-  document.getElementById('etapa4').style.display = 'none';
-  document.getElementById('etapaEnviando').style.display = '';
+async function enviar() {
+  document.getElementById('etapa5').style.display='none';
+  document.getElementById('etapaEnviando').style.display='';
 
-  let geo = '';
+  let geo='';
   try {
-    const pos = await new Promise((res, rej) =>
-      navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000 })
-    );
-    geo = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`;
-  } catch {}
+    const p = await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{timeout:4000}));
+    geo=`${p.coords.latitude.toFixed(6)},${p.coords.longitude.toFixed(6)}`;
+  } catch{}
 
   try {
     const r = await fetch(`/assinar/${urlToken}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        selfie:      selfieBase64,
-        assinatura:  assinaturaBase64,   // assinatura principal
-        assinatura2: assinatura2Base64,  // assinatura de pagamento
-        geo,
-      }),
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ selfie:selfieB64, assinatura:assinB64, doc_frente:frenteB64, doc_verso:versoB64, geo })
     });
     const txt = await r.text();
-    let d = {};
-    try { d = JSON.parse(txt); } catch { d = { detail: txt }; }
+    let d={};
+    try{ d=JSON.parse(txt); }catch{ d={detail:txt}; }
     if (r.ok) {
-      document.getElementById('etapaEnviando').style.display = 'none';
-      document.getElementById('steps').style.display = 'none';
-      document.querySelector('.progress-bar').style.display = 'none';
-      document.getElementById('etapaSucesso').style.display = '';
+      document.getElementById('etapaEnviando').style.display='none';
+      document.getElementById('stepsBar').style.display='none';
+      document.querySelector('.prog-bar').style.display='none';
+      document.getElementById('etapaSucesso').style.display='';
     } else {
-      mostrarErro(d.detail || 'Erro ao processar assinatura.');
+      mostrarErro(d.detail || `Erro ${r.status}`);
     }
-  } catch (err) {
-    mostrarErro('Erro de conexão: ' + (err.message || 'verifique sua internet.'));
-  }
+  } catch(e){ mostrarErro('Erro de conexao: '+e.message); }
 }
 
 function mostrarErro(msg) {
-  ['etapa1','etapa2','etapa3','etapa4','etapaEnviando'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
+  ['etapa1','etapa2','etapa3','etapa4','etapa5','etapaEnviando'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.style.display='none';
   });
-  document.getElementById('steps').style.display = 'none';
-  document.querySelector('.progress-bar').style.display = 'none';
-  document.getElementById('msgErro').textContent = msg;
-  document.getElementById('etapaErro').style.display = '';
+  document.getElementById('stepsBar').style.display='none';
+  document.querySelector('.prog-bar').style.display='none';
+  document.getElementById('msgErro').textContent=msg;
+  document.getElementById('etapaErro').style.display='';
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
-carregarPDF();
-carregarDadosContrato();
+init();
 </script>
 </body>
 </html>
