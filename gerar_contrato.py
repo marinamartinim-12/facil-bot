@@ -1,6 +1,6 @@
 """
 Fácil Financiamentos — Geração de contratos PDF
-Estilo: documento jurídico limpo, fiel ao modelo original.
+Estilo fiel ao modelo original: documento jurídico limpo.
 """
 
 import hashlib
@@ -22,39 +22,36 @@ GOLD = (200, 155, 0)
 
 # ─────────────────────────────────────────────────────────────────────────────
 class RequerimentoPDF(FPDF):
-    """PDF estilo documento jurídico — idêntico ao modelo original."""
 
-    def __init__(self, doc_id: str = ""):
+    def __init__(self, doc_id=""):
         super().__init__(orientation="P", unit="mm", format="A4")
         self.doc_id = doc_id
         self.set_auto_page_break(auto=True, margin=28)
         self.set_margins(25, 15, 25)
 
-    # ── Cabeçalho ─────────────────────────────────────────────────────────────
     def header(self):
-        # Bloco logo: círculo navy com "F" + nome da empresa
-        cx, cy, r = 25, 12, 7
+        # Círculo navy com "F"
         self.set_fill_color(*NAVY)
-        self.ellipse(cx - r, cy - r, r * 2, r * 2, "F")
+        self.ellipse(25 - 7, 12 - 7, 14, 14, "F")
         self.set_font("Helvetica", "B", 10)
         self.set_text_color(255, 255, 255)
-        self.set_xy(cx - 2.5, cy - 3.5)
+        self.set_xy(22.5, 8.5)
         self.cell(5, 7, "F")
 
-        # Nome da empresa ao lado do círculo
+        # Nome da empresa
         self.set_font("Helvetica", "B", 15)
         self.set_text_color(*NAVY)
         self.set_xy(35, 7)
-        self.cell(0, 7, "FÁCIL FINANCIAMENTOS", new_x="LMARGIN", new_y="NEXT")
+        self.cell(0, 7, "FACIL FINANCIAMENTOS", new_x="LMARGIN", new_y="NEXT")
 
         self.set_font("Helvetica", "", 7.5)
         self.set_text_color(100, 110, 125)
         self.set_x(35)
         self.cell(0, 4.5,
-            "Rua Lauro Ignácio Ponte, 08 – Sala 202 – Parque São Pedro – Venda Nova – BH/MG",
+            "Rua Lauro Ignacio Ponte, 08 - Sala 202 - Parque Sao Pedro - Venda Nova - BH/MG",
             new_x="LMARGIN", new_y="NEXT")
 
-        # Linha separadora dourada
+        # Linha dourada
         self.set_draw_color(*GOLD)
         self.set_line_width(0.8)
         self.line(25, 22, self.w - 25, 22)
@@ -62,7 +59,6 @@ class RequerimentoPDF(FPDF):
         self.set_draw_color(180, 180, 180)
         self.ln(8)
 
-    # ── Rodapé ────────────────────────────────────────────────────────────────
     def footer(self):
         self.set_y(-16)
         self.set_draw_color(180, 180, 180)
@@ -72,69 +68,73 @@ class RequerimentoPDF(FPDF):
         self.set_font("Helvetica", "B", 7)
         self.set_text_color(80, 80, 80)
         self.cell(0, 4,
-            "Fácil Financiamentos, rua Lauro Ignácio Ponte, 08 - sala 202 – Parq. São Pedro – Venda Nova",
+            "Facil Financiamentos, rua Lauro Ignacio Ponte, 08 - sala 202 - Parq. Sao Pedro - Venda Nova",
             align="C")
 
-    # ── Helpers de texto ──────────────────────────────────────────────────────
-    def titulo(self, texto: str):
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def titulo(self, texto):
         self.set_font("Helvetica", "B", 14)
         self.set_text_color(*NAVY)
         self.cell(0, 8, texto, align="C", new_x="LMARGIN", new_y="NEXT")
 
-    def subtitulo(self, texto: str):
+    def subtitulo(self, texto):
         self.set_font("Helvetica", "I", 10)
         self.set_text_color(80, 80, 80)
         self.cell(0, 6, texto, align="C", new_x="LMARGIN", new_y="NEXT")
         self.ln(4)
 
-    def _write_mixed(self, parts: list[tuple[str, bool]], line_h: float = 6.5):
+    def escrever(self, partes):
         """
-        Escreve uma linha com partes normais e negrito misturadas.
-        parts = [("texto normal", False), ("TEXTO BOLD", True), ...]
+        Escreve inline misturando normal e negrito.
+        partes = [("texto normal", False), ("TEXTO BOLD", True), ...]
+        Trata quebras de linha manualmente — não usa \\n dentro de write().
         """
-        for texto, bold in parts:
+        for texto, bold in partes:
             self.set_font("Helvetica", "B" if bold else "", 10)
             self.set_text_color(30, 30, 30)
-            self.write(line_h, texto)
+            # Quebras de linha explícitas
+            linhas = str(texto).split("\n")
+            for i, linha in enumerate(linhas):
+                if i > 0:
+                    self.ln(6.5)
+                    self.set_x(self.l_margin)
+                if linha:
+                    self.write(6.5, linha)
+        self.ln(6.5)
 
-    def paragrafo(self, parts: list[tuple[str, bool]], after: float = 4.0):
-        """Parágrafo com partes bold/normal misturadas, com quebra automática."""
-        self._write_mixed(parts)
-        self.ln()
-        self.ln(after)
-
-    def paragrafo_simples(self, texto: str, bold: bool = False, after: float = 4.0):
+    def para(self, texto, bold=False, align="J", after=4):
+        """Parágrafo simples sem mistura de estilos."""
         self.set_font("Helvetica", "B" if bold else "", 10)
         self.set_text_color(30, 30, 30)
-        self.multi_cell(0, 6.5, texto, align="J")
-        self.ln(after)
+        self.multi_cell(0, 6.5, str(texto), align=align)
+        if after:
+            self.ln(after)
 
-    def declaracao(self, texto: str):
+    def declaracao(self, texto):
         self.set_font("Helvetica", "B", 10)
         self.set_text_color(*NAVY)
         self.multi_cell(0, 6.5, texto, align="C")
         self.ln(4)
 
-    def campo_lista(self, rotulo: str, valor: str):
-        """Ex: Nome: FULANO DE TAL"""
+    def campo(self, rotulo, valor):
         self.set_font("Helvetica", "B", 10)
         self.set_text_color(30, 30, 30)
         self.write(6.5, rotulo + ": ")
         self.set_font("Helvetica", "", 10)
-        self.write(6.5, valor or "—")
+        self.write(6.5, str(valor or "—"))
         self.ln(7)
 
-    def campo_destaque(self, rotulo: str, valor: str):
-        """Campo com valor em BOLD CAPS para destaque (ex: VALOR)"""
+    def campo_valor(self, rotulo, valor):
         self.set_font("Helvetica", "B", 10)
         self.set_text_color(30, 30, 30)
         self.write(6.5, rotulo + ": ")
         self.set_font("Helvetica", "B", 11)
         self.set_text_color(*NAVY)
-        self.write(6.5, valor or "—")
+        self.write(6.5, str(valor or "—"))
         self.ln(8)
 
-    def linha_assinatura(self, x: float, largura: float, label: str, nome: str = ""):
+    def assinatura(self, x, largura, label, nome=""):
         y = self.get_y()
         self.set_draw_color(80, 80, 80)
         self.set_line_width(0.4)
@@ -150,196 +150,201 @@ class RequerimentoPDF(FPDF):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Página 1 — Requerimento de Intermediação
-# ─────────────────────────────────────────────────────────────────────────────
-def _pagina_requerimento(pdf: RequerimentoPDF, d: dict):
+def _v(d, chave, padrao=""):
+    """Retorna o valor do dict ou padrão — nunca None."""
+    val = d.get(chave)
+    if val is None or str(val).strip() == "":
+        return str(padrao)
+    return str(val)
+
+
+def _pagina_requerimento(pdf, d):
     pdf.add_page()
 
-    pdf.titulo("REQUERIMENTO DE INTERMEDIAÇÃO")
-    pdf.subtitulo("Prestação de Serviço")
+    pdf.titulo("REQUERIMENTO DE INTERMEDIACAO")
+    pdf.subtitulo("Prestacao de Servico")
 
-    modalidade = (d.get("modalidade") or "refinanciamento").lower()
-    verbo = "refinanciamento" if "refin" in modalidade else "financiamento da aquisição"
+    modalidade = _v(d, "modalidade", "refinanciamento").lower()
+    verbo = "refinanciamento" if "refin" in modalidade else "financiamento da aquisicao"
 
-    # Parágrafo de identificação do requerente
     endereco = (
-        f"{d.get('req_rua','')}, "
-        f"N°{d.get('req_numero','')} "
-        f"BAIRRO {d.get('req_bairro','').upper()} "
-        f"CEP {d.get('req_cep','')} "
-        f"{d.get('req_cidade','').upper()}"
+        _v(d, "req_rua") + ", "
+        + "N." + _v(d, "req_numero") + " "
+        + "BAIRRO " + _v(d, "req_bairro").upper() + " "
+        + "CEP " + _v(d, "req_cep") + " "
+        + _v(d, "req_cidade").upper()
     ).strip(" ,")
 
-    pdf.paragrafo([
+    # Parágrafo 1 — identificação do requerente
+    pdf.escrever([
         ("Eu ", False),
-        (f"{d.get('req_nome','').upper()} ", True),
+        (_v(d, "req_nome").upper() + " ", True),
         ("CPF ", False),
-        (f"{d.get('req_cpf','')} ", True),
+        (_v(d, "req_cpf") + " ", True),
         ("RG ", False),
-        (f"{d.get('req_rg','')} ", True),
+        (_v(d, "req_rg") + " ", True),
         ("residente na ", False),
-        (f"{endereco} ", True),
+        (endereco + " ", True),
         ("- CELULAR ", False),
-        (f"{d.get('req_celular','')}", True),
+        (_v(d, "req_celular"), True),
         (".", False),
-    ], after=5)
+    ])
+    pdf.ln(2)
 
-    # Parágrafo principal do requerimento
-    modelo  = d.get('vei_modelo','').upper()
-    placa   = d.get('vei_placa','').upper()
-    ano     = d.get('vei_ano','')
-    cor     = d.get('vei_cor','').upper()
-    renavam = d.get('vei_renavam','')
-    chassi  = d.get('vei_chassi','').upper()
-
-    pdf.paragrafo([
+    # Parágrafo 2 — requerimento do veículo
+    pdf.escrever([
         ("Requeiro que seja ", False),
         ("INTERMEDIADO ", True),
-        (f"o {verbo} do veículo de marca ", False),
-        (f"{modelo} ", True),
+        ("o " + verbo + " do veiculo de marca ", False),
+        (_v(d, "vei_modelo").upper() + " ", True),
         ("Placa ", False),
-        (f"{placa} ", True),
+        (_v(d, "vei_placa").upper() + " ", True),
         ("ano ", False),
-        (f"{ano} ", True),
+        (_v(d, "vei_ano") + " ", True),
         ("cor ", False),
-        (f"{cor} ", True),
+        (_v(d, "vei_cor").upper() + " ", True),
         ("RENAVAM ", False),
-        (f"{renavam} ", True),
+        (_v(d, "vei_renavam") + " ", True),
         ("CHASSI ", False),
-        (f"{chassi} ", True),
-        ("adquirido fruto de negociação direta com o seu legítimo proprietário/representante:", False),
-    ], after=5)
+        (_v(d, "vei_chassi").upper() + " ", True),
+        ("adquirido fruto de negociacao direta com o seu legitimo proprietario/representante:", False),
+    ])
+    pdf.ln(2)
 
-    # Proprietário / Vendedor
-    pdf.paragrafo([
+    # Parágrafo 3 — proprietário
+    pdf.escrever([
         ("O Sr. ", False),
-        (f"{d.get('prop_nome','').upper()} ", True),
+        (_v(d, "prop_nome").upper() + " ", True),
         ("CPF ", False),
-        (f"{d.get('prop_cpf','')} ", True),
+        (_v(d, "prop_cpf") + " ", True),
         ("telefone ", False),
-        (f"{d.get('prop_telefone','')}", True),
-        ("\nque se responsabiliza civil e criminalmente pelo mesmo, "
-         "inclusive pela documentação apresentada.", False),
-    ], after=5)
+        (_v(d, "prop_telefone"), True),
+    ])
+    pdf.para(
+        "que se responsabiliza civil e criminalmente pelo mesmo, "
+        "inclusive pela documentacao apresentada.",
+        after=5,
+    )
 
-    # Condições financeiras
-    pdf.paragrafo([
+    # Parágrafo 4 — condições financeiras
+    pdf.escrever([
         ("O valor ", False),
-        ("líquido ", True),
-        ("liberado será de ", False),
-        (f"R$ {d.get('fin_valor_liquido','')} ", True),
-        ("já descontadas todas as despesas, consultoria, comissões, taxas, impostos, "
-         "e intermediação, divididos em ", False),
-        (f"{d.get('fin_parcelas','')}x de R$ {d.get('fin_valor_parcela','')} ", True),
-        (f"1º vencimento em ", False),
-        (f"{d.get('fin_vencimento','')}", True),
-        (".", False),
-    ], after=5)
+        ("liquido ", True),
+        ("liberado sera de ", False),
+        ("R$ " + _v(d, "fin_valor_liquido") + " ", True),
+        ("ja descontadas todas as despesas, consultoria, comissoes, taxas, impostos, "
+         "e intermediacao, divididos em ", False),
+        (_v(d, "fin_parcelas") + "x de R$ " + _v(d, "fin_valor_parcela") + " ", True),
+        ("1o vencimento em ", False),
+        (_v(d, "fin_vencimento") + ".", True),
+    ])
+    pdf.ln(2)
 
-    # Isenção de responsabilidade
-    pdf.paragrafo([
+    # Parágrafo 5 — isenção
+    pdf.escrever([
         ("Neste ato o requerente que ", False),
-        ("NÃO ", True),
-        ("adquiriu o veículo junto a empresa, sendo que a mesma não se responsabiliza "
-         "pela documentação e qualidade do mesmo.", False),
-    ], after=6)
+        ("NAO ", True),
+        ("adquiriu o veiculo junto a empresa, sendo que a mesma nao se responsabiliza "
+         "pela documentacao e qualidade do mesmo.", False),
+    ])
+    pdf.ln(3)
 
     # Declaração em destaque
     pdf.declaracao(
-        "DECLARO AINDA, QUE NADA MAIS ME FOI PROMETIDO ALÉM DO QUE\n"
-        "ESTÁ ESPECIFICADO NESTE REQUERIMENTO."
+        "DECLARO AINDA, QUE NADA MAIS ME FOI PROMETIDO ALEM DO QUE\n"
+        "ESTA ESPECIFICADO NESTE REQUERIMENTO."
     )
 
     # Data
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(60, 60, 60)
-    pdf.cell(0, 6,
-        f"Belo Horizonte, {d.get('data_contrato', datetime.now().strftime('%d de %B de %Y'))}.",
-        align="C", new_x="LMARGIN", new_y="NEXT")
+    data_str = _v(d, "data_contrato", datetime.now().strftime("%d de %B de %Y"))
+    pdf.cell(0, 6, "Belo Horizonte, " + data_str + ".",
+             align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(14)
 
-    # Assinaturas
-    larg = (pdf.w - 50 - 50) / 3
+    # Linhas de assinatura
+    largura_pag = pdf.w - 50
     x1 = 25
     x2 = pdf.w - 25 - 80
-    pdf.linha_assinatura(x1, 80, "Requerente", d.get('req_nome','').upper())
+    pdf.assinatura(x1, 80, "Requerente", _v(d, "req_nome").upper())
     pdf.set_xy(x2, pdf.get_y() - 11)
-    pdf.linha_assinatura(x2, 80, "Proprietário / Vendedor", d.get('prop_nome','').upper())
+    pdf.assinatura(x2, 80, "Proprietario / Vendedor", _v(d, "prop_nome").upper())
     pdf.ln(14)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Página 2 — Dados da Conta para Pagamento
-# ─────────────────────────────────────────────────────────────────────────────
-def _pagina_pagamento(pdf: RequerimentoPDF, d: dict):
+def _pagina_pagamento(pdf, d):
     pdf.add_page()
 
     pdf.titulo("DADOS DA CONTA PARA PAGAMENTO")
     pdf.ln(5)
 
-    modelo = d.get('vei_modelo','').upper()
-    placa  = d.get('vei_placa','').upper()
-    ano    = d.get('vei_ano','')
-    cor    = d.get('vei_cor','').upper()
-    banco_neg = d.get('fin_banco','').upper()
+    modelo    = _v(d, "vei_modelo").upper()
+    placa     = _v(d, "vei_placa").upper()
+    ano       = _v(d, "vei_ano")
+    cor       = _v(d, "vei_cor").upper()
+    banco_neg = _v(d, "fin_banco").upper()
 
-    pdf.paragrafo([
+    # Parágrafo de autorização
+    pdf.escrever([
         ("Eu ", False),
-        (f"{d.get('req_nome','').upper()} ", True),
+        (_v(d, "req_nome").upper() + " ", True),
         ("CPF ", False),
-        (f"{d.get('req_cpf','')} ", True),
+        (_v(d, "req_cpf") + " ", True),
         ("RG ", False),
-        (f"{d.get('req_rg','')}\n", True),
-        ("Autorizo o pagamento da importância de ", False),
-        (f"R${d.get('pag_valor','')} ", True),
-        ("referente ao refinanciamento do veículo de marca ", False),
-        (f"{modelo} ", True),
+        (_v(d, "req_rg"), True),
+    ])
+    pdf.escrever([
+        ("Autorizo o pagamento da importancia de ", False),
+        ("R$" + _v(d, "pag_valor") + " ", True),
+        ("referente ao refinanciamento do veiculo de marca ", False),
+        (modelo + " ", True),
         ("Placa ", False),
-        (f"{placa} ", True),
+        (placa + " ", True),
         ("ano ", False),
-        (f"{ano} ", True),
+        (ano + " ", True),
         ("cor ", False),
-        (f"{cor} ", True),
+        (cor + " ", True),
         ("que foi negociado junto ao banco ", False),
-        (f"{banco_neg} ", True),
+        (banco_neg + " ", True),
         ("na conta abaixo discriminada.", False),
-    ], after=8)
+    ])
+    pdf.ln(5)
 
-    # Dados bancários como lista
+    # Dados bancários — lista simples
     pdf.set_x(30)
-    pdf.campo_lista(" Nome",    d.get('pag_nome_beneficiario','').upper())
+    pdf.campo(" Nome",    _v(d, "pag_nome_beneficiario").upper())
     pdf.set_x(30)
-    pdf.campo_lista(" CPF",     d.get('pag_cpf_beneficiario',''))
+    pdf.campo(" CPF",     _v(d, "pag_cpf_beneficiario"))
     pdf.set_x(30)
-    pdf.campo_lista(" Banco",   d.get('pag_banco','').upper())
+    pdf.campo(" Banco",   _v(d, "pag_banco").upper())
     pdf.set_x(30)
-    pdf.campo_lista(" Agência", d.get('pag_agencia',''))
+    pdf.campo(" Agencia", _v(d, "pag_agencia"))
     pdf.set_x(30)
-    pdf.campo_lista(" Conta",   d.get('pag_conta',''))
+    pdf.campo(" Conta",   _v(d, "pag_conta"))
     pdf.set_x(30)
-    pdf.campo_lista(" PIX",     d.get('pag_pix',''))
+    pdf.campo(" PIX",     _v(d, "pag_pix"))
     pdf.ln(2)
     pdf.set_x(30)
-    pdf.campo_destaque(" VALOR", f"R$ {d.get('pag_valor','')}")
+    pdf.campo_valor(" VALOR", "R$ " + _v(d, "pag_valor"))
     pdf.ln(10)
 
     # Assinatura
-    x1 = 25
-    pdf.linha_assinatura(x1, pdf.w - 50, "Requerente — Autorizo o pagamento acima")
-    pdf.ln(3)
-    pdf.set_x(x1)
+    pdf.assinatura(25, pdf.w - 50, "Requerente - Autorizo o pagamento acima")
+    pdf.ln(4)
+    pdf.set_x(25)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(80, 80, 80)
-    pdf.cell(30, 5, "Nome: ")
+    pdf.write(6, "Nome: ")
     pdf.set_draw_color(150, 150, 150)
     pdf.set_line_width(0.3)
-    pdf.line(pdf.get_x(), pdf.get_y() + 4.5, pdf.w - 25, pdf.get_y() + 4.5)
+    lx = pdf.get_x()
+    ly = pdf.get_y() + 4.5
+    pdf.line(lx, ly, pdf.w - 25, ly)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Função principal exportada
-# ─────────────────────────────────────────────────────────────────────────────
-def gerar_pdf_contrato(dados: dict, doc_id: str) -> tuple[bytes, str]:
+def gerar_pdf_contrato(dados, doc_id):
     dados["doc_id"] = doc_id
     pdf = RequerimentoPDF(doc_id=doc_id)
     _pagina_requerimento(pdf, dados)
@@ -349,16 +354,13 @@ def gerar_pdf_contrato(dados: dict, doc_id: str) -> tuple[bytes, str]:
     return raw, sha256
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Utilitários
-# ─────────────────────────────────────────────────────────────────────────────
-def salvar_pdf(conteudo: bytes, nome_arquivo: str) -> str:
+def salvar_pdf(conteudo, nome_arquivo):
     caminho = CONTRATOS_DIR / nome_arquivo
     caminho.write_bytes(conteudo)
     return str(caminho)
 
 
-def base64_para_imagem(b64: str, caminho: Path) -> bool:
+def base64_para_imagem(b64, caminho):
     try:
         if "," in b64:
             b64 = b64.split(",", 1)[1]
@@ -371,72 +373,60 @@ def base64_para_imagem(b64: str, caminho: Path) -> bool:
         return False
 
 
-def gerar_pdf_assinado(
-    pdf_original_bytes: bytes,
-    selfie_path: str,
-    assinatura_path: str,
-    dados_auditoria: dict,
-    doc_id: str = "",
-) -> bytes:
-    """Gera página de auditoria e faz merge com o contrato original."""
+def gerar_pdf_assinado(pdf_original_bytes, selfie_path, assinatura_path,
+                       dados_auditoria, doc_id=""):
     from pypdf import PdfWriter, PdfReader
 
-    # ── Página de auditoria ──────────────────────────────────────────────────
+    # Página de auditoria
     audit = RequerimentoPDF(doc_id=doc_id)
-    audit.set_margins(25, 15, 25)
     audit.add_page()
 
-    audit.titulo("PÁGINA DE AUDITORIA")
-    audit.subtitulo("Assinatura Eletrônica — Lei 14.063/2020 e MP 2.200-2/2001")
+    audit.titulo("PAGINA DE AUDITORIA")
+    audit.subtitulo("Assinatura Eletronica - Lei 14.063/2020 e MP 2.200-2/2001")
 
-    audit.campo_lista("Documento nº",    doc_id)
-    audit.campo_lista("Assinado em",     dados_auditoria.get("assinado_em", "—"))
-    audit.campo_lista("IP do assinante", dados_auditoria.get("ip", "—"))
-    audit.campo_lista("Geolocalização",  dados_auditoria.get("geo", "não fornecida"))
-    audit.campo_lista("Nome",            dados_auditoria.get("nome", "—"))
-    audit.campo_lista("CPF",             dados_auditoria.get("cpf", "—"))
+    audit.campo("Documento n.", doc_id)
+    audit.campo("Assinado em",     dados_auditoria.get("assinado_em", "—"))
+    audit.campo("IP do assinante", dados_auditoria.get("ip", "—"))
+    audit.campo("Geolocalizacao",  dados_auditoria.get("geo", "nao fornecida"))
+    audit.campo("Nome",            dados_auditoria.get("nome", "—"))
+    audit.campo("CPF",             dados_auditoria.get("cpf", "—"))
     audit.ln(2)
     audit.set_font("Helvetica", "B", 8)
     audit.set_text_color(80, 80, 80)
-    audit.cell(25, 5, "Hash SHA-256:")
+    audit.write(5, "Hash SHA-256: ")
     audit.set_font("Helvetica", "", 7)
     audit.set_text_color(60, 60, 60)
     audit.multi_cell(0, 5, dados_auditoria.get("hash_doc", "—"))
     audit.ln(5)
 
     if selfie_path and Path(selfie_path).exists():
-        audit.set_font("Helvetica", "B", 9)
-        audit.set_text_color(*NAVY)
-        audit.cell(0, 6, "Selfie do assinante:", new_x="LMARGIN", new_y="NEXT")
-        audit.ln(1)
+        audit.para("Selfie do assinante:", bold=True, after=2)
         try:
             audit.image(selfie_path, x=25, w=55, h=70)
             audit.ln(3)
         except Exception:
-            audit.paragrafo_simples("(selfie não disponível)")
+            audit.para("(selfie nao disponivel)")
 
     if assinatura_path and Path(assinatura_path).exists():
-        audit.set_font("Helvetica", "B", 9)
-        audit.set_text_color(*NAVY)
-        audit.cell(0, 6, "Assinatura manuscrita digital:", new_x="LMARGIN", new_y="NEXT")
-        audit.ln(1)
+        audit.para("Assinatura manuscrita digital:", bold=True, after=2)
         try:
             audit.image(assinatura_path, x=25, w=110, h=44)
             audit.ln(3)
         except Exception:
-            audit.paragrafo_simples("(assinatura não disponível)")
+            audit.para("(assinatura nao disponivel)")
 
     audit.ln(4)
     audit.set_font("Helvetica", "I", 8.5)
     audit.set_text_color(80, 80, 80)
     audit.multi_cell(0, 5.5,
-        "Documento assinado eletronicamente em conformidade com a MP 2.200-2/2001 e Lei 14.063/2020. "
-        "O hash SHA-256 garante a integridade e inalterabilidade do documento original. "
-        "IP, geolocalização, selfie e assinatura manuscrita constituem prova de autoria e consentimento.", align="J")
+        "Documento assinado eletronicamente em conformidade com a MP 2.200-2/2001 "
+        "e Lei 14.063/2020. O hash SHA-256 garante a integridade do documento original. "
+        "IP, geolocalizacao, selfie e assinatura constituem prova de autoria e consentimento.",
+        align="J")
 
     audit_bytes = bytes(audit.output())
 
-    # ── Merge pypdf ──────────────────────────────────────────────────────────
+    # Merge
     try:
         writer = PdfWriter()
         for src in [pdf_original_bytes, audit_bytes]:
