@@ -999,14 +999,32 @@ async def gerar_contrato_endpoint(
         db.refresh(contrato)
 
         base_url = str(request.base_url).rstrip("/")
+        link_req  = f"{base_url}/assinar/{tok}"
+        link_prop = f"{base_url}/assinar/{tok_prop}"
+
+        # ── 6. Enviar link de assinatura para o vendedor/proprietário via WhatsApp ──
+        prop_tel = dados.get("prop_telefone", "").strip()
+        prop_nome = dados.get("prop_nome", "Proprietário").strip() or "Proprietário"
+        if prop_tel:
+            msg_prop = (
+                f"Olá, {prop_nome}! 👋\n\n"
+                f"A Fácil Financiamentos gerou um contrato que requer sua assinatura digital.\n\n"
+                f"🔗 Clique no link abaixo para assinar:\n{link_prop}\n\n"
+                f"O processo é rápido e 100% online. Qualquer dúvida, entre em contato conosco."
+            )
+            try:
+                await enviar_zapi(prop_tel, msg_prop)
+            except Exception:
+                pass  # não bloqueia se falhar o envio
+
         return {
             "contrato_id": contrato.id,
             "hash": hash_doc,
             "doc_id": doc_id,
-            "link_requerente":   f"{base_url}/assinar/{tok}",
-            "link_proprietario": f"{base_url}/assinar/{tok_prop}",
+            "link_requerente":   link_req,
+            "link_proprietario": link_prop,
             # compat retroativa
-            "link": f"{base_url}/assinar/{tok}",
+            "link": link_req,
         }
 
     except HTTPException:

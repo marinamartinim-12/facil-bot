@@ -303,7 +303,7 @@
     }
 
     /* ── Bolhas ── */
-    .wsp-row { display: flex; margin: 0; }
+    .wsp-row { display: flex; }
     .wsp-row.out { justify-content: flex-end; }
     .wsp-row.in  { justify-content: flex-start; }
 
@@ -419,6 +419,54 @@
     .spinning { animation: spin .6s linear infinite; display: inline-block; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
     .dot-live { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; animation: pulse 2s infinite; }
+
+    /* ── SIDEBAR TOGGLE ── */
+    #sidebar { transition: width .25s ease, min-width .25s ease; overflow: hidden; }
+    #sidebar.collapsed { width: 0 !important; min-width: 0 !important; }
+    .btn-toggle { background: none; border: 1.5px solid var(--border); border-radius: 8px; font-size: 1.1rem; cursor: pointer; color: var(--navy); padding: .25rem .55rem; line-height: 1; transition: background .12s; }
+    .btn-toggle:hover { background: var(--border); }
+
+    /* ── ALERTA ATENDIMENTO HUMANO ── */
+    @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-5px)} 40%,80%{transform:translateX(5px)} }
+    #alertaHumano {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      background: linear-gradient(135deg, #b91c1c, #ef4444);
+      color: #fff; padding: .7rem 1.5rem;
+      display: flex; align-items: center; gap: 1rem;
+      box-shadow: 0 4px 20px rgba(185,28,28,.5);
+      transform: translateY(-100%); transition: transform .35s cubic-bezier(.34,1.56,.64,1);
+    }
+    #alertaHumano.show { transform: translateY(0); }
+    #alertaHumano.shake { animation: shake .4s ease; }
+    #alertaHumano strong { font-size: .92rem; }
+    #alertaHumano .alerta-msg { flex: 1; font-size: .85rem; }
+    #alertaHumano button { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.4); color: #fff; border-radius: 7px; padding: .3rem .8rem; cursor: pointer; font-size: .82rem; font-weight: 600; white-space: nowrap; }
+    #alertaHumano button:hover { background: rgba(255,255,255,.35); }
+
+    /* ── CHAT BUBBLE SPACING ── */
+    .wsp-row { display: flex; margin-bottom: 3px; }
+
+    /* ── RESPONSIVO ── */
+    @media (max-width: 900px) {
+      #sidebar { position: fixed; z-index: 200; height: 100vh; top: 0; left: 0; transform: translateX(-100%); transition: transform .25s ease; width: 220px !important; min-width: 220px !important; }
+      #sidebar.mobile-open { transform: translateX(0); box-shadow: 4px 0 20px rgba(0,0,0,.3); }
+      #sidebar.collapsed { transform: translateX(-100%) !important; }
+      #sidebarOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 199; }
+      #sidebarOverlay.show { display: block; }
+      .kanban { height: auto; }
+      .kanban-col { min-width: 200px; }
+    }
+    @media (max-width: 640px) {
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+      .top-bar { padding: .5rem .75rem; }
+      .content { padding: .75rem; }
+      .modal-lead { flex-direction: column; }
+      .modal-body-lead { flex-direction: column; }
+      .modal-left { width: 100% !important; min-width: 0 !important; max-height: 45vh; border-right: none; border-bottom: 1px solid var(--border); }
+      #viewAtendimento > div { flex-direction: column; height: calc(100vh - 115px); }
+      #viewAtendimento > div > div:first-child { width: 100% !important; min-width: 0 !important; flex: none; height: 220px; }
+      .login-card { padding: 2rem 1.25rem; }
+    }
   </style>
 </head>
 <body>
@@ -443,6 +491,18 @@
     <div id="loginError">E-mail ou senha incorretos.</div>
   </div>
 </div>
+
+<!-- ═══════════ ALERTA HUMANO ═══════════ -->
+<div id="alertaHumano">
+  <span style="font-size:1.4rem">🔔</span>
+  <div class="alerta-msg">
+    <strong id="alertaHumanoTxt">Cliente aguardando atendimento humano!</strong>
+    <span id="alertaHumanoNomes" style="font-size:.78rem;opacity:.85;display:block"></span>
+  </div>
+  <button onclick="showView('atendimento');fecharAlertaHumano()">👀 Ver agora</button>
+  <button onclick="fecharAlertaHumano()" style="background:none;border:none;font-size:1.2rem;padding:.2rem .4rem">✕</button>
+</div>
+<div id="sidebarOverlay" onclick="toggleSidebar()"></div>
 
 <!-- ═══════════ APP ═══════════ -->
 <div id="appView">
@@ -489,7 +549,8 @@
   <!-- MAIN -->
   <div id="mainArea">
     <div class="top-bar">
-      <h2 id="pageTitle">Funil de Leads</h2>
+      <button class="btn-toggle" onclick="toggleSidebar()" title="Abrir/fechar menu">☰</button>
+      <h2 id="pageTitle" style="margin-left:.5rem">Funil de Leads</h2>
       <div class="top-actions">
         <span style="font-size:.78rem;color:var(--muted)"><span class="dot-live"></span> <span id="lastUpdate">—</span></span>
         <button class="btn btn-outline btn-sm" onclick="refresh()" id="btnRefresh">↻ Atualizar</button>
@@ -765,7 +826,7 @@
   }
 
   async function carregarLeads() {
-    try { const r = await fetch('/api/leads'); allLeads = await r.json(); renderKanban(); renderLista(); } catch {}
+    try { const r = await fetch('/api/leads'); allLeads = await r.json(); renderKanban(); renderLista(); verificarAlertaHumano(allLeads); } catch {}
   }
 
   // ═══════ STATS ═══════
@@ -1582,7 +1643,7 @@
 
     document.getElementById('modalDados').innerHTML = `
       <div class="data-item"><label>Nome</label>${inputNome}</div>
-      <div class="data-item"><label>Telefone</label><span>${escHtml(lead.telefone||'—')}</span></div>
+      <div class="data-item"><label>Telefone</label><a href="https://wa.me/55${(lead.telefone||'').replace(/\D/g,'')}" target="_blank" title="Abrir no WhatsApp" style="color:var(--navy);font-weight:600;text-decoration:none;display:flex;align-items:center;gap:4px">${escHtml(lead.telefone||'—')} <span style="font-size:.8rem">💬</span></a></div>
       <div class="data-item"><label>CPF</label>${inputCPF}</div>
       <div class="data-item"><label>Nasc.</label>${inputNasc}</div>
       <div class="data-item full"><label>Veículo de interesse</label>${inputCarro}</div>
@@ -1619,6 +1680,67 @@
       const nome = (leadAtualizado.nome && leadAtualizado.nome !== '—') ? leadAtualizado.nome : leadAtualizado.telefone;
       document.getElementById('modalTitle').textContent = nome;
     } catch { alert('Erro de rede.'); }
+  }
+
+  // ═══════ SIDEBAR TOGGLE ═══════
+  function toggleSidebar() {
+    const sb = document.getElementById('sidebar');
+    const ov = document.getElementById('sidebarOverlay');
+    const isMobile = window.innerWidth <= 900;
+    if (isMobile) {
+      sb.classList.toggle('mobile-open');
+      ov.classList.toggle('show');
+    } else {
+      sb.classList.toggle('collapsed');
+    }
+  }
+
+  // ═══════ ALERTA ATENDIMENTO HUMANO ═══════
+  let _qualificadosSemAtendente = new Set();
+  let _alertaTimeout = null;
+
+  function verificarAlertaHumano(leads) {
+    const novos = leads.filter(l => l.status === 'qualificado' && !l.responsavel);
+    const ids = new Set(novos.map(l => l.id));
+    const temNovos = [...ids].some(id => !_qualificadosSemAtendente.has(id));
+
+    if (novos.length > 0) {
+      const nomes = novos.map(l => l.nome !== '—' ? l.nome : l.telefone).join(', ');
+      document.getElementById('alertaHumanoNomes').textContent = novos.length > 1
+        ? `${novos.length} clientes: ${nomes}`
+        : nomes;
+      document.getElementById('alertaHumanoTxt').textContent =
+        novos.length === 1 ? 'Cliente aguardando atendimento humano!' : `${novos.length} clientes aguardando atendimento!`;
+      document.getElementById('alertaHumano').classList.add('show');
+      if (temNovos) {
+        tocarNotificacaoAlerta();
+        document.getElementById('alertaHumano').classList.add('shake');
+        setTimeout(() => document.getElementById('alertaHumano').classList.remove('shake'), 500);
+      }
+    } else {
+      fecharAlertaHumano();
+    }
+    _qualificadosSemAtendente = ids;
+  }
+
+  function fecharAlertaHumano() {
+    document.getElementById('alertaHumano').classList.remove('show');
+  }
+
+  function tocarNotificacaoAlerta() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [880, 1100, 880].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.25, ctx.currentTime + i * 0.15);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.15 + 0.12);
+        osc.start(ctx.currentTime + i * 0.15);
+        osc.stop(ctx.currentTime + i * 0.15 + 0.12);
+      });
+    } catch {}
   }
 
   // ═══════ INIT ═══════
