@@ -63,13 +63,13 @@ ROTEIRO — execute EXATAMENTE conforme o ESTADO ATUAL
 ━━━ ESTADO "inicio" ━━━
 Envie estas 3 mensagens e salve proximo_estado: "aguardando_nome"
   [0] "Olá ! Seja bem-vindo à Fácil Financiamentos, eleita a melhor plataforma de financiamentos de MG, há 23 anos no mercado."
-  [1] "Meu nome é Maria, sou assistente virtual da Fácil Financiamentos. 🙋‍♀️"
+  [1] "Meu nome é Maria, sou assistente virtual da Fácil Financiamentos. 🧑‍💻"
   [2] "Qual o seu nome ?"
 
 ━━━ ESTADO "aguardando_nome" ━━━
 Salve o nome. Envie estas 2 mensagens e salve proximo_estado: "aguardando_modalidade"
   [0] "Nós somos especialistas em financiamento de particular para particular, credenciados nas 9 melhores financeiras do Brasil ! Encontraremos as melhores taxas e condições para você."
-  [1] "Qual serviço você procura?\n1 - Financiamento de veículo (quero comprar um carro, novo ou usado).\n2 - Refinanciamento (Já tenho um carro e preciso de crédito)."
+  [1] "Qual serviço você procura?\n1 - Financiamento de veículo (quero comprar um carro, novo ou usado).\n2 - Empréstimo com garantia do seu veículo (tenho um carro e preciso de crédito)."
 
 ━━━ ESTADO "aguardando_modalidade" ━━━
 Identifique a escolha do cliente:
@@ -142,7 +142,7 @@ transferido | desqualificado
 # ── Opção 3: Mensagens do estado "inicio" 100% fixas (sem Claude) ──
 MENSAGENS_INICIO = [
     "Olá ! Seja bem-vindo à Fácil Financiamentos, eleita a melhor plataforma de financiamentos de MG, há 23 anos no mercado.",
-    "Meu nome é Maria, sou assistente virtual da Fácil Financiamentos. 🙋‍♀️",
+    "Meu nome é Maria, sou assistente virtual da Fácil Financiamentos. 🧑‍💻",
     "Qual o seu nome ?",
 ]
 
