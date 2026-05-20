@@ -7,56 +7,19 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/marinamartinim-12/facil-bot:latest
-            ghcr.io/marinamartinim-12/facil-bot:${{ github.sha }}
-
-      - name: Make package public
-        run: |
-          echo "=== Tornando imagem publica ==="
-          curl -s -X PATCH \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/user/packages/container/facil-bot \
-            -d '{"visibility":"public"}' | cat
-
-      - name: Update Railway image source
+      - name: Install Railway CLI and deploy
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          echo "=== Atualizando imagem no Railway ==="
-          RESULT=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
-            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"query":"mutation { serviceInstanceUpdate(serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\", input: { source: { image: \"ghcr.io/marinamartinim-12/facil-bot:latest\" } }) }"}')
-          echo "Update result: $RESULT"
+          echo "=== Instalando Railway CLI ==="
+          npm install -g @railway/cli
 
-      - name: Trigger Railway deploy
-        env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-        run: |
-          echo "=== Disparando deploy ==="
-          DEPLOY=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
-            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"query":"mutation { serviceInstanceDeploy(serviceId: \"c1e1aad1-1155-48a7-b100-81e97c184334\", environmentId: \"3b900ec1-ccb9-47bd-9a76-1dd558a7ea6c\") }"}')
-          echo "Deploy result: $DEPLOY"
+          echo "=== Verificando autenticação ==="
+          railway whoami
+
+          echo "=== Fazendo deploy ==="
+          railway up --service c1e1aad1-1155-48a7-b100-81e97c184334 --detach
