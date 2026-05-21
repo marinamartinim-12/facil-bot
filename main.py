@@ -16,7 +16,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, criar_tabelas, get_db, StatusLeadEnum, RoleEnum, EstadoConversaEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
