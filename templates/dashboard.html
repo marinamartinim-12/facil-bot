@@ -542,6 +542,7 @@
         <strong id="sidebarNome">—</strong>
         <span id="sidebarRole">—</span>
       </div>
+      <button class="btn-logout" onclick="abrirModalPerfil()" title="Editar perfil" style="font-size:.85rem;margin-right:2px">✏️</button>
       <button class="btn-logout" onclick="fazerLogout()" title="Sair">⏻</button>
     </div>
   </aside>
@@ -784,6 +785,8 @@
     document.getElementById('sidebarNome').textContent = currentUser.nome;
     document.getElementById('sidebarRole').textContent = currentUser.role === 'admin' ? 'Administrador' : 'Funcionário';
     document.getElementById('sidebarAvatar').textContent = currentUser.nome[0].toUpperCase();
+    // Sempre esconde primeiro para evitar resíduo de sessão anterior
+    document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
     if (currentUser.role === 'admin') {
       document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
     }
@@ -796,7 +799,10 @@
 
   // ═══════ VIEWS ═══════
   const views = ['funil','lista','atendimento','usuarios','relatorios','configuracoes'];
+  const adminViews = ['usuarios', 'relatorios', 'configuracoes'];
   function showView(v) {
+    // Bloqueia acesso a views restritas para não-admins
+    if (adminViews.includes(v) && currentUser?.role !== 'admin') return;
     views.forEach(x => {
       document.getElementById('view'+cap(x)).style.display = x === v ? '' : 'none';
       const n = document.getElementById('nav-'+x);
@@ -1283,6 +1289,7 @@
             </div>
           </div>
           <div class="uc-actions">
+            <button class="btn btn-sm btn-outline" onclick="abrirEditarUsuario(${u.id},'${esc(u.nome)}','${esc(u.email)}','${u.role}',${u.ativo})">✏️ Editar</button>
             ${u.ativo && u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger" onclick="toggleUsuario(${u.id},false)">Desativar</button>` : ''}
             ${!u.ativo ? `<button class="btn btn-sm btn-primary" onclick="toggleUsuario(${u.id},true)">Reativar</button>` : ''}
           </div>
@@ -1316,6 +1323,62 @@
       await fetch(`/api/usuarios/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ativo}) });
       carregarUsuarios();
     } catch {}
+  }
+
+  let _editUserId = null;
+  function abrirEditarUsuario(id, nome, email, role, ativo) {
+    _editUserId = id;
+    document.getElementById('editNome').value   = nome;
+    document.getElementById('editEmail').value  = email;
+    document.getElementById('editRole').value   = role;
+    document.getElementById('editAtivo').value  = String(ativo);
+    document.getElementById('editSenha').value  = '';
+    document.getElementById('editUsuarioMsg').style.display = 'none';
+    document.getElementById('modalEditarUsuario').classList.add('open');
+  }
+
+  function fecharEditarUsuario() {
+    document.getElementById('modalEditarUsuario').classList.remove('open');
+  }
+
+  async function salvarEditarUsuario() {
+    const nome  = document.getElementById('editNome').value.trim();
+    const email = document.getElementById('editEmail').value.trim();
+    const role  = document.getElementById('editRole').value;
+    const ativo = document.getElementById('editAtivo').value === 'true';
+    const senha = document.getElementById('editSenha').value;
+    const msg   = document.getElementById('editUsuarioMsg');
+    const btn   = document.getElementById('btnSalvarEditUsuario');
+
+    if (!nome || !email) { mostrarEditMsg('Preencha nome e e-mail.', false); return; }
+
+    const body = { nome, email, role, ativo };
+    if (senha) {
+      if (senha.length < 6) { mostrarEditMsg('A nova senha deve ter ao mínimo 6 caracteres.', false); return; }
+      body.senha = senha;
+    }
+
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      const r = await fetch(`/api/usuarios/${_editUserId}`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+      });
+      const data = await r.json();
+      if (!r.ok) { mostrarEditMsg(data.detail || 'Erro ao salvar.', false); return; }
+      mostrarEditMsg('✓ Usuário atualizado com sucesso!', true);
+      carregarUsuarios();
+      setTimeout(fecharEditarUsuario, 1200);
+    } catch { mostrarEditMsg('Erro de conexão.', false); }
+    finally { btn.disabled = false; btn.textContent = 'Salvar'; }
+  }
+
+  function mostrarEditMsg(texto, ok) {
+    const el = document.getElementById('editUsuarioMsg');
+    el.textContent = texto;
+    el.style.display = 'block';
+    el.style.background = ok ? '#dcfce7' : '#fee2e2';
+    el.style.color      = ok ? '#166534' : '#991b1b';
+    el.style.border     = `1px solid ${ok ? '#bbf7d0' : '#fecaca'}`;
   }
 
   // ═══════ RELATÓRIOS ═══════
@@ -2037,5 +2100,178 @@
     </div>
   </div>
 </div>
+<!-- ── MODAL: Editar Usuário (admin) ── -->
+<div class="overlay" id="modalEditarUsuario" onclick="if(event.target===this)fecharEditarUsuario()">
+  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:440px;display:flex;flex-direction:column;overflow:hidden">
+    <div class="modal-hd">
+      <span style="font-size:1.15rem">✏️</span>
+      <h3>Editar Usuário</h3>
+      <button class="modal-close" onclick="fecharEditarUsuario()">×</button>
+    </div>
+    <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:.9rem">
+      <div id="editUsuarioMsg" style="display:none;padding:.6rem .9rem;border-radius:8px;font-size:.85rem;font-weight:600"></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Nome</label>
+          <input id="editNome" type="text" style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        </div>
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">E-mail</label>
+          <input id="editEmail" type="email" style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        </div>
+        <div>
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Perfil</label>
+          <select id="editRole" style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#fff">
+            <option value="funcionario">Funcionário</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Status</label>
+          <select id="editAtivo" style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#fff">
+            <option value="true">Ativo</option>
+            <option value="false">Inativo</option>
+          </select>
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border)">
+      <p style="font-size:.78rem;color:var(--muted);font-weight:600;margin:0">Nova senha <span style="font-weight:400">(deixe em branco para não alterar)</span></p>
+      <div>
+        <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Senha</label>
+        <input id="editSenha" type="password" placeholder="mínimo 6 caracteres"
+          style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+      </div>
+
+      <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:.25rem">
+        <button onclick="fecharEditarUsuario()" class="btn btn-sm" style="background:var(--border);color:var(--navy)">Cancelar</button>
+        <button id="btnSalvarEditUsuario" onclick="salvarEditarUsuario()" class="btn btn-primary btn-sm" style="padding:.5rem 1.4rem">Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: Meu Perfil ── -->
+<div class="overlay" id="modalPerfil" onclick="if(event.target===this)fecharModalPerfil()">
+  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:420px;display:flex;flex-direction:column;overflow:hidden">
+    <div class="modal-hd">
+      <span style="font-size:1.15rem">👤</span>
+      <h3>Meu Perfil</h3>
+      <button class="modal-close" onclick="fecharModalPerfil()">×</button>
+    </div>
+    <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:1rem">
+      <div id="perfilMsg" style="display:none;padding:.6rem .9rem;border-radius:8px;font-size:.85rem;font-weight:600"></div>
+
+      <!-- Nome -->
+      <div>
+        <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Nome</label>
+        <input id="perfilNome" type="text" class="form-control" placeholder="Seu nome" style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+      </div>
+
+      <!-- E-mail (somente leitura) -->
+      <div>
+        <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">E-mail</label>
+        <input id="perfilEmail" type="email" class="form-control" readonly
+          style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#f5f6fa;color:var(--muted);cursor:not-allowed">
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:.1rem 0">
+      <p style="font-size:.78rem;color:var(--muted);font-weight:600;margin:0">Trocar senha <span style="font-weight:400">(deixe em branco para não alterar)</span></p>
+
+      <!-- Senha atual -->
+      <div>
+        <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Senha atual</label>
+        <input id="perfilSenhaAtual" type="password" class="form-control" placeholder="••••••••"
+          style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+      </div>
+
+      <!-- Nova senha -->
+      <div>
+        <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Nova senha</label>
+        <input id="perfilNovaSenha" type="password" class="form-control" placeholder="mínimo 6 caracteres"
+          style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+      </div>
+
+      <!-- Confirmar nova senha -->
+      <div>
+        <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Confirmar nova senha</label>
+        <input id="perfilConfirmarSenha" type="password" class="form-control" placeholder="repita a nova senha"
+          style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+      </div>
+
+      <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:.25rem">
+        <button onclick="fecharModalPerfil()" class="btn btn-sm" style="background:var(--border);color:var(--navy)">Cancelar</button>
+        <button id="btnSalvarPerfil" onclick="salvarPerfil()" class="btn btn-primary btn-sm" style="padding:.5rem 1.4rem">Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function abrirModalPerfil() {
+    document.getElementById('perfilNome').value       = currentUser?.nome || '';
+    document.getElementById('perfilEmail').value      = currentUser?.email || '';
+    document.getElementById('perfilSenhaAtual').value = '';
+    document.getElementById('perfilNovaSenha').value  = '';
+    document.getElementById('perfilConfirmarSenha').value = '';
+    const msg = document.getElementById('perfilMsg');
+    msg.style.display = 'none';
+    msg.textContent = '';
+    document.getElementById('modalPerfil').classList.add('open');
+  }
+
+  function fecharModalPerfil() {
+    document.getElementById('modalPerfil').classList.remove('open');
+  }
+
+  async function salvarPerfil() {
+    const nome          = document.getElementById('perfilNome').value.trim();
+    const senhaAtual    = document.getElementById('perfilSenhaAtual').value;
+    const novaSenha     = document.getElementById('perfilNovaSenha').value;
+    const confirmar     = document.getElementById('perfilConfirmarSenha').value;
+    const msg           = document.getElementById('perfilMsg');
+    const btn           = document.getElementById('btnSalvarPerfil');
+
+    // Validações no cliente
+    if (!nome) { mostrarMsgPerfil('O nome não pode ficar vazio.', false); return; }
+    if (novaSenha || senhaAtual) {
+      if (!senhaAtual) { mostrarMsgPerfil('Informe a senha atual para trocar a senha.', false); return; }
+      if (novaSenha.length < 6) { mostrarMsgPerfil('A nova senha deve ter ao mínimo 6 caracteres.', false); return; }
+      if (novaSenha !== confirmar) { mostrarMsgPerfil('As senhas não conferem.', false); return; }
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Salvando…';
+    try {
+      const body = { nome };
+      if (novaSenha) { body.senha_atual = senhaAtual; body.nova_senha = novaSenha; }
+      const r = await fetch('/api/me', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await r.json();
+      if (!r.ok) { mostrarMsgPerfil(data.detail || 'Erro ao salvar.', false); return; }
+      // Atualiza dados locais e sidebar
+      currentUser = data;
+      document.getElementById('sidebarNome').textContent   = data.nome;
+      document.getElementById('sidebarAvatar').textContent = data.nome[0].toUpperCase();
+      mostrarMsgPerfil('Perfil atualizado com sucesso! ✓', true);
+      // Limpa campos de senha
+      document.getElementById('perfilSenhaAtual').value    = '';
+      document.getElementById('perfilNovaSenha').value     = '';
+      document.getElementById('perfilConfirmarSenha').value = '';
+    } catch { mostrarMsgPerfil('Erro de conexão.', false); }
+    finally { btn.disabled = false; btn.textContent = 'Salvar'; }
+  }
+
+  function mostrarMsgPerfil(texto, sucesso) {
+    const msg = document.getElementById('perfilMsg');
+    msg.textContent = texto;
+    msg.style.display = 'block';
+    msg.style.background  = sucesso ? '#dcfce7' : '#fee2e2';
+    msg.style.color       = sucesso ? '#166534' : '#991b1b';
+    msg.style.border      = `1px solid ${sucesso ? '#bbf7d0' : '#fecaca'}`;
+  }
+
+</script>
+
 </body>
 </html>

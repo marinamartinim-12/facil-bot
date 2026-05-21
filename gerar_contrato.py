@@ -456,7 +456,8 @@ def aplicar_assinatura_no_pdf(pdf_bytes: bytes, sig_img_path: str,
 
 
 # ─── Página de auditoria ─────────────────────────────────────────────────────
-def _gerar_pagina_audit(selfie_path, assin_path, dados, doc_id, url, role_label):
+def _gerar_pagina_audit(selfie_path, assin_path, dados, doc_id, url, role_label,
+                        doc_frente_path=None, doc_verso_path=None):
     """Gera uma página PDF de auditoria para um assinante."""
     audit = RequerimentoPDF(doc_id=doc_id)
     audit.add_page()
@@ -543,6 +544,70 @@ def _gerar_pagina_audit(selfie_path, assin_path, dados, doc_id, url, role_label)
         except Exception:
             audit.para("(assinatura nao disponivel)", after=2)
 
+    # Documentos de identidade (frente e verso)
+    tem_frente = doc_frente_path and Path(doc_frente_path).exists()
+    tem_verso  = doc_verso_path  and Path(doc_verso_path).exists()
+
+    if tem_frente or tem_verso:
+        audit.ln(4)
+        audit.set_draw_color(*GOLD)
+        audit.set_line_width(0.5)
+        audit.line(25, audit.get_y(), audit.w - 25, audit.get_y())
+        audit.ln(4)
+
+        audit.set_font("Helvetica", "B", 9)
+        audit.set_text_color(*NAVY)
+        audit.cell(0, 6, "Documentos de identificacao",
+                   new_x="LMARGIN", new_y="NEXT")
+        audit.ln(2)
+
+        doc_w = 78   # largura de cada foto de documento
+        doc_h = 50   # altura
+
+        if tem_frente:
+            audit.set_font("Helvetica", "B", 8)
+            audit.set_text_color(80, 80, 80)
+            audit.cell(doc_w, 5, "Frente", align="C",
+                       new_x="LMARGIN", new_y="NEXT")
+            audit.ln(1)
+            try:
+                fx, fy = 25, audit.get_y()
+                audit.set_draw_color(200, 200, 200)
+                audit.set_line_width(0.3)
+                audit.rect(fx, fy, doc_w, doc_h)
+                audit.image(doc_frente_path, x=fx + 0.5, y=fy + 0.5,
+                            w=doc_w - 1, h=doc_h - 1)
+                if tem_verso:
+                    vx, vy = fx + doc_w + 6, fy
+                    audit.set_font("Helvetica", "B", 8)
+                    audit.set_text_color(80, 80, 80)
+                    audit.set_xy(vx, fy - 6)
+                    audit.cell(doc_w, 5, "Verso", align="C")
+                    audit.rect(vx, vy, doc_w, doc_h)
+                    audit.image(doc_verso_path, x=vx + 0.5, y=vy + 0.5,
+                                w=doc_w - 1, h=doc_h - 1)
+                audit.set_y(fy + doc_h + 4)
+            except Exception as e:
+                print(f"Erro ao inserir doc frente/verso: {e}")
+                audit.para("(documento nao disponivel)", after=2)
+        elif tem_verso:
+            audit.set_font("Helvetica", "B", 8)
+            audit.set_text_color(80, 80, 80)
+            audit.cell(doc_w, 5, "Verso", align="C",
+                       new_x="LMARGIN", new_y="NEXT")
+            audit.ln(1)
+            try:
+                vx, vy = 25, audit.get_y()
+                audit.set_draw_color(200, 200, 200)
+                audit.set_line_width(0.3)
+                audit.rect(vx, vy, doc_w, doc_h)
+                audit.image(doc_verso_path, x=vx + 0.5, y=vy + 0.5,
+                            w=doc_w - 1, h=doc_h - 1)
+                audit.set_y(vy + doc_h + 4)
+            except Exception as e:
+                print(f"Erro ao inserir doc verso: {e}")
+                audit.para("(documento nao disponivel)", after=2)
+
     audit.ln(3)
     audit.set_draw_color(220, 220, 220)
     audit.set_line_width(0.3)
@@ -564,7 +629,9 @@ def gerar_pdf_final_completo(
     pdf_original_path: str,
     *,
     assin_req_path=None, selfie_req_path=None, dados_req=None,
+    doc_frente_req_path=None, doc_verso_req_path=None,
     assin_prop_path=None, selfie_prop_path=None, dados_prop=None,
+    doc_frente_prop_path=None, doc_verso_prop_path=None,
     doc_id="",
     verificacao_url_req="", verificacao_url_prop="",
 ) -> bytes:
@@ -602,12 +669,15 @@ def gerar_pdf_final_completo(
         writer.add_page(page)
 
     # Páginas de auditoria
-    for selfie_p, assin_p, dados, role_label, url in [
-        (selfie_req_path,  assin_req_path,  dados_req,  "Requerente",             verificacao_url_req),
-        (selfie_prop_path, assin_prop_path, dados_prop, "Proprietario / Vendedor", verificacao_url_prop),
+    for selfie_p, assin_p, dados, role_label, url, frente_p, verso_p in [
+        (selfie_req_path,  assin_req_path,  dados_req,  "Requerente",             verificacao_url_req,
+         doc_frente_req_path,  doc_verso_req_path),
+        (selfie_prop_path, assin_prop_path, dados_prop, "Proprietario / Vendedor", verificacao_url_prop,
+         doc_frente_prop_path, doc_verso_prop_path),
     ]:
         if dados:
-            audit = _gerar_pagina_audit(selfie_p, assin_p, dados, doc_id, url, role_label)
+            audit = _gerar_pagina_audit(selfie_p, assin_p, dados, doc_id, url, role_label,
+                                        doc_frente_path=frente_p, doc_verso_path=verso_p)
             for page in PdfReader(BytesIO(audit)).pages:
                 writer.add_page(page)
 

@@ -249,6 +249,7 @@ async def me(usuario: Usuario = Depends(obter_usuario_atual)):
     return {"id": usuario.id, "nome": usuario.nome, "email": usuario.email, "role": usuario.role}
 
 
+
 # ─── WhatsApp: envio ─────────────────────────────────────────────────────────────
 
 async def enviar_zapi(telefone: str, mensagem: str):
@@ -852,6 +853,12 @@ async def atualizar_usuario(uid: int, request: Request, db: Session = Depends(ge
     body = await request.json()
     if "nome" in body:
         u.nome = body["nome"].strip()
+    if "email" in body:
+        novo_email = body["email"].strip().lower()
+        if novo_email != u.email:
+            if db.query(Usuario).filter(Usuario.email == novo_email, Usuario.id != uid).first():
+                raise HTTPException(status_code=400, detail="E-mail já está em uso por outro usuário")
+            u.email = novo_email
     if "role" in body:
         u.role = body["role"]
     if "ativo" in body:
@@ -871,6 +878,37 @@ async def desativar_usuario(uid: int, db: Session = Depends(get_db), admin: Usua
     u.ativo = False
     db.commit()
     return {"status": "desativado"}
+
+
+# ─── Perfil do próprio usuário ───────────────────────────────────────────────────
+
+@app.put("/api/me")
+async def atualizar_perfil(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Permite que qualquer usuário logado atualize seu nome e/ou senha."""
+    body = await request.json()
+    nome       = body.get("nome", "").strip()
+    senha_atual = body.get("senha_atual", "")
+    nova_senha  = body.get("nova_senha", "")
+
+    if nome:
+        usuario.nome = nome
+
+    if nova_senha:
+        if not senha_atual:
+            raise HTTPException(status_code=400, detail="Informe a senha atual para trocar a senha")
+        if not verificar_senha(senha_atual, usuario.senha_hash):
+            raise HTTPException(status_code=401, detail="Senha atual incorreta")
+        if len(nova_senha) < 6:
+            raise HTTPException(status_code=400, detail="A nova senha deve ter ao mínimo 6 caracteres")
+        usuario.senha_hash = hash_senha(nova_senha)
+
+    db.commit()
+    db.refresh(usuario)
+    return {"id": usuario.id, "nome": usuario.nome, "email": usuario.email, "role": usuario.role}
 
 
 # ─── Configurações do bot (admin) ────────────────────────────────────────────────
@@ -1280,9 +1318,13 @@ async def submeter_assinatura(token: str, request: Request, db: Session = Depend
             assin_req_path=contrato.assinatura_path,
             selfie_req_path=contrato.selfie_path,
             dados_req=dados_req,
+            doc_frente_req_path=contrato.doc_frente_req_path,
+            doc_verso_req_path=contrato.doc_verso_req_path,
             assin_prop_path=contrato.assinatura_prop_path,
             selfie_prop_path=contrato.selfie_prop_path,
             dados_prop=dados_prop,
+            doc_frente_prop_path=contrato.doc_frente_prop_path,
+            doc_verso_prop_path=contrato.doc_verso_prop_path,
             doc_id=d_contrato.get("doc_id", ""),
             verificacao_url_req=f"{base_url}/verificar/{contrato.token}",
             verificacao_url_prop=f"{base_url}/verificar/{contrato.token_prop}" if contrato.token_prop else "",
