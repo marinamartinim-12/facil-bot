@@ -988,11 +988,12 @@
     }
 
     // Botões de progressão — qualquer funcionária pode mover cards no funil
-    // (perdido/desqualificado continuam restritos ao admin no backend e no colDrop)
     if (l.status === 'assumido') {
-      acoes += ` <button class="btn btn-sm" style="background:#f97316;color:#fff" onclick="moverLead(${l.id},'proposta_enviada',true)" title="Marcar proposta enviada">📄</button>`;
+      acoes += ` <button class="btn btn-sm" style="background:#f97316;color:#fff" onclick="moverLead(${l.id},'proposta_enviada',true)" title="Proposta enviada">📄</button>`;
+      acoes += ` <button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLead(${l.id},'perdido',true)" title="Marcar como perdido">❌</button>`;
     } else if (l.status === 'proposta_enviada') {
-      acoes += ` <button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="moverLead(${l.id},'fechado',true)" title="Marcar como fechado">✓</button>`;
+      acoes += ` <button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="moverLead(${l.id},'fechado',true)" title="Fechar">✓</button>`;
+      acoes += ` <button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLead(${l.id},'perdido',true)" title="Marcar como perdido">❌</button>`;
     } else if ((l.status === 'fechado' || l.status === 'perdido') && isAdmin) {
       acoes += ` <button class="btn btn-sm btn-outline" onclick="moverLead(${l.id},'assumido',true)" title="Reabrir">↩</button>`;
     }
@@ -1044,9 +1045,9 @@
     if (!dragLeadId) return;
     const lead = allLeads.find(l => l.id === dragLeadId);
     if (!lead || lead.status === colKey) return;
-    // Não-admins não podem mover para Perdido ou Desqualificado
-    if (['perdido','desqualificado'].includes(colKey) && currentUser.role !== 'admin') {
-      alert('Apenas administradores podem remover leads do funil.');
+    // Não-admins não podem mover para Desqualificado
+    if (colKey === 'desqualificado' && currentUser.role !== 'admin') {
+      alert('Apenas administradores podem desqualificar leads.');
       dragLeadId = null;
       return;
     }
@@ -1119,16 +1120,12 @@
 
       if (!jaAssumido && lead.status !== 'fechado' && lead.status !== 'perdido')
         acoes += `<button class="btn btn-gold btn-sm" onclick="moverLeadModal(${leadId},'assumido')">👤 Assumir</button>`;
-      if (lead.status === 'qualificado' && podeEditar && isAdmin)
+      if (['qualificado','assumido','proposta_enviada'].includes(lead.status))
         acoes += `<button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLeadModal(${leadId},'perdido')">❌ Perdido</button>`;
-      if (lead.status === 'assumido' && podeEditar)
+      if (lead.status === 'assumido')
         acoes += `<button class="btn btn-sm" style="background:#f97316;color:#fff" onclick="moverLeadModal(${leadId},'proposta_enviada')">📄 Proposta</button>`;
-      if (lead.status === 'assumido' && podeEditar && isAdmin)
-        acoes += `<button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLeadModal(${leadId},'perdido')">❌ Perdido</button>`;
-      if (lead.status === 'proposta_enviada' && podeEditar)
+      if (lead.status === 'proposta_enviada')
         acoes += `<button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="moverLeadModal(${leadId},'fechado')">✓ Fechar</button>`;
-      if (lead.status === 'proposta_enviada' && podeEditar && isAdmin)
-        acoes += `<button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLeadModal(${leadId},'perdido')">❌ Perdido</button>`;
       if ((lead.status === 'fechado' || lead.status === 'perdido') && isAdmin)
         acoes += `<button class="btn btn-sm btn-outline" onclick="moverLeadModal(${leadId},'assumido')">↩ Reabrir</button>`;
 
