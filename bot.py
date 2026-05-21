@@ -118,7 +118,18 @@ Salve o CPF. Envie e salve proximo_estado: "coletando_data_nasc"
   "Qual a sua data de nascimento ?"
 
 ━━━ ESTADO "coletando_data_nasc" ━━━
-Salve a data. Envie e salve proximo_estado: "coletando_carro"
+Salve a data de nascimento no campo data_nascimento, sempre no formato DD/MM/YYYY.
+Reconheça qualquer formato que o cliente usar, por exemplo:
+  "121290" → "12/12/1990"
+  "12121990" → "12/12/1990"
+  "12/12/90" → "12/12/1990"
+  "12-12-1990" → "12/12/1990"
+  "12.12.1990" → "12/12/1990"
+  "12 12 1990" → "12/12/1990"
+  "meu aniversário é em 12/12/1990" → "12/12/1990"
+  "12 de dezembro de 1990" → "12/12/1990"
+  Anos com 2 dígitos: 90→1990, 85→1985, 01→2001, 10→2010 (≤24 = 2000s)
+Envie e salve proximo_estado: "coletando_carro"
   Para Financiamento: "Qual veículo você está procurando ?"
   Para Refinanciamento: "Qual o modelo e ano do seu veículo ?"
 
@@ -196,6 +207,95 @@ def _formatar_cpf(cpf: str) -> str:
     return cpf
 
 
+_MESES_PT = {
+    "janeiro": "01", "fevereiro": "02", "março": "03", "marco": "03",
+    "abril": "04", "maio": "05", "junho": "06", "julho": "07",
+    "agosto": "08", "setembro": "09", "outubro": "10",
+    "novembro": "11", "dezembro": "12",
+    "jan": "01", "fev": "02", "mar": "03", "abr": "04",
+    "mai": "05", "jun": "06", "jul": "07", "ago": "08",
+    "set": "09", "out": "10", "nov": "11", "dez": "12",
+}
+
+
+def _data_valida(d: str, m: str, a: str) -> bool:
+    try:
+        return 1 <= int(d) <= 31 and 1 <= int(m) <= 12 and 1900 <= int(a) <= 2099
+    except (ValueError, TypeError):
+        return False
+
+
+def _ano_dois_digitos(y: str) -> str:
+    """Converte ano de 2 dígitos para 4: ≤24 → 2000s, caso contrário → 1900s."""
+    n = int(y)
+    return str(2000 + n if n <= 24 else 1900 + n)
+
+
+def _normalizar_data_nascimento(texto: str) -> str | None:
+    """
+    Converte qualquer formato de data de nascimento para DD/MM/YYYY.
+    Aceita: 12121990, 121290, 12/12/1990, 12-12-1990, 12.12.1990,
+            12 12 1990, 1990-12-12, '12 de dezembro de 1990', etc.
+    Retorna None se não conseguir interpretar.
+    """
+    if not texto:
+        return None
+
+    t = texto.strip()
+
+    # ── 1. Mês por extenso ─────────────────────────────────────────────────────
+    t_lower = t.lower()
+    for nome, num in _MESES_PT.items():
+        if nome in t_lower:
+            nums = re.findall(r"\d+", t)
+            dias  = [n for n in nums if len(n) <= 2 and 1 <= int(n) <= 31]
+            anos4 = [n for n in nums if len(n) == 4 and 1900 <= int(n) <= 2099]
+            anos2 = [n for n in nums if len(n) == 2]
+            if dias:
+                d = dias[0].zfill(2)
+                if anos4:
+                    return f"{d}/{num}/{anos4[0]}"
+                if anos2:
+                    return f"{d}/{num}/{_ano_dois_digitos(anos2[0])}"
+
+    # ── 2. Só dígitos (sem separadores) ────────────────────────────────────────
+    apenas = re.sub(r"\D", "", t)
+    if len(apenas) == 8:            # DDMMYYYY
+        d, m, a = apenas[:2], apenas[2:4], apenas[4:]
+        if _data_valida(d, m, a):
+            return f"{d}/{m}/{a}"
+    if len(apenas) == 6:            # DDMMYY
+        d, m, y = apenas[:2], apenas[2:4], apenas[4:]
+        a = _ano_dois_digitos(y)
+        if _data_valida(d, m, a):
+            return f"{d}/{m}/{a}"
+
+    # ── 3. Com separadores (/, -, ., espaço) ───────────────────────────────────
+    for sep in ["/", "-", ".", " "]:
+        partes = [re.sub(r"\D", "", p) for p in t.split(sep) if p.strip()]
+        if len(partes) != 3 or not all(partes):
+            continue
+        p0, p1, p2 = partes
+
+        # ISO: YYYY-MM-DD
+        if len(p0) == 4 and 1900 <= int(p0) <= 2099:
+            if _data_valida(p2, p1, p0):
+                return f"{p2.zfill(2)}/{p1.zfill(2)}/{p0}"
+
+        # DD/MM/YYYY
+        elif len(p2) == 4:
+            if _data_valida(p0, p1, p2):
+                return f"{p0.zfill(2)}/{p1.zfill(2)}/{p2}"
+
+        # DD/MM/YY
+        elif len(p2) == 2:
+            a = _ano_dois_digitos(p2)
+            if _data_valida(p0, p1, a):
+                return f"{p0.zfill(2)}/{p1.zfill(2)}/{a}"
+
+    return None  # não conseguiu interpretar
+
+
 def _salvar_mensagem(db: Session, telefone: str, role: str, conteudo: str):
     db.add(MensagemConversa(telefone=telefone, role=role, conteudo=conteudo))
     db.commit()
@@ -207,7 +307,8 @@ def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, q
     if dados.get("cpf"):
         lead.cpf = _formatar_cpf(dados["cpf"])
     if dados.get("data_nascimento"):
-        lead.data_nascimento = dados["data_nascimento"]
+        normalizada = _normalizar_data_nascimento(dados["data_nascimento"])
+        lead.data_nascimento = normalizada if normalizada else dados["data_nascimento"]
     if dados.get("carro_interesse"):
         lead.carro_interesse = dados["carro_interesse"]
     if dados.get("modalidade"):
