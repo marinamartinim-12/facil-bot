@@ -1643,7 +1643,7 @@
 
     document.getElementById('modalDados').innerHTML = `
       <div class="data-item"><label>Nome</label>${inputNome}</div>
-      <div class="data-item"><label>Telefone</label><a href="https://wa.me/55${(lead.telefone||'').replace(/\D/g,'')}" target="_blank" title="Abrir no WhatsApp" style="color:var(--navy);font-weight:600;text-decoration:none;display:flex;align-items:center;gap:4px">${escHtml(lead.telefone||'—')} <span style="font-size:.8rem">💬</span></a></div>
+      <div class="data-item"><label>Telefone</label><a href="#" onclick="event.preventDefault();closeModal();showView('atendimento');setTimeout(()=>{ const l=inboxLeads.find(x=>x.id===${lead.id}); if(l)abrirChat(l.id); },300);" title="Abrir conversa no sistema" style="color:var(--navy);font-weight:600;text-decoration:none;display:flex;align-items:center;gap:4px">${escHtml(lead.telefone||'—')} <span style="font-size:.8rem">💬</span></a></div>
       <div class="data-item"><label>CPF</label>${inputCPF}</div>
       <div class="data-item"><label>Nasc.</label>${inputNasc}</div>
       <div class="data-item full"><label>Veículo de interesse</label>${inputCarro}</div>
