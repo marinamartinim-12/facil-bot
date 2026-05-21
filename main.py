@@ -622,7 +622,7 @@ async def criar_lead_manual(
         origem_detalhe=origem_detalhe,
         parceiro_id=int(parceiro_id) if parceiro_id else None,
         modalidade=modalidade,
-        status=StatusLeadEnum.qualificado,
+        status=StatusLeadEnum.assumido,
         estado_conversa=EstadoConversaEnum.transferido,
         atribuido_para=responsavel.id if responsavel else usuario.id,
         assumido_em=datetime.utcnow(),
