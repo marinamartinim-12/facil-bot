@@ -311,12 +311,12 @@
       position: relative;
       max-width: 70%;
       width: fit-content;
-      padding: 6px 10px 8px 10px;
+      padding: 5px 9px 7px 9px;
       border-radius: 7.5px;
       font-size: .875rem;
-      line-height: 1.45;
+      line-height: 1.4;
       word-break: break-word;
-      white-space: pre-wrap;
+      white-space: normal;
       box-shadow: 0 1px 2px rgba(0,0,0,.13);
     }
     .wsp-row.in  .wsp-bubble { background: var(--wsp-bubble-in);  border-top-left-radius: 0; }
@@ -1584,7 +1584,7 @@
       const isCliente = m.role === 'user';
       const dir = isCliente ? 'in' : 'out';   // cliente=esquerda, bot=direita
       const matchFunc = m.conteudo.match(/^\[([^\]]+)\]:\s*/);
-      const conteudo = escHtml(matchFunc ? m.conteudo.replace(matchFunc[0], '') : m.conteudo);
+      const conteudo = escHtml((matchFunc ? m.conteudo.replace(matchFunc[0], '') : m.conteudo).trim());
       const remetente = matchFunc ? matchFunc[1] : null;
       const hora = m.horario || '';
       // Separador de data
