@@ -16,7 +16,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, criar_tabelas, get_db, StatusLeadEnum, RoleEnum, EstadoConversaEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, criar_tabelas, get_db, StatusLeadEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
@@ -192,6 +192,8 @@ async def startup():
         ("contratos", "codigo_prop",           "VARCHAR(10)"),
         ("contratos", "codigo_prop_expira",    "DATETIME"),
         ("leads",     "origem",                "VARCHAR(50)"),
+        ("leads",     "origem_detalhe",        "VARCHAR(100)"),
+        ("leads",     "parceiro_id",           "INTEGER"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -369,6 +371,192 @@ async def testar_bot(request: Request, db: Session = Depends(get_db)):
     return JSONResponse({"respostas": respostas, "telefone": telefone})
 
 
+# ─── API Parceiros ───────────────────────────────────────────────────────────────
+
+def _serial_parceiro(p: Parceiro) -> dict:
+    return {
+        "id": p.id,
+        "nome": p.nome,
+        "data_nascimento": p.data_nascimento or "",
+        "cpf": p.cpf or "",
+        "telefone": p.telefone,
+        "email": p.email or "",
+        "observacoes": p.observacoes or "",
+        "ativo": p.ativo,
+        "criado_em": p.criado_em.strftime("%d/%m/%Y") if p.criado_em else "",
+        "contatos": [
+            {"id": c.id, "nome": c.nome, "telefone": c.telefone or "",
+             "email": c.email or "", "cargo": c.cargo or ""}
+            for c in p.contatos
+        ],
+    }
+
+
+@app.get("/api/parceiros")
+async def listar_parceiros(
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    parceiros = db.query(Parceiro).filter(Parceiro.ativo == True)\
+                  .order_by(Parceiro.nome).all()
+    return [_serial_parceiro(p) for p in parceiros]
+
+
+@app.post("/api/parceiros")
+async def criar_parceiro(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    body = await request.json()
+    nome     = body.get("nome", "").strip()
+    telefone = body.get("telefone", "").strip()
+    cpf      = body.get("cpf", "").strip() or None
+
+    if not nome:
+        raise HTTPException(status_code=400, detail="O nome do parceiro é obrigatório")
+    if not telefone:
+        raise HTTPException(status_code=400, detail="O telefone é obrigatório")
+
+    # Verificar duplicidade por CPF
+    if cpf and db.query(Parceiro).filter(Parceiro.cpf == cpf).first():
+        raise HTTPException(status_code=400, detail="Já existe um parceiro com este CPF")
+    # Verificar duplicidade por telefone
+    tel_norm = "".join(c for c in telefone if c.isdigit())
+    existente = db.query(Parceiro).filter(Parceiro.telefone == tel_norm).first()
+    if existente:
+        raise HTTPException(status_code=400, detail=f"Já existe um parceiro com este telefone: {existente.nome}")
+
+    p = Parceiro(
+        nome=nome,
+        data_nascimento=body.get("data_nascimento", "").strip() or None,
+        cpf=cpf,
+        telefone=tel_norm or telefone,
+        email=body.get("email", "").strip() or None,
+        observacoes=body.get("observacoes", "").strip() or None,
+    )
+    db.add(p)
+    db.flush()
+
+    # Contatos adicionais
+    for c in body.get("contatos", []):
+        nome_c = c.get("nome", "").strip()
+        if nome_c:
+            db.add(ContatoParceiro(
+                parceiro_id=p.id,
+                nome=nome_c,
+                telefone=c.get("telefone", "").strip() or None,
+                email=c.get("email", "").strip() or None,
+                cargo=c.get("cargo", "").strip() or None,
+            ))
+
+    db.commit()
+    db.refresh(p)
+    return _serial_parceiro(p)
+
+
+@app.put("/api/parceiros/{pid}")
+async def atualizar_parceiro(
+    pid: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    p = db.query(Parceiro).filter(Parceiro.id == pid).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Parceiro não encontrado")
+
+    body = await request.json()
+    nome     = body.get("nome", "").strip()
+    telefone = body.get("telefone", "").strip()
+    cpf      = body.get("cpf", "").strip() or None
+
+    if not nome:
+        raise HTTPException(status_code=400, detail="O nome é obrigatório")
+    if not telefone:
+        raise HTTPException(status_code=400, detail="O telefone é obrigatório")
+
+    # Duplicidade CPF (outro parceiro)
+    if cpf and cpf != p.cpf:
+        if db.query(Parceiro).filter(Parceiro.cpf == cpf, Parceiro.id != pid).first():
+            raise HTTPException(status_code=400, detail="Já existe um parceiro com este CPF")
+
+    tel_norm = "".join(c for c in telefone if c.isdigit()) or telefone
+    if tel_norm != p.telefone:
+        if db.query(Parceiro).filter(Parceiro.telefone == tel_norm, Parceiro.id != pid).first():
+            raise HTTPException(status_code=400, detail="Já existe um parceiro com este telefone")
+
+    p.nome            = nome
+    p.data_nascimento = body.get("data_nascimento", "").strip() or None
+    p.cpf             = cpf
+    p.telefone        = tel_norm
+    p.email           = body.get("email", "").strip() or None
+    p.observacoes     = body.get("observacoes", "").strip() or None
+
+    db.commit()
+    db.refresh(p)
+    return _serial_parceiro(p)
+
+
+@app.delete("/api/parceiros/{pid}")
+async def desativar_parceiro(
+    pid: int,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    p = db.query(Parceiro).filter(Parceiro.id == pid).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Parceiro não encontrado")
+    p.ativo = False
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.post("/api/parceiros/{pid}/contatos")
+async def adicionar_contato(
+    pid: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    p = db.query(Parceiro).filter(Parceiro.id == pid).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Parceiro não encontrado")
+    body = await request.json()
+    nome_c = body.get("nome", "").strip()
+    if not nome_c:
+        raise HTTPException(status_code=400, detail="Nome do contato é obrigatório")
+    c = ContatoParceiro(
+        parceiro_id=pid,
+        nome=nome_c,
+        telefone=body.get("telefone", "").strip() or None,
+        email=body.get("email", "").strip() or None,
+        cargo=body.get("cargo", "").strip() or None,
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(p)
+    return _serial_parceiro(p)
+
+
+@app.delete("/api/parceiros/{pid}/contatos/{cid}")
+async def remover_contato(
+    pid: int,
+    cid: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    c = db.query(ContatoParceiro).filter(
+        ContatoParceiro.id == cid,
+        ContatoParceiro.parceiro_id == pid,
+    ).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Contato não encontrado")
+    db.delete(c)
+    db.commit()
+    return {"status": "ok"}
+
+
 # ─── API Leads ───────────────────────────────────────────────────────────────────
 
 @app.post("/api/leads")
@@ -381,12 +569,14 @@ async def criar_lead_manual(
     import time
     body = await request.json()
 
-    nome     = body.get("nome", "").strip()
-    telefone = body.get("telefone", "").strip()
-    origem   = body.get("origem", "outro").strip() or "outro"
-    modalidade = body.get("modalidade", ModalidadeEnum.indefinido)
-    obs      = body.get("observacao", "").strip()
-    atrib_id = body.get("atribuido_para")
+    nome            = body.get("nome", "").strip()
+    telefone        = body.get("telefone", "").strip()
+    origem          = body.get("origem", "whatsapp").strip() or "whatsapp"
+    origem_detalhe  = body.get("origem_detalhe", "").strip() or None
+    parceiro_id     = body.get("parceiro_id") or None
+    modalidade      = body.get("modalidade", ModalidadeEnum.indefinido)
+    obs             = body.get("observacao", "").strip()
+    atrib_id        = body.get("atribuido_para")
 
     if not nome:
         raise HTTPException(status_code=400, detail="O nome do lead é obrigatório")
@@ -395,7 +585,6 @@ async def criar_lead_manual(
     if not telefone:
         telefone = f"_manual_{int(time.time() * 1000)}"
     else:
-        # Normaliza: remove espaços e caracteres não numéricos, mantém o +
         telefone_norm = "".join(c for c in telefone if c.isdigit() or c == "+")
         if not telefone_norm:
             telefone_norm = telefone
@@ -408,10 +597,18 @@ async def criar_lead_manual(
     if atrib_id:
         responsavel = db.query(Usuario).filter(Usuario.id == atrib_id, Usuario.ativo == True).first()
 
+    # Parceiro
+    if parceiro_id:
+        p = db.query(Parceiro).filter(Parceiro.id == parceiro_id, Parceiro.ativo == True).first()
+        if not p:
+            parceiro_id = None
+
     lead = Lead(
         nome=nome,
         telefone=telefone,
         origem=origem,
+        origem_detalhe=origem_detalhe,
+        parceiro_id=int(parceiro_id) if parceiro_id else None,
         modalidade=modalidade,
         status=StatusLeadEnum.qualificado,
         estado_conversa=EstadoConversaEnum.transferido,
@@ -1575,6 +1772,9 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "atualizado_em": l.atualizado_em.strftime("%d/%m/%Y %H:%M") if l.atualizado_em else "—",
         "observacoes": _parse_observacoes(l.observacoes),
         "origem": l.origem or "whatsapp",
+        "origem_detalhe": l.origem_detalhe or "",
+        "parceiro_id": l.parceiro_id,
+        "parceiro_nome": l.parceiro.nome if l.parceiro else "",
     }
 
 

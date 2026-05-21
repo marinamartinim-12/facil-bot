@@ -525,6 +525,10 @@
         <span class="nav-icon">💬</span> Atendimentos
         <span id="badgeInbox" style="display:none;margin-left:auto;background:var(--red);color:#fff;border-radius:99px;padding:.1rem .45rem;font-size:.68rem;font-weight:700"></span>
       </button>
+      <div class="nav-section">Negócios</div>
+      <button class="nav-item" onclick="showView('parceiros')" id="nav-parceiros">
+        <span class="nav-icon">🤝</span> Parceiros
+      </button>
       <div class="nav-section admin-only" style="display:none">Administração</div>
       <button class="nav-item admin-only" onclick="showView('usuarios')" id="nav-usuarios" style="display:none">
         <span class="nav-icon">👥</span> Usuários
@@ -666,6 +670,19 @@
         </div>
       </div>
 
+      <!-- ── PARCEIROS ── -->
+      <div id="viewParceiros" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+          <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+            <input id="parceiroBusca" type="text" placeholder="Buscar parceiro…"
+              oninput="filtrarParceiros()"
+              style="padding:.45rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;min-width:220px">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="abrirModalParceiro(null)">＋ Novo Parceiro</button>
+        </div>
+        <div id="parceirosGrid" class="users-grid"></div>
+      </div>
+
       <!-- ── CONFIGURAÇÕES DO BOT ── -->
       <div id="viewConfiguracoes" style="display:none">
         <div style="max-width:800px">
@@ -799,7 +816,7 @@
   document.getElementById('loginSenha').addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); });
 
   // ═══════ VIEWS ═══════
-  const views = ['funil','lista','atendimento','usuarios','relatorios','configuracoes'];
+  const views = ['funil','lista','atendimento','parceiros','usuarios','relatorios','configuracoes'];
   const adminViews = ['usuarios', 'relatorios', 'configuracoes'];
   function showView(v) {
     // Bloqueia acesso a views restritas para não-admins
@@ -809,13 +826,14 @@
       const n = document.getElementById('nav-'+x);
       if (n) n.classList.toggle('active', x === v);
     });
-    const titles = {funil:'Funil de Leads', lista:'Lista de Leads', usuarios:'Usuários', relatorios:'Relatórios', atendimento:'Atendimentos', configuracoes:'Config. do Bot'};
+    const titles = {funil:'Funil de Leads', lista:'Lista de Leads', usuarios:'Usuários', relatorios:'Relatórios', atendimento:'Atendimentos', configuracoes:'Config. do Bot', parceiros:'Parceiros'};
     document.getElementById('pageTitle').textContent = titles[v] || v;
     if (v === 'usuarios') carregarUsuarios();
     if (v === 'relatorios') carregarRelatorios();
     if (v === 'lista') renderLista();
     if (v === 'atendimento') carregarInbox();
     if (v === 'configuracoes') carregarConfiguracoes();
+    if (v === 'parceiros') carregarParceiros();
   }
   function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
@@ -1263,7 +1281,7 @@
           <td style="color:var(--muted);font-size:.76rem">#${l.id}</td>
           <td><strong>${esc(l.nome)}</strong></td>
           <td class="td-mono">${l.telefone.startsWith('_manual_') ? '<span style="color:var(--muted);font-style:italic">sem tel.</span>' : l.telefone}</td>
-          <td>${origemLabel(l.origem)}</td>
+          <td>${origemLabel(l.origem, l.origem_detalhe)}</td>
           <td class="td-mono">${l.cpf}</td>
           <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.carro_interesse)}</td>
           <td><span class="badge badge-${l.modalidade}">${labMod(l.modalidade)}</span></td>
@@ -1328,19 +1346,28 @@
   }
 
   // ═══════ NOVO LEAD MANUAL ═══════
+  let _parceirosCache = [];
+
   async function abrirNovoLead() {
-    // Limpa campos
     ['nlNome','nlTelefone','nlObs'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('nlOrigem').value     = 'whatsapp';
+    document.getElementById('nlOrigem').value     = 'rede_social';
     document.getElementById('nlModalidade').value = 'indefinido';
+    document.getElementById('nlRedeSocial').value = 'instagram';
+    document.getElementById('nlRedeSocialOutro').style.display = 'none';
+    document.getElementById('nlRedeSocialOutro').value = '';
     document.getElementById('novoLeadMsg').style.display = 'none';
     document.getElementById('btnSalvarNovoLead').disabled = false;
     document.getElementById('btnSalvarNovoLead').textContent = 'Criar Lead';
 
-    // Carrega lista de usuários ativos no select de responsável (somente admin)
-    const sel = document.getElementById('nlResponsavel');
-    sel.innerHTML = '<option value="">Minha conta (padrão)</option>';
+    // Carrega parceiros para o select
+    await _carregarParceirosSel();
+    onChangeOrigem();
+
+    // Responsável — somente admin vê todos
+    const selResp = document.getElementById('nlResponsavel');
+    selResp.innerHTML = '<option value="">Minha conta (padrão)</option>';
     if (currentUser?.role === 'admin') {
+      selResp.parentElement.style.display = '';
       try {
         const r = await fetch('/api/usuarios');
         if (r.ok) {
@@ -1349,16 +1376,44 @@
             const opt = document.createElement('option');
             opt.value = u.id;
             opt.textContent = u.nome + (u.role === 'admin' ? ' (Admin)' : '');
-            sel.appendChild(opt);
+            selResp.appendChild(opt);
           });
         }
       } catch {}
     } else {
-      sel.parentElement.style.display = 'none';
+      selResp.parentElement.style.display = 'none';
     }
 
     document.getElementById('modalNovoLead').classList.add('open');
     setTimeout(() => document.getElementById('nlNome').focus(), 80);
+  }
+
+  async function _carregarParceirosSel() {
+    try {
+      const r = await fetch('/api/parceiros');
+      if (r.ok) {
+        _parceirosCache = await r.json();
+        const sel = document.getElementById('nlParceiroSel');
+        sel.innerHTML = '<option value="">Selecione um parceiro…</option>';
+        _parceirosCache.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.id;
+          opt.textContent = p.nome;
+          sel.appendChild(opt);
+        });
+      }
+    } catch {}
+  }
+
+  function onChangeOrigem() {
+    const v = document.getElementById('nlOrigem').value;
+    document.getElementById('nlRedeSocialBox').style.display = v === 'rede_social' ? '' : 'none';
+    document.getElementById('nlParceiroBox').style.display   = v === 'parceiro'    ? '' : 'none';
+  }
+
+  function onChangeRedeSocial() {
+    const v = document.getElementById('nlRedeSocial').value;
+    document.getElementById('nlRedeSocialOutro').style.display = v === 'outro' ? '' : 'none';
   }
 
   function fecharNovoLead() {
@@ -1366,19 +1421,35 @@
   }
 
   async function salvarNovoLead() {
-    const nome  = document.getElementById('nlNome').value.trim();
-    const tel   = document.getElementById('nlTelefone').value.trim();
-    const msg   = document.getElementById('novoLeadMsg');
-    const btn   = document.getElementById('btnSalvarNovoLead');
+    const nome   = document.getElementById('nlNome').value.trim();
+    const btn    = document.getElementById('btnSalvarNovoLead');
+    const origem = document.getElementById('nlOrigem').value;
 
     if (!nome) { mostrarNovoLeadMsg('O nome é obrigatório.', false); return; }
 
+    // origem_detalhe
+    let origem_detalhe = '';
+    let parceiro_id = null;
+    if (origem === 'rede_social') {
+      const rs = document.getElementById('nlRedeSocial').value;
+      origem_detalhe = rs === 'outro'
+        ? document.getElementById('nlRedeSocialOutro').value.trim()
+        : rs;
+      if (!origem_detalhe) { mostrarNovoLeadMsg('Informe qual rede social.', false); return; }
+    } else if (origem === 'parceiro') {
+      parceiro_id = document.getElementById('nlParceiroSel').value;
+      if (!parceiro_id) { mostrarNovoLeadMsg('Selecione um parceiro.', false); return; }
+      origem_detalhe = _parceirosCache.find(p => String(p.id) === String(parceiro_id))?.nome || '';
+    }
+
     const body = {
       nome,
-      telefone:     tel,
-      origem:       document.getElementById('nlOrigem').value,
-      modalidade:   document.getElementById('nlModalidade').value,
-      observacao:   document.getElementById('nlObs').value.trim(),
+      telefone:       document.getElementById('nlTelefone').value.trim(),
+      origem,
+      origem_detalhe,
+      parceiro_id:    parceiro_id ? parseInt(parceiro_id) : null,
+      modalidade:     document.getElementById('nlModalidade').value,
+      observacao:     document.getElementById('nlObs').value.trim(),
       atribuido_para: document.getElementById('nlResponsavel').value || null,
     };
 
@@ -1403,6 +1474,181 @@
     el.style.background = ok ? '#dcfce7' : '#fee2e2';
     el.style.color      = ok ? '#166534' : '#991b1b';
     el.style.border     = `1px solid ${ok ? '#bbf7d0' : '#fecaca'}`;
+  }
+
+  // ═══════ PARCEIROS ═══════
+  let _todosParceirosBd = [];
+
+  async function carregarParceiros() {
+    try {
+      const r = await fetch('/api/parceiros');
+      if (!r.ok) return;
+      _todosParceirosBd = await r.json();
+      filtrarParceiros();
+    } catch {}
+  }
+
+  function filtrarParceiros() {
+    const q = (document.getElementById('parceiroBusca')?.value || '').toLowerCase();
+    const lista = _todosParceirosBd.filter(p =>
+      p.nome.toLowerCase().includes(q) ||
+      p.telefone.includes(q) ||
+      (p.cpf || '').includes(q)
+    );
+    renderParceiros(lista);
+  }
+
+  function renderParceiros(lista) {
+    const grid = document.getElementById('parceirosGrid');
+    if (!lista.length) {
+      grid.innerHTML = '<p style="color:var(--muted);font-size:.88rem;grid-column:1/-1">Nenhum parceiro encontrado.</p>';
+      return;
+    }
+    grid.innerHTML = lista.map(p => `
+      <div class="user-card" style="flex-direction:column;align-items:flex-start;gap:.6rem">
+        <div style="display:flex;align-items:center;gap:.75rem;width:100%">
+          <div class="uc-avatar" style="background:#0d2b4e">${p.nome[0].toUpperCase()}</div>
+          <div class="uc-info" style="flex:1;min-width:0">
+            <strong style="font-size:.92rem">${esc(p.nome)}</strong>
+            <span>📞 ${p.telefone}</span>
+            ${p.email ? `<span style="display:block;font-size:.72rem;color:var(--muted)">✉️ ${esc(p.email)}</span>` : ''}
+          </div>
+          <div style="display:flex;gap:.35rem;flex-shrink:0">
+            <button class="btn btn-outline btn-sm" onclick="abrirModalParceiro(${p.id})">✏️</button>
+            ${currentUser?.role === 'admin' ? `<button class="btn btn-sm btn-danger" onclick="desativarParceiro(${p.id},'${esc(p.nome)}')">✕</button>` : ''}
+          </div>
+        </div>
+        ${p.contatos.length ? `
+          <div style="width:100%;padding-top:.5rem;border-top:1px solid var(--border)">
+            <span style="font-size:.68rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Contatos adicionais</span>
+            ${p.contatos.map(c => `
+              <div style="font-size:.78rem;color:var(--text);margin-top:.25rem;display:flex;align-items:center;justify-content:space-between">
+                <span>👤 <strong>${esc(c.nome)}</strong>${c.cargo ? ` · ${esc(c.cargo)}` : ''}${c.telefone ? ` · ${c.telefone}` : ''}</span>
+                <button onclick="removerContato(${p.id},${c.id})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.9rem;padding:0 .2rem">✕</button>
+              </div>`).join('')}
+          </div>` : ''}
+      </div>`).join('');
+  }
+
+  // ── Modal Parceiro (criar / editar) ──
+  let _parceiroEditId = null;
+  let _parceiroRetornarNovoLead = false;
+  let _contatosTemp = [];
+
+  async function abrirModalParceiro(id, retornarParaLead = false) {
+    _parceiroEditId = id;
+    _parceiroRetornarNovoLead = retornarParaLead;
+    _contatosTemp = [];
+    document.getElementById('parceiroMsg').style.display = 'none';
+    document.getElementById('parceiroModalTitulo').textContent = id ? 'Editar Parceiro' : 'Novo Parceiro';
+
+    if (id) {
+      // Carrega dados do parceiro existente
+      const p = _todosParceirosBd.find(x => x.id === id) || (await fetch(`/api/parceiros`).then(r=>r.json()).then(arr=>arr.find(x=>x.id===id)));
+      if (!p) return;
+      document.getElementById('pNome').value           = p.nome;
+      document.getElementById('pDataNasc').value       = p.data_nascimento || '';
+      document.getElementById('pCpf').value            = p.cpf || '';
+      document.getElementById('pTelefone').value       = p.telefone;
+      document.getElementById('pEmail').value          = p.email || '';
+      document.getElementById('pObs').value            = p.observacoes || '';
+      _contatosTemp = p.contatos.map(c => ({...c}));
+    } else {
+      ['pNome','pDataNasc','pCpf','pTelefone','pEmail','pObs'].forEach(i => document.getElementById(i).value = '');
+      _contatosTemp = [];
+    }
+    renderContatosTemp();
+    document.getElementById('modalParceiro').classList.add('open');
+    setTimeout(() => document.getElementById('pNome').focus(), 80);
+  }
+
+  function fecharModalParceiro() {
+    document.getElementById('modalParceiro').classList.remove('open');
+  }
+
+  function renderContatosTemp() {
+    const el = document.getElementById('contatosTemp');
+    el.innerHTML = _contatosTemp.map((c, i) => `
+      <div style="background:#f8f9fc;border-radius:8px;padding:.5rem .75rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.3rem">
+        <div style="font-size:.82rem;min-width:0">
+          <strong>${esc(c.nome)}</strong>${c.cargo ? ` · <em>${esc(c.cargo)}</em>` : ''}
+          ${c.telefone ? `<br>📞 ${c.telefone}` : ''}${c.email ? ` · ✉️ ${c.email}` : ''}
+        </div>
+        <button onclick="_removerContatoTemp(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:1rem;flex-shrink:0">✕</button>
+      </div>`).join('') || '<p style="font-size:.8rem;color:var(--muted);margin:0">Nenhum contato adicional.</p>';
+  }
+
+  function _removerContatoTemp(i) { _contatosTemp.splice(i, 1); renderContatosTemp(); }
+
+  function adicionarContatoTemp() {
+    const nome = document.getElementById('cNome').value.trim();
+    if (!nome) { alert('Nome do contato é obrigatório.'); return; }
+    _contatosTemp.push({
+      nome,
+      telefone: document.getElementById('cTel').value.trim(),
+      email:    document.getElementById('cEmail').value.trim(),
+      cargo:    document.getElementById('cCargo').value.trim(),
+    });
+    ['cNome','cTel','cEmail','cCargo'].forEach(i => document.getElementById(i).value = '');
+    renderContatosTemp();
+  }
+
+  async function salvarParceiro() {
+    const nome     = document.getElementById('pNome').value.trim();
+    const telefone = document.getElementById('pTelefone').value.trim();
+    const btn      = document.getElementById('btnSalvarParceiro');
+    if (!nome) { mostrarParceiroMsg('Nome é obrigatório.', false); return; }
+    if (!telefone) { mostrarParceiroMsg('Telefone é obrigatório.', false); return; }
+
+    const body = {
+      nome, telefone,
+      data_nascimento: document.getElementById('pDataNasc').value.trim(),
+      cpf:             document.getElementById('pCpf').value.trim(),
+      email:           document.getElementById('pEmail').value.trim(),
+      observacoes:     document.getElementById('pObs').value.trim(),
+      contatos:        _contatosTemp,
+    };
+
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      const url    = _parceiroEditId ? `/api/parceiros/${_parceiroEditId}` : '/api/parceiros';
+      const method = _parceiroEditId ? 'PUT' : 'POST';
+      const r      = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data   = await r.json();
+      if (!r.ok) { mostrarParceiroMsg(data.detail || 'Erro ao salvar.', false); return; }
+
+      mostrarParceiroMsg('✓ Parceiro salvo!', true);
+      await carregarParceiros();
+
+      // Se veio do modal de novo lead, recarrega select e seleciona o novo parceiro
+      if (_parceiroRetornarNovoLead) {
+        await _carregarParceirosSel();
+        document.getElementById('nlParceiroSel').value = data.id;
+        setTimeout(() => { fecharModalParceiro(); }, 800);
+      } else {
+        setTimeout(fecharModalParceiro, 800);
+      }
+    } catch { mostrarParceiroMsg('Erro de conexão.', false); }
+    finally { btn.disabled = false; btn.textContent = 'Salvar'; }
+  }
+
+  function mostrarParceiroMsg(texto, ok) {
+    const el = document.getElementById('parceiroMsg');
+    el.textContent = texto; el.style.display = 'block';
+    el.style.background = ok ? '#dcfce7' : '#fee2e2';
+    el.style.color      = ok ? '#166534' : '#991b1b';
+    el.style.border     = `1px solid ${ok ? '#bbf7d0' : '#fecaca'}`;
+  }
+
+  async function desativarParceiro(id, nome) {
+    if (!confirm(`Desativar o parceiro "${nome}"?`)) return;
+    await fetch(`/api/parceiros/${id}`, { method: 'DELETE' });
+    carregarParceiros();
+  }
+
+  async function removerContato(parceiroId, contatoId) {
+    await fetch(`/api/parceiros/${parceiroId}/contatos/${contatoId}`, { method: 'DELETE' });
+    carregarParceiros();
   }
 
   let _editUserId = null;
@@ -1751,11 +1997,14 @@
   }
   function labMod(m) { return {financiamento:'Financiamento',refinanciamento:'Refinanciamento',indefinido:'Indefinido'}[m]||m; }
   function labSt(s) { return {em_atendimento:'Atend. IA',qualificado:'Qualificado',assumido:'Assumido',proposta_enviada:'Proposta',fechado:'Fechado',perdido:'Perdido',desqualificado:'Fora escopo'}[s]||s; }
-  const _origemIcons = {whatsapp:'💬',instagram:'📸',facebook:'👍',indicacao:'🤝',site:'🌐',telefone:'📞',outro:'📌'};
-  const _origemNomes = {whatsapp:'WhatsApp',instagram:'Instagram',facebook:'Facebook',indicacao:'Indicação',site:'Site',telefone:'Telefone',outro:'Outro'};
-  function origemLabel(o) {
+  const _origemIcons = {whatsapp:'💬',rede_social:'📱',parceiro:'🤝',ex_cliente:'🔄',indicacao:'👥'};
+  const _origemNomes = {whatsapp:'WhatsApp',rede_social:'Rede Social',parceiro:'Parceiro',ex_cliente:'Ex-cliente',indicacao:'Indicação'};
+  function origemLabel(o, detalhe) {
     const k = (o||'whatsapp').toLowerCase();
-    return `<span title="${_origemNomes[k]||o}" style="font-size:.85rem">${_origemIcons[k]||'📌'} ${_origemNomes[k]||o}</span>`;
+    const nome = _origemNomes[k] || o;
+    const icon = _origemIcons[k] || '📌';
+    const sub  = detalhe ? `<br><span style="font-size:.7rem;color:var(--muted)">${esc(detalhe)}</span>` : '';
+    return `<span style="font-size:.82rem;white-space:nowrap">${icon} ${nome}${sub}</span>`;
   }
   function tempoRelativo(dt) {
     if (!dt) return '—';
@@ -2218,15 +2467,37 @@
         <!-- Origem -->
         <div>
           <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Origem <span style="color:var(--red)">*</span></label>
-          <select id="nlOrigem" style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#fff">
-            <option value="whatsapp">WhatsApp</option>
-            <option value="instagram">Instagram</option>
-            <option value="facebook">Facebook</option>
+          <select id="nlOrigem" onchange="onChangeOrigem()" style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#fff">
+            <option value="rede_social">Rede Social</option>
+            <option value="parceiro">Parceiro</option>
+            <option value="ex_cliente">Ex-cliente</option>
             <option value="indicacao">Indicação</option>
-            <option value="site">Site</option>
-            <option value="telefone">Telefone pessoal</option>
-            <option value="outro">Outro</option>
           </select>
+        </div>
+
+        <!-- Sub-opção: Rede Social -->
+        <div id="nlRedeSocialBox" style="grid-column:1/-1;display:none">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Qual rede social?</label>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <select id="nlRedeSocial" onchange="onChangeRedeSocial()" style="flex:1;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#fff">
+              <option value="instagram">Instagram</option>
+              <option value="google">Google</option>
+              <option value="outro">Outro…</option>
+            </select>
+          </div>
+          <input id="nlRedeSocialOutro" type="text" placeholder="Nome da rede social"
+            style="display:none;width:100%;margin-top:.4rem;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        </div>
+
+        <!-- Sub-opção: Parceiro -->
+        <div id="nlParceiroBox" style="grid-column:1/-1;display:none">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Qual parceiro?</label>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <select id="nlParceiroSel" style="flex:1;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#fff">
+              <option value="">Selecione um parceiro…</option>
+            </select>
+            <button type="button" onclick="abrirModalParceiro(null, true)" class="btn btn-outline btn-sm" style="white-space:nowrap">＋ Cadastrar</button>
+          </div>
         </div>
 
         <!-- Modalidade -->
@@ -2258,6 +2529,86 @@
       <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:.25rem">
         <button onclick="fecharNovoLead()" class="btn btn-sm" style="background:var(--border);color:var(--navy)">Cancelar</button>
         <button id="btnSalvarNovoLead" onclick="salvarNovoLead()" class="btn btn-primary btn-sm" style="padding:.5rem 1.4rem">Criar Lead</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: Parceiro (criar / editar) ── -->
+<div class="overlay" id="modalParceiro" onclick="if(event.target===this)fecharModalParceiro()">
+  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:560px;display:flex;flex-direction:column;overflow:hidden;max-height:92vh">
+    <div class="modal-hd">
+      <span style="font-size:1.15rem">🤝</span>
+      <h3 id="parceiroModalTitulo">Novo Parceiro</h3>
+      <button class="modal-close" onclick="fecharModalParceiro()">×</button>
+    </div>
+    <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:.85rem;overflow-y:auto">
+      <div id="parceiroMsg" style="display:none;padding:.6rem .9rem;border-radius:8px;font-size:.85rem;font-weight:600"></div>
+
+      <!-- Dados principais -->
+      <p style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:0">Dados do Parceiro</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Nome completo <span style="color:var(--red)">*</span></label>
+          <input id="pNome" type="text" placeholder="Nome completo"
+            style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        </div>
+        <div>
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Telefone <span style="color:var(--red)">*</span></label>
+          <input id="pTelefone" type="tel" placeholder="31999990000"
+            style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        </div>
+        <div>
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Data de nascimento</label>
+          <input id="pDataNasc" type="date"
+            style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        </div>
+        <div>
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">CPF</label>
+          <input id="pCpf" type="text" placeholder="000.000.000-00"
+            style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        </div>
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">E-mail</label>
+          <input id="pEmail" type="email" placeholder="email@exemplo.com"
+            style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        </div>
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Observações</label>
+          <textarea id="pObs" rows="2"
+            style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;resize:vertical;font-family:inherit"></textarea>
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border)">
+
+      <!-- Contatos adicionais -->
+      <p style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:0">Contatos adicionais</p>
+      <div id="contatosTemp"></div>
+
+      <!-- Form inline para novo contato -->
+      <div style="background:#f8f9fc;border-radius:10px;padding:.85rem 1rem">
+        <p style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin:0 0 .6rem">Adicionar contato</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+          <div style="grid-column:1/-1">
+            <input id="cNome" type="text" placeholder="Nome do contato *"
+              style="width:100%;padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem">
+          </div>
+          <input id="cCargo" type="text" placeholder="Cargo / função"
+            style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem">
+          <input id="cTel" type="tel" placeholder="Telefone"
+            style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem">
+          <div style="grid-column:1/-1">
+            <input id="cEmail" type="email" placeholder="E-mail"
+              style="width:100%;padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem">
+          </div>
+        </div>
+        <button onclick="adicionarContatoTemp()" class="btn btn-outline btn-sm" style="margin-top:.5rem">＋ Adicionar</button>
+      </div>
+
+      <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:.25rem">
+        <button onclick="fecharModalParceiro()" class="btn btn-sm" style="background:var(--border);color:var(--navy)">Cancelar</button>
+        <button id="btnSalvarParceiro" onclick="salvarParceiro()" class="btn btn-primary btn-sm" style="padding:.5rem 1.4rem">Salvar</button>
       </div>
     </div>
   </div>

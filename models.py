@@ -101,11 +101,47 @@ class Lead(Base):
     assumido_em = Column(DateTime, nullable=True)
     followup_em = Column(DateTime, nullable=True)
     observacoes = Column(Text, nullable=True)
-    origem = Column(String(50), nullable=True)   # whatsapp / instagram / facebook / indicacao / site / telefone / outro
+    origem = Column(String(50), nullable=True)        # rede_social | parceiro | ex_cliente | indicacao | whatsapp
+    origem_detalhe = Column(String(100), nullable=True) # google | instagram | nome livre (rede_social); ou nome do parceiro
+    parceiro_id = Column(Integer, ForeignKey("parceiros.id"), nullable=True)
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     responsavel = relationship("Usuario", back_populates="leads_assumidos")
+    parceiro    = relationship("Parceiro", back_populates="leads")
+
+
+class Parceiro(Base):
+    """Parceiro de negócios (imobiliária, correspondente, etc.)."""
+    __tablename__ = "parceiros"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    nome            = Column(String(200), nullable=False)
+    data_nascimento = Column(String(10), nullable=True)
+    cpf             = Column(String(14), nullable=True, unique=True, index=True)
+    telefone        = Column(String(20), nullable=False)
+    email           = Column(String(150), nullable=True)
+    observacoes     = Column(Text, nullable=True)
+    ativo           = Column(Boolean, default=True)
+    criado_em       = Column(DateTime, default=datetime.utcnow)
+
+    contatos = relationship("ContatoParceiro", back_populates="parceiro",
+                            cascade="all, delete-orphan", order_by="ContatoParceiro.id")
+    leads    = relationship("Lead", back_populates="parceiro")
+
+
+class ContatoParceiro(Base):
+    """Contatos adicionais de um parceiro."""
+    __tablename__ = "contatos_parceiro"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    parceiro_id = Column(Integer, ForeignKey("parceiros.id"), nullable=False)
+    nome        = Column(String(200), nullable=False)
+    telefone    = Column(String(20), nullable=True)
+    email       = Column(String(150), nullable=True)
+    cargo       = Column(String(100), nullable=True)
+
+    parceiro = relationship("Parceiro", back_populates="contatos")
 
 
 class MensagemConversa(Base):
