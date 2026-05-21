@@ -373,6 +373,66 @@ async def enviar_meta(telefone: str, mensagem: str):
 
 # ─── Webhooks ────────────────────────────────────────────────────────────────────
 
+def _montar_msg_recontato(lead) -> list[str]:
+    """Monta mensagem de boas-vindas personalizada para lead que voltou após ser marcado como perdido."""
+    nome = lead.nome or ""
+    saudacao = f"Olá{' ' + nome if nome else ''}! Que bom ter você de volta! 😊"
+
+    # Resumo dos dados já coletados
+    linhas = []
+    mod_map = {"financiamento": "Financiamento", "refinanciamento": "Refinanciamento"}
+    if lead.modalidade and lead.modalidade != "indefinido":
+        linhas.append(f"📋 Modalidade: {mod_map.get(lead.modalidade, lead.modalidade)}")
+    if lead.carro_interesse:
+        linhas.append(f"🚗 Veículo de interesse: {lead.carro_interesse}")
+
+    if linhas:
+        resumo = "Encontrei seus dados cadastrados aqui:\n" + "\n".join(linhas)
+        msg1 = f"{saudacao}\n\n{resumo}"
+    else:
+        msg1 = f"{saudacao}\nSeus dados estão registrados no nosso sistema."
+
+    msg2 = "Em breve uma de nossas consultoras entrará em contato. Tem alguma informação que mudou desde nossa última conversa? 😊"
+    return [msg1, msg2]
+
+
+async def _reativar_lead_perdido(lead, texto: str, db, enviar_fn) -> bool:
+    """
+    Trata lead 'perdido' que voltou a enviar mensagem.
+    - Com dados: reativa como qualificado, manda boas-vindas personalizadas.
+    - Sem dados: reinicia o fluxo do bot do zero.
+    Retorna True se tratou como recontato (chamador não precisa fazer mais nada).
+    """
+    _salvar_msg_webhook(db, lead.telefone, texto, role="user")
+
+    if lead.nome:
+        # ── Tem dados: boas-vindas + passa para equipe ─────────────────────
+        msgs = _montar_msg_recontato(lead)
+        lead.status = StatusLeadEnum.qualificado
+        lead.estado_conversa = EstadoConversaEnum.finalizado
+        lead.atribuido_para = None      # libera para qualquer atendente assumir
+        lead.assumido_em = None
+        lead.followup_em = None
+        lead.atualizado_em = datetime.utcnow()
+        db.commit()
+        for i, msg in enumerate(msgs):
+            if i > 0:
+                await asyncio.sleep(0.8)
+            await enviar_fn(lead.telefone, msg)
+            _salvar_msg_webhook(db, lead.telefone, msg, role="assistant")
+        print(f"🔄 Lead #{lead.id} ({lead.nome}) reativado — tinha dados, voltou como qualificado")
+        return True
+    else:
+        # ── Sem dados: reinicia o bot do zero ─────────────────────────────
+        lead.status = StatusLeadEnum.em_atendimento
+        lead.estado_conversa = EstadoConversaEnum.inicio
+        lead.followup_em = None
+        lead.atualizado_em = datetime.utcnow()
+        db.commit()
+        print(f"🔄 Lead #{lead.id} reativado — sem dados, reiniciando fluxo")
+        return False   # deixa o fluxo normal do bot processar
+
+
 @app.post("/webhook/zapi")
 async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
     body = await request.json()
@@ -386,17 +446,24 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
 
         lead = db.query(Lead).filter(Lead.telefone == telefone).first()
 
-        # Se já foi assumido por funcionário, só salva a mensagem — humano responde
+        # Lead perdido voltou a entrar em contato → reativa inteligentemente
+        if lead and lead.status == StatusLeadEnum.perdido:
+            tratado = await _reativar_lead_perdido(lead, texto, db, enviar_zapi)
+            if tratado:
+                await _notificar_equipe(telefone, db)
+                return JSONResponse({"status": "reativado"})
+            # tratado=False → reiniciou do zero, cai no fluxo normal abaixo
+
+        # Se está sendo atendido por humano, só salva a mensagem
         if lead and lead.status in [
             StatusLeadEnum.assumido,
             StatusLeadEnum.proposta_enviada,
             StatusLeadEnum.fechado,
-            StatusLeadEnum.perdido,
         ]:
             _salvar_msg_webhook(db, telefone, texto)
             return JSONResponse({"status": "aguardando_humano"})
 
-        # Bot ainda está qualificando
+        # Bot qualificando
         respostas = processar_mensagem(telefone, texto, db)
         for i, msg in enumerate(respostas):
             if i > 0:
@@ -435,6 +502,26 @@ async def receber_webhook_meta(request: Request, db: Session = Depends(get_db)):
             texto = msg["text"]["body"].strip()
             if not texto:
                 continue
+
+            lead = db.query(Lead).filter(Lead.telefone == telefone).first()
+
+            # Lead perdido voltou → reativa inteligentemente
+            if lead and lead.status == StatusLeadEnum.perdido:
+                tratado = await _reativar_lead_perdido(lead, texto, db, enviar_meta)
+                if tratado:
+                    await _notificar_equipe(telefone, db)
+                    continue
+                # tratado=False → reiniciou do zero, cai no fluxo normal
+
+            # Humano atendendo → só salva
+            if lead and lead.status in [
+                StatusLeadEnum.assumido,
+                StatusLeadEnum.proposta_enviada,
+                StatusLeadEnum.fechado,
+            ]:
+                _salvar_msg_webhook(db, telefone, texto)
+                continue
+
             respostas = processar_mensagem(telefone, texto, db)
             for i, msg in enumerate(respostas):
                 if i > 0:
