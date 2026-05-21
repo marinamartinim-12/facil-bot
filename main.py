@@ -16,7 +16,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
@@ -219,6 +219,32 @@ async def startup():
 
 # ─── Autenticação ────────────────────────────────────────────────────────────────
 
+async def _geo_por_ip(ip: str) -> str:
+    """Retorna 'Cidade, Estado, País' via ip-api.com (grátis, sem chave)."""
+    if not ip or ip in ("127.0.0.1", "::1", "testclient"):
+        return "Local"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(
+                f"http://ip-api.com/json/{ip}",
+                params={"fields": "status,city,regionName,country"},
+            )
+            d = r.json()
+            if d.get("status") == "success":
+                partes = [d.get("city",""), d.get("regionName",""), d.get("country","")]
+                return ", ".join(p for p in partes if p)
+    except Exception:
+        pass
+    return ip
+
+
+def _ip_da_requisicao(request: Request) -> str:
+    fwd = request.headers.get("X-Forwarded-For")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "desconhecido"
+
+
 @app.post("/auth/login")
 async def login(request: Request, response: Response, db: Session = Depends(get_db)):
     body = await request.json()
@@ -239,12 +265,55 @@ async def login(request: Request, response: Response, db: Session = Depends(get_
         samesite="lax",
         max_age=60 * 60 * 24 * 7,
     )
+
+    # ── Registrar sessão ──────────────────────────────────────────────────────
+    ip = _ip_da_requisicao(request)
+    geo = await _geo_por_ip(ip)
+    sessao = SessaoUsuario(usuario_id=usuario.id, ip=ip, localizacao=geo)
+    db.add(sessao)
+    db.commit()
+    db.refresh(sessao)
+    response.set_cookie(
+        key="sessao_id",
+        value=str(sessao.id),
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 7,
+    )
+
     return {"id": usuario.id, "nome": usuario.nome, "email": usuario.email, "role": usuario.role}
 
 
 @app.post("/auth/logout")
-async def logout(response: Response):
+async def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    # Fecha sessão aberta
+    sid = request.cookies.get("sessao_id")
+    if sid:
+        try:
+            sessao = db.query(SessaoUsuario).filter(SessaoUsuario.id == int(sid)).first()
+            if sessao and not sessao.logout_em:
+                sessao.logout_em = datetime.utcnow()
+                db.commit()
+        except Exception:
+            pass
     response.delete_cookie("access_token")
+    response.delete_cookie("sessao_id")
+    return {"status": "ok"}
+
+
+@app.post("/api/heartbeat")
+async def heartbeat(request: Request, db: Session = Depends(get_db),
+                    usuario: Usuario = Depends(obter_usuario_atual)):
+    """Atualiza último momento ativo do usuário (chamado a cada 60s pelo frontend)."""
+    sid = request.cookies.get("sessao_id")
+    if sid:
+        try:
+            sessao = db.query(SessaoUsuario).filter(SessaoUsuario.id == int(sid)).first()
+            if sessao:
+                sessao.ultimo_ativo_em = datetime.utcnow()
+                db.commit()
+        except Exception:
+            pass
     return {"status": "ok"}
 
 
@@ -1215,6 +1284,17 @@ async def atualizar_config(
 
 # ─── Relatórios (admin) ───────────────────────────────────────────────────────────
 
+def _duracao_str(segundos: int) -> str:
+    """Converte segundos em string legível ex: '2h 15min'."""
+    if segundos < 60:
+        return f"{segundos}s"
+    m = segundos // 60
+    if m < 60:
+        return f"{m}min"
+    h, rm = divmod(m, 60)
+    return f"{h}h {rm}min" if rm else f"{h}h"
+
+
 @app.get("/api/relatorios")
 async def relatorios(db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
     usuarios = db.query(Usuario).filter(Usuario.ativo == True).all()
@@ -1236,6 +1316,38 @@ async def relatorios(db: Session = Depends(get_db), admin: Usuario = Depends(req
             "refinanciamento": db.query(Lead).filter(Lead.modalidade == "refinanciamento").count(),
         },
     }
+
+
+@app.get("/api/relatorio/sessoes")
+async def relatorio_sessoes(
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Retorna histórico de sessões de login de todos os usuários (admin only)."""
+    sessoes = (
+        db.query(SessaoUsuario)
+        .order_by(SessaoUsuario.login_em.desc())
+        .limit(500)
+        .all()
+    )
+    resultado = []
+    for s in sessoes:
+        # Tempo ativo = diferença entre último heartbeat e login
+        fim = s.logout_em or s.ultimo_ativo_em
+        tempo_s = max(0, int((fim - s.login_em).total_seconds())) if fim and s.login_em else 0
+        resultado.append({
+            "id": s.id,
+            "usuario": s.usuario.nome if s.usuario else "—",
+            "role": s.usuario.role if s.usuario else "—",
+            "ip": s.ip or "—",
+            "localizacao": s.localizacao or "—",
+            "login_em": s.login_em.strftime("%d/%m/%Y %H:%M") if s.login_em else "—",
+            "ultimo_ativo_em": s.ultimo_ativo_em.strftime("%d/%m/%Y %H:%M") if s.ultimo_ativo_em else "—",
+            "logout_em": s.logout_em.strftime("%d/%m/%Y %H:%M") if s.logout_em else None,
+            "tempo_ativo": _duracao_str(tempo_s),
+            "ativa": s.logout_em is None,
+        })
+    return resultado
 
 
 # ─── Dashboard ────────────────────────────────────────────────────────────────────

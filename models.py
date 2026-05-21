@@ -211,6 +211,21 @@ class Configuracao(Base):
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class SessaoUsuario(Base):
+    """Registro de cada sessão de login para relatório de acesso e atividade."""
+    __tablename__ = "sessoes_usuario"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    usuario_id      = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    ip              = Column(String(50), nullable=True)
+    localizacao     = Column(String(200), nullable=True)   # "Cidade, Estado, País"
+    login_em        = Column(DateTime, default=datetime.utcnow)
+    ultimo_ativo_em = Column(DateTime, default=datetime.utcnow)
+    logout_em       = Column(DateTime, nullable=True)
+
+    usuario = relationship("Usuario")
+
+
 def criar_tabelas():
     Base.metadata.create_all(bind=engine)
 
