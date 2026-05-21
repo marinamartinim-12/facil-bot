@@ -101,6 +101,7 @@ class Lead(Base):
     assumido_em = Column(DateTime, nullable=True)
     followup_em = Column(DateTime, nullable=True)
     observacoes = Column(Text, nullable=True)
+    origem = Column(String(50), nullable=True)   # whatsapp / instagram / facebook / indicacao / site / telefone / outro
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

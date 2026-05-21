@@ -555,6 +555,7 @@
       <div class="top-actions">
         <span style="font-size:.78rem;color:var(--muted)"><span class="dot-live"></span> <span id="lastUpdate">—</span></span>
         <button class="btn btn-outline btn-sm" onclick="refresh()" id="btnRefresh">↻ Atualizar</button>
+        <button class="btn btn-primary btn-sm" onclick="abrirNovoLead()" style="gap:.3rem">＋ Novo Lead</button>
       </div>
     </div>
     <div class="content" id="mainContent">
@@ -588,7 +589,7 @@
           </div>
           <div class="tw"><table>
             <thead><tr>
-              <th>#</th><th>Nome</th><th>Telefone</th><th>CPF</th><th>Veículo</th>
+              <th>#</th><th>Nome</th><th>Telefone</th><th>Origem</th><th>CPF</th><th>Veículo</th>
               <th>Modalidade</th><th>Status</th><th>Responsável</th><th>Cadastrado</th><th>Ação</th>
             </tr></thead>
             <tbody id="listaBody"></tbody>
@@ -1257,11 +1258,12 @@
     const tbody = document.getElementById('listaBody');
     if (!tbody) return;
     tbody.innerHTML = filtered.length === 0
-      ? `<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">Nenhum lead encontrado.</td></tr>`
+      ? `<tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--muted)">Nenhum lead encontrado.</td></tr>`
       : filtered.map(l => `<tr>
           <td style="color:var(--muted);font-size:.76rem">#${l.id}</td>
           <td><strong>${esc(l.nome)}</strong></td>
-          <td class="td-mono">${l.telefone}</td>
+          <td class="td-mono">${l.telefone.startsWith('_manual_') ? '<span style="color:var(--muted);font-style:italic">sem tel.</span>' : l.telefone}</td>
+          <td>${origemLabel(l.origem)}</td>
           <td class="td-mono">${l.cpf}</td>
           <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.carro_interesse)}</td>
           <td><span class="badge badge-${l.modalidade}">${labMod(l.modalidade)}</span></td>
@@ -1323,6 +1325,84 @@
       await fetch(`/api/usuarios/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ativo}) });
       carregarUsuarios();
     } catch {}
+  }
+
+  // ═══════ NOVO LEAD MANUAL ═══════
+  async function abrirNovoLead() {
+    // Limpa campos
+    ['nlNome','nlTelefone','nlObs'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('nlOrigem').value     = 'whatsapp';
+    document.getElementById('nlModalidade').value = 'indefinido';
+    document.getElementById('novoLeadMsg').style.display = 'none';
+    document.getElementById('btnSalvarNovoLead').disabled = false;
+    document.getElementById('btnSalvarNovoLead').textContent = 'Criar Lead';
+
+    // Carrega lista de usuários ativos no select de responsável (somente admin)
+    const sel = document.getElementById('nlResponsavel');
+    sel.innerHTML = '<option value="">Minha conta (padrão)</option>';
+    if (currentUser?.role === 'admin') {
+      try {
+        const r = await fetch('/api/usuarios');
+        if (r.ok) {
+          const users = await r.json();
+          users.filter(u => u.ativo).forEach(u => {
+            const opt = document.createElement('option');
+            opt.value = u.id;
+            opt.textContent = u.nome + (u.role === 'admin' ? ' (Admin)' : '');
+            sel.appendChild(opt);
+          });
+        }
+      } catch {}
+    } else {
+      sel.parentElement.style.display = 'none';
+    }
+
+    document.getElementById('modalNovoLead').classList.add('open');
+    setTimeout(() => document.getElementById('nlNome').focus(), 80);
+  }
+
+  function fecharNovoLead() {
+    document.getElementById('modalNovoLead').classList.remove('open');
+  }
+
+  async function salvarNovoLead() {
+    const nome  = document.getElementById('nlNome').value.trim();
+    const tel   = document.getElementById('nlTelefone').value.trim();
+    const msg   = document.getElementById('novoLeadMsg');
+    const btn   = document.getElementById('btnSalvarNovoLead');
+
+    if (!nome) { mostrarNovoLeadMsg('O nome é obrigatório.', false); return; }
+
+    const body = {
+      nome,
+      telefone:     tel,
+      origem:       document.getElementById('nlOrigem').value,
+      modalidade:   document.getElementById('nlModalidade').value,
+      observacao:   document.getElementById('nlObs').value.trim(),
+      atribuido_para: document.getElementById('nlResponsavel').value || null,
+    };
+
+    btn.disabled = true; btn.textContent = 'Criando…';
+    try {
+      const r = await fetch('/api/leads', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+      });
+      const data = await r.json();
+      if (!r.ok) { mostrarNovoLeadMsg(data.detail || 'Erro ao criar lead.', false); return; }
+      mostrarNovoLeadMsg('✓ Lead criado com sucesso!', true);
+      await refresh();
+      setTimeout(fecharNovoLead, 1000);
+    } catch { mostrarNovoLeadMsg('Erro de conexão.', false); }
+    finally { btn.disabled = false; btn.textContent = 'Criar Lead'; }
+  }
+
+  function mostrarNovoLeadMsg(texto, ok) {
+    const el = document.getElementById('novoLeadMsg');
+    el.textContent = texto;
+    el.style.display = 'block';
+    el.style.background = ok ? '#dcfce7' : '#fee2e2';
+    el.style.color      = ok ? '#166534' : '#991b1b';
+    el.style.border     = `1px solid ${ok ? '#bbf7d0' : '#fecaca'}`;
   }
 
   let _editUserId = null;
@@ -1671,6 +1751,12 @@
   }
   function labMod(m) { return {financiamento:'Financiamento',refinanciamento:'Refinanciamento',indefinido:'Indefinido'}[m]||m; }
   function labSt(s) { return {em_atendimento:'Atend. IA',qualificado:'Qualificado',assumido:'Assumido',proposta_enviada:'Proposta',fechado:'Fechado',perdido:'Perdido',desqualificado:'Fora escopo'}[s]||s; }
+  const _origemIcons = {whatsapp:'💬',instagram:'📸',facebook:'👍',indicacao:'🤝',site:'🌐',telefone:'📞',outro:'📌'};
+  const _origemNomes = {whatsapp:'WhatsApp',instagram:'Instagram',facebook:'Facebook',indicacao:'Indicação',site:'Site',telefone:'Telefone',outro:'Outro'};
+  function origemLabel(o) {
+    const k = (o||'whatsapp').toLowerCase();
+    return `<span title="${_origemNomes[k]||o}" style="font-size:.85rem">${_origemIcons[k]||'📌'} ${_origemNomes[k]||o}</span>`;
+  }
   function tempoRelativo(dt) {
     if (!dt) return '—';
     const parts = dt.split(/[\s\/:]/).map(Number);
@@ -2100,6 +2186,83 @@
     </div>
   </div>
 </div>
+<!-- ── MODAL: Novo Lead Manual ── -->
+<div class="overlay" id="modalNovoLead" onclick="if(event.target===this)fecharNovoLead()">
+  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:500px;display:flex;flex-direction:column;overflow:hidden">
+    <div class="modal-hd">
+      <span style="font-size:1.15rem">➕</span>
+      <h3>Novo Lead</h3>
+      <button class="modal-close" onclick="fecharNovoLead()">×</button>
+    </div>
+    <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:.85rem;overflow-y:auto;max-height:80vh">
+      <div id="novoLeadMsg" style="display:none;padding:.6rem .9rem;border-radius:8px;font-size:.85rem;font-weight:600"></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+        <!-- Nome -->
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Nome <span style="color:var(--red)">*</span></label>
+          <input id="nlNome" type="text" placeholder="Nome completo"
+            style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        </div>
+
+        <!-- Telefone -->
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">
+            Telefone / WhatsApp
+            <span style="font-weight:400;text-transform:none;font-size:.7rem">(opcional)</span>
+          </label>
+          <input id="nlTelefone" type="tel" placeholder="Ex: 31999990000"
+            style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        </div>
+
+        <!-- Origem -->
+        <div>
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Origem <span style="color:var(--red)">*</span></label>
+          <select id="nlOrigem" style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#fff">
+            <option value="whatsapp">WhatsApp</option>
+            <option value="instagram">Instagram</option>
+            <option value="facebook">Facebook</option>
+            <option value="indicacao">Indicação</option>
+            <option value="site">Site</option>
+            <option value="telefone">Telefone pessoal</option>
+            <option value="outro">Outro</option>
+          </select>
+        </div>
+
+        <!-- Modalidade -->
+        <div>
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Interesse</label>
+          <select id="nlModalidade" style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#fff">
+            <option value="indefinido">Não definido</option>
+            <option value="financiamento">Financiamento</option>
+            <option value="refinanciamento">Refinanciamento</option>
+          </select>
+        </div>
+
+        <!-- Responsável -->
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Responsável</label>
+          <select id="nlResponsavel" style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#fff">
+            <option value="">Minha conta (padrão)</option>
+          </select>
+        </div>
+
+        <!-- Observação -->
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Observação inicial</label>
+          <textarea id="nlObs" rows="3" placeholder="Ex: cliente veio pelo Instagram, interesse em Gol 2019..."
+            style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;resize:vertical;font-family:inherit"></textarea>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:.25rem">
+        <button onclick="fecharNovoLead()" class="btn btn-sm" style="background:var(--border);color:var(--navy)">Cancelar</button>
+        <button id="btnSalvarNovoLead" onclick="salvarNovoLead()" class="btn btn-primary btn-sm" style="padding:.5rem 1.4rem">Criar Lead</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── MODAL: Editar Usuário (admin) ── -->
 <div class="overlay" id="modalEditarUsuario" onclick="if(event.target===this)fecharEditarUsuario()">
   <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:440px;display:flex;flex-direction:column;overflow:hidden">

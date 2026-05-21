@@ -191,6 +191,7 @@ async def startup():
         ("contratos", "codigo_req_expira",     "DATETIME"),
         ("contratos", "codigo_prop",           "VARCHAR(10)"),
         ("contratos", "codigo_prop_expira",    "DATETIME"),
+        ("leads",     "origem",                "VARCHAR(50)"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -369,6 +370,74 @@ async def testar_bot(request: Request, db: Session = Depends(get_db)):
 
 
 # ─── API Leads ───────────────────────────────────────────────────────────────────
+
+@app.post("/api/leads")
+async def criar_lead_manual(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Cria um lead manualmente (sem passar pelo bot do WhatsApp)."""
+    import time
+    body = await request.json()
+
+    nome     = body.get("nome", "").strip()
+    telefone = body.get("telefone", "").strip()
+    origem   = body.get("origem", "outro").strip() or "outro"
+    modalidade = body.get("modalidade", ModalidadeEnum.indefinido)
+    obs      = body.get("observacao", "").strip()
+    atrib_id = body.get("atribuido_para")
+
+    if not nome:
+        raise HTTPException(status_code=400, detail="O nome do lead é obrigatório")
+
+    # Telefone é único — se não informado, gera placeholder
+    if not telefone:
+        telefone = f"_manual_{int(time.time() * 1000)}"
+    else:
+        # Normaliza: remove espaços e caracteres não numéricos, mantém o +
+        telefone_norm = "".join(c for c in telefone if c.isdigit() or c == "+")
+        if not telefone_norm:
+            telefone_norm = telefone
+        telefone = telefone_norm
+        if db.query(Lead).filter(Lead.telefone == telefone).first():
+            raise HTTPException(status_code=400, detail="Já existe um lead com este número de telefone")
+
+    # Responsável
+    responsavel = None
+    if atrib_id:
+        responsavel = db.query(Usuario).filter(Usuario.id == atrib_id, Usuario.ativo == True).first()
+
+    lead = Lead(
+        nome=nome,
+        telefone=telefone,
+        origem=origem,
+        modalidade=modalidade,
+        status=StatusLeadEnum.qualificado,
+        estado_conversa=EstadoConversaEnum.transferido,
+        atribuido_para=responsavel.id if responsavel else usuario.id,
+        assumido_em=datetime.utcnow(),
+    )
+    db.add(lead)
+    db.flush()
+
+    if obs:
+        lista = []
+        try:
+            lista = json.loads(lead.observacoes or "[]")
+        except Exception:
+            pass
+        lista.append({
+            "texto": obs,
+            "usuario": usuario.nome,
+            "em": datetime.utcnow().strftime("%d/%m/%Y %H:%M"),
+        })
+        lead.observacoes = json.dumps(lista, ensure_ascii=False)
+
+    db.commit()
+    db.refresh(lead)
+    return _serial_lead(lead, db)
+
 
 @app.get("/api/leads")
 async def listar_leads(
@@ -1505,6 +1574,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "criado_em": l.criado_em.strftime("%d/%m/%Y %H:%M") if l.criado_em else "—",
         "atualizado_em": l.atualizado_em.strftime("%d/%m/%Y %H:%M") if l.atualizado_em else "—",
         "observacoes": _parse_observacoes(l.observacoes),
+        "origem": l.origem or "whatsapp",
     }
 
 
