@@ -985,7 +985,7 @@
         <div class="card-meta">
           <span class="badge badge-${l.modalidade}">${labMod(l.modalidade)}</span>
         </div>
-        ${l.responsavel ? `<div class="card-resp">👤 <strong>${esc(l.responsavel.nome)}</strong></div>` : ''}
+        <div class="card-resp">${respBadge(l.responsavel)}</div>
         <div class="card-time">🕐 ${tempo}</div>
         <div class="card-actions">${acoes}</div>
       </div>`;
@@ -1333,7 +1333,7 @@
           <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.carro_interesse)}</td>
           <td><span class="badge badge-${l.modalidade}">${labMod(l.modalidade)}</span></td>
           <td><span class="badge badge-${l.status}">${labSt(l.status)}</span></td>
-          <td>${l.responsavel ? esc(l.responsavel.nome) : '<span style="color:var(--muted)">—</span>'}</td>
+          <td>${respBadge(l.responsavel, {vazio: true}) || '<span style="color:var(--muted)">—</span>'}</td>
           <td style="font-size:.76rem;color:var(--muted);white-space:nowrap">${l.criado_em}</td>
           <td><button class="btn btn-outline btn-sm" onclick="verLead(${l.id})">👁 Ver</button></td>
         </tr>`).join('');
@@ -1948,10 +1948,7 @@
       const preview = l.ultima_mensagem ? (l.ultima_mensagem.length > 38 ? l.ultima_mensagem.slice(0,35)+'…' : l.ultima_mensagem) : '';
       const novo = l._temNovo ? `<span style="min-width:18px;height:18px;background:#25D366;border-radius:99px;color:#fff;font-size:.65rem;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 5px">●</span>` : '';
       // Responsável: cor única por atendente (baseada no ID)
-      const respNome = l.responsavel?.nome;
-      const respTag = respNome
-        ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:.68rem;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px" title="Responsável: ${esc(respNome)}"><span style="width:9px;height:9px;border-radius:50%;background:${corAtendente(l.responsavel.id)};flex-shrink:0;display:inline-block"></span>${esc(respNome)}</span>`
-        : `<span style="font-size:.68rem;color:#aaa">sem responsável</span>`;
+      const respTag = respBadge(l.responsavel, {sz: '.68rem'});
       return `<div onclick="abrirChat(${l.id})" class="wsp-conv-item${ativo?' active':''}">
         <div class="wsp-conv-avatar" style="background:${avatarColor}">${nome[0].toUpperCase()}</div>
         <div class="wsp-conv-body">
@@ -2154,6 +2151,14 @@
   ];
   function corAtendente(userId) {
     return _CORES_ATENDENTE[(userId || 0) % _CORES_ATENDENTE.length];
+  }
+  // Badge reutilizável com bolinha colorida — usado no Funil, Lista e Atendimento
+  function respBadge(responsavel, opts = {}) {
+    if (!responsavel) return opts.vazio !== false
+      ? `<span style="font-size:.68rem;color:#aaa">sem responsável</span>` : '';
+    const cor = corAtendente(responsavel.id);
+    const sz = opts.sz || '.72rem';
+    return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:${sz};font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px" title="Responsável: ${escHtml(responsavel.nome)}"><span style="width:9px;height:9px;border-radius:50%;background:${cor};flex-shrink:0;display:inline-block"></span>${escHtml(responsavel.nome)}</span>`;
   }
 
   const _origemIcons = {whatsapp:'💬',rede_social:'📱',parceiro:'🤝',ex_cliente:'🔄',indicacao:'👥'};
