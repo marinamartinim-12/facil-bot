@@ -1950,7 +1950,7 @@
       // Responsável: cor única por atendente (baseada no ID)
       const respNome = l.responsavel?.nome;
       const respTag = respNome
-        ? `<span style="font-size:.68rem;font-weight:700;color:#fff;background:${corAtendente(l.responsavel.id)};border-radius:20px;padding:1px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px" title="Responsável: ${esc(respNome)}">👤 ${esc(respNome)}</span>`
+        ? `<span style="font-size:.68rem;font-weight:600;color:#374151;border-left:3px solid ${corAtendente(l.responsavel.id)};padding-left:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px" title="Responsável: ${esc(respNome)}">👤 ${esc(respNome)}</span>`
         : `<span style="font-size:.68rem;color:#aaa">sem responsável</span>`;
       return `<div onclick="abrirChat(${l.id})" class="wsp-conv-item${ativo?' active':''}">
         <div class="wsp-conv-avatar" style="background:${avatarColor}">${nome[0].toUpperCase()}</div>
