@@ -2152,13 +2152,13 @@
   function corAtendente(userId) {
     return _CORES_ATENDENTE[(userId || 0) % _CORES_ATENDENTE.length];
   }
-  // Badge reutilizável com bolinha colorida — usado no Funil, Lista e Atendimento
+  // Badge reutilizável com chip colorido — usado no Funil, Lista e Atendimento
   function respBadge(responsavel, opts = {}) {
     if (!responsavel) return opts.vazio !== false
       ? `<span style="font-size:.68rem;color:#aaa">sem responsável</span>` : '';
     const cor = corAtendente(responsavel.id);
     const sz = opts.sz || '.72rem';
-    return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:${sz};font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px" title="Responsável: ${escHtml(responsavel.nome)}"><span style="width:9px;height:9px;border-radius:50%;background:${cor};flex-shrink:0;display:inline-block"></span>${escHtml(responsavel.nome)}</span>`;
+    return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:${sz};font-weight:700;color:${cor};background:${cor}22;border:1.5px solid ${cor}66;border-radius:20px;padding:2px 8px 2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px" title="Responsável: ${escHtml(responsavel.nome)}"><span style="width:8px;height:8px;border-radius:50%;background:${cor};flex-shrink:0;display:inline-block"></span>${escHtml(responsavel.nome)}</span>`;
   }
 
   const _origemIcons = {whatsapp:'💬',rede_social:'📱',parceiro:'🤝',ex_cliente:'🔄',indicacao:'👥'};
