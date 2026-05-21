@@ -1338,6 +1338,43 @@ async def relatorios(db: Session = Depends(get_db), admin: Usuario = Depends(req
     }
 
 
+@app.get("/api/relatorio/parceiros")
+async def relatorio_parceiros(
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Relatório de desempenho por parceiro (admin only)."""
+    parceiros = db.query(Parceiro).order_by(Parceiro.nome).all()
+    resultado = []
+    for p in parceiros:
+        leads = db.query(Lead).filter(Lead.parceiro_id == p.id).all()
+        total        = len(leads)
+        assumidos    = sum(1 for l in leads if l.status in (
+            StatusLeadEnum.assumido, StatusLeadEnum.proposta_enviada,
+            StatusLeadEnum.fechado, StatusLeadEnum.perdido))
+        propostas    = sum(1 for l in leads if l.status in (
+            StatusLeadEnum.proposta_enviada, StatusLeadEnum.fechado))
+        fechados     = sum(1 for l in leads if l.status == StatusLeadEnum.fechado)
+        # Contratos gerados para leads deste parceiro
+        lead_ids     = [l.id for l in leads]
+        contratos    = db.query(Contrato).filter(Contrato.lead_id.in_(lead_ids)).count() if lead_ids else 0
+        resultado.append({
+            "id":            p.id,
+            "nome":          p.nome,
+            "telefone":      p.telefone,
+            "ativo":         p.ativo,
+            "total_leads":   total,
+            "assumidos":     assumidos,
+            "propostas":     propostas,
+            "fechados":      fechados,
+            "contratos":     contratos,
+            "taxa_fechamento": round(fechados / propostas * 100, 1) if propostas > 0 else 0,
+        })
+    # Ordena por mais leads enviados
+    resultado.sort(key=lambda x: x["total_leads"], reverse=True)
+    return resultado
+
+
 @app.get("/api/relatorio/sessoes")
 async def relatorio_sessoes(
     db: Session = Depends(get_db),

@@ -709,6 +709,29 @@
           </table>
         </div>
 
+        <!-- ── RELATÓRIO POR PARCEIRO ── -->
+        <div class="rel-card">
+          <h3>🤝 Desempenho por Parceiro</h3>
+          <div style="overflow-x:auto">
+            <table class="rel-table" style="min-width:680px">
+              <thead>
+                <tr>
+                  <th>Parceiro</th>
+                  <th>Leads enviados</th>
+                  <th>Assumidos</th>
+                  <th>Propostas enviadas</th>
+                  <th>Contratos gerados</th>
+                  <th>Fechados</th>
+                  <th>Taxa de fechamento</th>
+                </tr>
+              </thead>
+              <tbody id="relParceiroBody">
+                <tr><td colspan="7" style="text-align:center;padding:1rem;color:var(--muted)">Carregando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- ── SESSÕES / LOGINS ── -->
         <div class="rel-card">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
@@ -1811,7 +1834,41 @@
         <tr><td><span class="badge badge-refinanciamento">Refinanciamento</span></td><td><strong>${m.refinanciamento}</strong></td></tr>
       `;
     } catch {}
+    await carregarRelatorioParceiros();
     await carregarSessoes();
+  }
+
+  async function carregarRelatorioParceiros() {
+    try {
+      const r = await fetch('/api/relatorio/parceiros');
+      if (!r.ok) return;
+      const lista = await r.json();
+      const tbody = document.getElementById('relParceiroBody');
+      if (!tbody) return;
+      if (!lista.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:1rem;color:var(--muted)">Nenhum parceiro cadastrado.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = lista.map(p => `
+        <tr>
+          <td>
+            <strong>${esc(p.nome)}</strong>
+            ${!p.ativo ? '<span style="font-size:.65rem;background:#fee2e2;color:#991b1b;border-radius:20px;padding:1px 6px;margin-left:4px">inativo</span>' : ''}
+            <div style="font-size:.72rem;color:var(--muted)">${esc(p.telefone)}</div>
+          </td>
+          <td><strong>${p.total_leads}</strong></td>
+          <td>${p.assumidos}</td>
+          <td>${p.propostas}</td>
+          <td>${p.contratos}</td>
+          <td><strong style="color:var(--green)">${p.fechados}</strong></td>
+          <td>
+            <div style="display:flex;align-items:center;gap:.5rem">
+              <div class="progress-bar" style="flex:1;min-width:60px"><div class="progress-fill" style="width:${p.taxa_fechamento}%"></div></div>
+              <span style="font-size:.78rem;font-weight:700;min-width:36px">${p.taxa_fechamento}%</span>
+            </div>
+          </td>
+        </tr>`).join('');
+    } catch {}
   }
 
   let _todasSessoes = [];
