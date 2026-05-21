@@ -977,7 +977,6 @@
     const tempo = tempoRelativo(l.criado_em);
     const isAdmin = currentUser.role === 'admin';
     const isResponsavel = l.responsavel?.id === currentUser.id;
-    const podeEditar = isAdmin || isResponsavel || !l.responsavel;
 
     // Botão Ver sempre presente
     let acoes = `<button class="btn btn-outline btn-sm" onclick="verLead(${l.id})" style="flex:1">👁 Ver</button>`;
@@ -988,11 +987,12 @@
       acoes += ` <button class="btn btn-gold btn-sm" onclick="moverLead(${l.id},'assumido',true)" title="Assumir este lead">👤</button>`;
     }
 
-    // Botões de progressão
-    if (l.status === 'assumido' && podeEditar) {
-      acoes += ` <button class="btn btn-sm" style="background:#f97316;color:#fff" onclick="moverLead(${l.id},'proposta_enviada',true)">📄</button>`;
-    } else if (l.status === 'proposta_enviada' && podeEditar) {
-      acoes += ` <button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="moverLead(${l.id},'fechado',true)">✓</button>`;
+    // Botões de progressão — qualquer funcionária pode mover cards no funil
+    // (perdido/desqualificado continuam restritos ao admin no backend e no colDrop)
+    if (l.status === 'assumido') {
+      acoes += ` <button class="btn btn-sm" style="background:#f97316;color:#fff" onclick="moverLead(${l.id},'proposta_enviada',true)" title="Marcar proposta enviada">📄</button>`;
+    } else if (l.status === 'proposta_enviada') {
+      acoes += ` <button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="moverLead(${l.id},'fechado',true)" title="Marcar como fechado">✓</button>`;
     } else if ((l.status === 'fechado' || l.status === 'perdido') && isAdmin) {
       acoes += ` <button class="btn btn-sm btn-outline" onclick="moverLead(${l.id},'assumido',true)" title="Reabrir">↩</button>`;
     }
