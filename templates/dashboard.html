@@ -1947,6 +1947,12 @@
       const avatarColor = avatarColors[(nome.charCodeAt(0)||0) % avatarColors.length];
       const preview = l.ultima_mensagem ? (l.ultima_mensagem.length > 38 ? l.ultima_mensagem.slice(0,35)+'…' : l.ultima_mensagem) : '';
       const novo = l._temNovo ? `<span style="min-width:18px;height:18px;background:#25D366;border-radius:99px;color:#fff;font-size:.65rem;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 5px">●</span>` : '';
+      // Responsável: destaca se for a própria usuária logada
+      const respNome = l.responsavel?.nome;
+      const respEuMesma = l.responsavel?.id === currentUser?.id;
+      const respTag = respNome
+        ? `<span style="font-size:.68rem;font-weight:600;color:${respEuMesma?'#075e54':'#8b5cf6'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px" title="Responsável: ${esc(respNome)}">👤 ${esc(respNome)}</span>`
+        : `<span style="font-size:.68rem;color:#aaa">sem responsável</span>`;
       return `<div onclick="abrirChat(${l.id})" class="wsp-conv-item${ativo?' active':''}">
         <div class="wsp-conv-avatar" style="background:${avatarColor}">${nome[0].toUpperCase()}</div>
         <div class="wsp-conv-body">
@@ -1954,7 +1960,14 @@
             <span class="wsp-conv-name">${esc(nome)}</span>
             <span class="wsp-conv-time" style="${l._temNovo?'color:#25D366;font-weight:700':''}">${l.ultima_hora||''}</span>
           </div>
-          <div class="wsp-conv-preview" style="display:flex;align-items:center;justify-content:space-between">${icon} ${esc(preview)} ${novo}</div>
+          <div class="wsp-conv-preview" style="display:flex;align-items:center;justify-content:space-between;gap:.25rem">
+            <span style="display:flex;align-items:center;gap:.2rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${icon} ${esc(preview)}</span>
+            ${novo}
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:1px">
+            ${respTag}
+            <span class="badge badge-${l.status}" style="font-size:.6rem;padding:1px 5px">${labSt(l.status)}</span>
+          </div>
         </div>
       </div>`;
     }).join('');
