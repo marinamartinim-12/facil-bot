@@ -215,6 +215,7 @@ async def startup():
         ("leads",     "origem_detalhe",          "VARCHAR(100)"),
         ("leads",     "parceiro_id",             "INTEGER"),
         ("parceiros", "telefones_extras",         "TEXT"),
+        ("sessoes_usuario", "tempo_ativo_s",      "INTEGER DEFAULT 0"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -324,13 +325,22 @@ async def logout(request: Request, response: Response, db: Session = Depends(get
 @app.post("/api/heartbeat")
 async def heartbeat(request: Request, db: Session = Depends(get_db),
                     usuario: Usuario = Depends(obter_usuario_atual)):
-    """Atualiza último momento ativo do usuário (chamado a cada 60s pelo frontend)."""
+    """Atualiza último momento ativo. Se ativo=true, incrementa tempo_ativo_s."""
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    realmente_ativo = body.get("ativo", False)
+
     sid = request.cookies.get("sessao_id")
     if sid:
         try:
             sessao = db.query(SessaoUsuario).filter(SessaoUsuario.id == int(sid)).first()
             if sessao:
                 sessao.ultimo_ativo_em = datetime.utcnow()
+                if realmente_ativo:
+                    sessao.tempo_ativo_s = (sessao.tempo_ativo_s or 0) + 60
                 db.commit()
         except Exception:
             pass
@@ -1487,7 +1497,8 @@ async def relatorio_sessoes(
             "login_em": s.login_em.strftime("%d/%m/%Y %H:%M") if s.login_em else "—",
             "ultimo_ativo_em": s.ultimo_ativo_em.strftime("%d/%m/%Y %H:%M") if s.ultimo_ativo_em else "—",
             "logout_em": s.logout_em.strftime("%d/%m/%Y %H:%M") if s.logout_em else None,
-            "tempo_ativo": _duracao_str(tempo_s),
+            "tempo_logado": _duracao_str(tempo_s),
+            "tempo_ativo": _duracao_str(s.tempo_ativo_s or 0),
             "ativa": s.logout_em is None,
         })
     return resultado

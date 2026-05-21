@@ -222,6 +222,7 @@ class SessaoUsuario(Base):
     login_em        = Column(DateTime, default=datetime.utcnow)
     ultimo_ativo_em = Column(DateTime, default=datetime.utcnow)
     logout_em       = Column(DateTime, nullable=True)
+    tempo_ativo_s   = Column(Integer, default=0)           # segundos realmente ativos
 
     usuario = relationship("Usuario")
 

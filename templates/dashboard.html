@@ -752,7 +752,8 @@
                   <th>Login em</th>
                   <th>Último acesso</th>
                   <th>Logout em</th>
-                  <th>Tempo ativo</th>
+                  <th title="Tempo total com o sistema aberto">⏱ Logado</th>
+                  <th title="Tempo realmente interagindo (cliques, digitação, scroll)">🖱 Ativo</th>
                   <th>Localização</th>
                   <th>IP</th>
                 </tr>
@@ -837,14 +838,33 @@
     } catch { document.getElementById('loginError').style.display = 'block'; }
   }
 
-  // ── Heartbeat: avisa o servidor que o usuário está ativo (a cada 60s) ──────
+  // ── Rastreamento de atividade real (clique, tecla, scroll, mouse) ───────────
+  let _ultimaAtividade = Date.now();
+  const _INATIVO_MS = 5 * 60 * 1000; // 5 minutos sem interação = inativo
+
+  function _registrarAtividade() { _ultimaAtividade = Date.now(); }
+  function _estaAtivo() { return (Date.now() - _ultimaAtividade) < _INATIVO_MS; }
+
+  // Registra qualquer interação real do usuário
+  ['click','keydown','mousedown','scroll','touchstart'].forEach(ev =>
+    document.addEventListener(ev, _registrarAtividade, {passive: true})
+  );
+
+  // ── Heartbeat: bate a cada 60s, informa se estava realmente ativo ──────────
   let _heartbeatTimer = null;
   function _iniciarHeartbeat() {
     _pararHeartbeat();
-    fetch('/api/heartbeat', {method:'POST'}).catch(()=>{});   // imediato ao logar
-    _heartbeatTimer = setInterval(() => {
-      fetch('/api/heartbeat', {method:'POST'}).catch(()=>{});
-    }, 60_000);
+    _registrarAtividade(); // login conta como atividade
+    const _bater = () => {
+      const ativo = _estaAtivo();
+      fetch('/api/heartbeat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ativo})
+      }).catch(()=>{});
+    };
+    _bater(); // imediato ao logar
+    _heartbeatTimer = setInterval(_bater, 60_000);
   }
   function _pararHeartbeat() {
     if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
@@ -1906,7 +1926,8 @@
             <td style="white-space:nowrap">${esc(s.login_em)}</td>
             <td style="white-space:nowrap">${esc(s.ultimo_ativo_em)}</td>
             <td style="white-space:nowrap">${s.logout_em ? esc(s.logout_em) : '<span style="color:var(--muted);font-size:.78rem">—</span>'}</td>
-            <td><strong>${esc(s.tempo_ativo)}</strong></td>
+            <td style="color:var(--muted)">${esc(s.tempo_logado)}</td>
+            <td><strong style="color:var(--navy)">${esc(s.tempo_ativo)}</strong></td>
             <td style="font-size:.82rem">${esc(s.localizacao)}</td>
             <td style="font-size:.75rem;color:var(--muted)">${esc(s.ip)}</td>
           </tr>`;
