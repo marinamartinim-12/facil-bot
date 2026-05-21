@@ -28,9 +28,10 @@ app = FastAPI(title="Fácil Financiamentos", version="2.0.0")
 
 # Estados do bot onde o lead ainda não completou os dados para o consultor
 _ESTADOS_BOT_ATIVO = [
+    EstadoConversaEnum.inicio,
     EstadoConversaEnum.aguardando_nome,
-    EstadoConversaEnum.coletando_cidade,
     EstadoConversaEnum.aguardando_modalidade,
+    EstadoConversaEnum.coletando_cidade,
     EstadoConversaEnum.coletando_cpf,
     EstadoConversaEnum.coletando_data_nasc,
     EstadoConversaEnum.coletando_carro,
@@ -80,38 +81,54 @@ async def _enviar_followups():
             ]),
         ).all()
 
+        enviados = 0
         for lead in leads:
-            # Última mensagem do usuário
-            ultima_user = (
-                db.query(MensagemConversa)
-                .filter(
-                    MensagemConversa.telefone == lead.telefone,
-                    MensagemConversa.role == "user",
+            try:
+                # Pula leads manuais sem telefone real
+                if lead.telefone.startswith("_manual_"):
+                    continue
+
+                # Última mensagem do usuário
+                ultima_user = (
+                    db.query(MensagemConversa)
+                    .filter(
+                        MensagemConversa.telefone == lead.telefone,
+                        MensagemConversa.role == "user",
+                    )
+                    .order_by(MensagemConversa.id.desc())
+                    .first()
                 )
-                .order_by(MensagemConversa.id.desc())
-                .first()
-            )
 
-            # Nunca mandou mensagem, ou mandou recentemente → pula
-            if not ultima_user or ultima_user.criado_em > limite:
-                continue
+                # Nunca mandou mensagem, ou mandou recentemente → pula
+                if not ultima_user or ultima_user.criado_em > limite:
+                    continue
 
-            # Já enviou follow-up depois da última mensagem do usuário → pula
-            if lead.followup_em and lead.followup_em > ultima_user.criado_em:
-                continue
+                # Já enviou follow-up depois da última mensagem do usuário → pula
+                if lead.followup_em and lead.followup_em > ultima_user.criado_em:
+                    continue
 
-            # Personaliza com nome se disponível
-            nome = f" {lead.nome}" if lead.nome else ""
-            texto = texto_base.replace("{nome}", nome.strip()).replace("Oi!", f"Oi{nome}!")
+                # Personaliza com nome se disponível
+                nome = f" {lead.nome}" if lead.nome else ""
+                texto = texto_base.replace("{nome}", nome.strip()).replace("Oi!", f"Oi{nome}!")
 
-            await enviar_zapi(lead.telefone, texto)
-            _salvar_msg_webhook(db, lead.telefone, texto, role="assistant")
-            lead.followup_em = datetime.utcnow()
-            db.commit()
-            print(f"📨 Follow-up enviado para {lead.telefone}")
+                await enviar_zapi(lead.telefone, texto)
+                _salvar_msg_webhook(db, lead.telefone, texto, role="assistant")
+                lead.followup_em = datetime.utcnow()
+                db.commit()
+                enviados += 1
+                print(f"📨 Follow-up enviado para {lead.telefone} (lead #{lead.id})")
+
+            except Exception as e_lead:
+                print(f"⚠️ Erro ao enviar follow-up para lead #{lead.id}: {e_lead}")
+                db.rollback()   # garante que o próximo lead começa limpo
+
+        if enviados:
+            print(f"✅ Follow-ups enviados: {enviados}")
+        else:
+            print("ℹ️ Nenhum lead precisava de follow-up agora")
 
     except Exception as e:
-        print(f"❌ Erro no follow-up: {e}")
+        print(f"❌ Erro geral no follow-up: {e}")
     finally:
         db.close()
 
@@ -120,8 +137,11 @@ async def _loop_followup():
     """Roda a cada 30 minutos verificando leads parados."""
     await asyncio.sleep(60)  # aguarda 1 min após startup
     while True:
-        print("🔍 Verificando leads para follow-up…")
-        await _enviar_followups()
+        try:
+            print("🔍 Verificando leads para follow-up…")
+            await _enviar_followups()
+        except Exception as e:
+            print(f"❌ Erro inesperado no loop de follow-up: {e}")
         await asyncio.sleep(30 * 60)  # a cada 30 minutos
 
 
