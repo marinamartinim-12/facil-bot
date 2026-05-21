@@ -192,8 +192,9 @@ async def startup():
         ("contratos", "codigo_prop",           "VARCHAR(10)"),
         ("contratos", "codigo_prop_expira",    "DATETIME"),
         ("leads",     "origem",                "VARCHAR(50)"),
-        ("leads",     "origem_detalhe",        "VARCHAR(100)"),
-        ("leads",     "parceiro_id",           "INTEGER"),
+        ("leads",     "origem_detalhe",          "VARCHAR(100)"),
+        ("leads",     "parceiro_id",             "INTEGER"),
+        ("parceiros", "telefones_extras",         "TEXT"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -374,12 +375,19 @@ async def testar_bot(request: Request, db: Session = Depends(get_db)):
 # ─── API Parceiros ───────────────────────────────────────────────────────────────
 
 def _serial_parceiro(p: Parceiro) -> dict:
+    try:
+        extras = json.loads(p.telefones_extras or "[]")
+        if not isinstance(extras, list):
+            extras = []
+    except Exception:
+        extras = []
     return {
         "id": p.id,
         "nome": p.nome,
         "data_nascimento": p.data_nascimento or "",
         "cpf": p.cpf or "",
         "telefone": p.telefone,
+        "telefones_extras": extras,
         "email": p.email or "",
         "observacoes": p.observacoes or "",
         "ativo": p.ativo,
@@ -427,11 +435,13 @@ async def criar_parceiro(
     if existente:
         raise HTTPException(status_code=400, detail=f"Já existe um parceiro com este telefone: {existente.nome}")
 
+    extras = [t.strip() for t in body.get("telefones_extras", []) if t.strip()]
     p = Parceiro(
         nome=nome,
         data_nascimento=body.get("data_nascimento", "").strip() or None,
         cpf=cpf,
         telefone=tel_norm or telefone,
+        telefones_extras=json.dumps(extras, ensure_ascii=False) if extras else None,
         email=body.get("email", "").strip() or None,
         observacoes=body.get("observacoes", "").strip() or None,
     )
@@ -486,12 +496,14 @@ async def atualizar_parceiro(
         if db.query(Parceiro).filter(Parceiro.telefone == tel_norm, Parceiro.id != pid).first():
             raise HTTPException(status_code=400, detail="Já existe um parceiro com este telefone")
 
-    p.nome            = nome
-    p.data_nascimento = body.get("data_nascimento", "").strip() or None
-    p.cpf             = cpf
-    p.telefone        = tel_norm
-    p.email           = body.get("email", "").strip() or None
-    p.observacoes     = body.get("observacoes", "").strip() or None
+    extras = [t.strip() for t in body.get("telefones_extras", []) if t.strip()]
+    p.nome             = nome
+    p.data_nascimento  = body.get("data_nascimento", "").strip() or None
+    p.cpf              = cpf
+    p.telefone         = tel_norm
+    p.telefones_extras = json.dumps(extras, ensure_ascii=False) if extras else None
+    p.email            = body.get("email", "").strip() or None
+    p.observacoes      = body.get("observacoes", "").strip() or None
 
     db.commit()
     db.refresh(p)

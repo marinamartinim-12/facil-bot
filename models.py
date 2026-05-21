@@ -119,10 +119,11 @@ class Parceiro(Base):
     nome            = Column(String(200), nullable=False)
     data_nascimento = Column(String(10), nullable=True)
     cpf             = Column(String(14), nullable=True, unique=True, index=True)
-    telefone        = Column(String(20), nullable=False)
-    email           = Column(String(150), nullable=True)
-    observacoes     = Column(Text, nullable=True)
-    ativo           = Column(Boolean, default=True)
+    telefone          = Column(String(20), nullable=False)
+    telefones_extras  = Column(Text, nullable=True)   # JSON array de strings
+    email             = Column(String(150), nullable=True)
+    observacoes       = Column(Text, nullable=True)
+    ativo             = Column(Boolean, default=True)
     criado_em       = Column(DateTime, default=datetime.utcnow)
 
     contatos = relationship("ContatoParceiro", back_populates="parceiro",

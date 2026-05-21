@@ -1511,6 +1511,7 @@
           <div class="uc-info" style="flex:1;min-width:0">
             <strong style="font-size:.92rem">${esc(p.nome)}</strong>
             <span>📞 ${p.telefone}</span>
+            ${(p.telefones_extras||[]).map(t=>`<span style="display:block;font-size:.75rem;color:var(--muted)">📞 ${t}</span>`).join('')}
             ${p.email ? `<span style="display:block;font-size:.72rem;color:var(--muted)">✉️ ${esc(p.email)}</span>` : ''}
           </div>
           <div style="display:flex;gap:.35rem;flex-shrink:0">
@@ -1534,16 +1535,40 @@
   let _parceiroEditId = null;
   let _parceiroRetornarNovoLead = false;
   let _contatosTemp = [];
+  let _telefonesExtras = [];   // array de strings
+
+  function adicionarTelefoneExtra(valor = '') {
+    _telefonesExtras.push(valor);
+    renderTelefonesExtras();
+  }
+
+  function removerTelefoneExtra(i) {
+    _telefonesExtras.splice(i, 1);
+    renderTelefonesExtras();
+  }
+
+  function renderTelefonesExtras() {
+    const container = document.getElementById('telefonesExtrasContainer');
+    container.innerHTML = _telefonesExtras.map((t, i) => `
+      <div style="display:flex;gap:.4rem;align-items:center;margin-bottom:.35rem">
+        <input type="tel" value="${esc(t)}"
+          oninput="_telefonesExtras[${i}]=this.value"
+          placeholder="Telefone adicional"
+          style="flex:1;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        <button type="button" onclick="removerTelefoneExtra(${i})" title="Remover"
+          style="width:34px;height:34px;border-radius:8px;border:1.5px solid #fecaca;background:#fee2e2;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#991b1b">✕</button>
+      </div>`).join('');
+  }
 
   async function abrirModalParceiro(id, retornarParaLead = false) {
     _parceiroEditId = id;
     _parceiroRetornarNovoLead = retornarParaLead;
     _contatosTemp = [];
+    _telefonesExtras = [];
     document.getElementById('parceiroMsg').style.display = 'none';
     document.getElementById('parceiroModalTitulo').textContent = id ? 'Editar Parceiro' : 'Novo Parceiro';
 
     if (id) {
-      // Carrega dados do parceiro existente
       const p = _todosParceirosBd.find(x => x.id === id) || (await fetch(`/api/parceiros`).then(r=>r.json()).then(arr=>arr.find(x=>x.id===id)));
       if (!p) return;
       document.getElementById('pNome').value           = p.nome;
@@ -1552,11 +1577,14 @@
       document.getElementById('pTelefone').value       = p.telefone;
       document.getElementById('pEmail').value          = p.email || '';
       document.getElementById('pObs').value            = p.observacoes || '';
-      _contatosTemp = p.contatos.map(c => ({...c}));
+      _contatosTemp   = p.contatos.map(c => ({...c}));
+      _telefonesExtras = Array.isArray(p.telefones_extras) ? [...p.telefones_extras] : [];
     } else {
       ['pNome','pDataNasc','pCpf','pTelefone','pEmail','pObs'].forEach(i => document.getElementById(i).value = '');
-      _contatosTemp = [];
+      _contatosTemp   = [];
+      _telefonesExtras = [];
     }
+    renderTelefonesExtras();
     renderContatosTemp();
     document.getElementById('modalParceiro').classList.add('open');
     setTimeout(() => document.getElementById('pNome').focus(), 80);
@@ -1602,6 +1630,7 @@
 
     const body = {
       nome, telefone,
+      telefones_extras: _telefonesExtras.map(t => t.trim()).filter(Boolean),
       data_nascimento: document.getElementById('pDataNasc').value.trim(),
       cpf:             document.getElementById('pCpf').value.trim(),
       email:           document.getElementById('pEmail').value.trim(),
@@ -2553,10 +2582,17 @@
           <input id="pNome" type="text" placeholder="Nome completo"
             style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
         </div>
-        <div>
-          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Telefone <span style="color:var(--red)">*</span></label>
-          <input id="pTelefone" type="tel" placeholder="31999990000"
-            style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Telefone(s) <span style="color:var(--red)">*</span></label>
+          <!-- Telefone principal -->
+          <div style="display:flex;gap:.4rem;align-items:center;margin-bottom:.35rem">
+            <input id="pTelefone" type="tel" placeholder="Telefone principal (obrigatório)"
+              style="flex:1;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+            <button type="button" onclick="adicionarTelefoneExtra()" title="Adicionar outro telefone"
+              style="width:34px;height:34px;border-radius:8px;border:1.5px solid var(--border);background:#f5f6fa;font-size:1.15rem;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--navy);font-weight:700">＋</button>
+          </div>
+          <!-- Telefones extras (renderizados dinamicamente) -->
+          <div id="telefonesExtrasContainer"></div>
         </div>
         <div>
           <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Data de nascimento</label>
