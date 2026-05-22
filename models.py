@@ -110,6 +110,7 @@ class Lead(Base):
     deal_banco     = Column(String(30),  nullable=True)
     deal_conta_pg  = Column(String(50),  nullable=True)
     deal_operadora = Column(String(150), nullable=True)   # nome da operadora responsável
+    dados_contrato = Column(Text, nullable=True)           # JSON com dados extras p/ requerimento
     observacoes = Column(Text, nullable=True)
     origem = Column(String(50), nullable=True)        # rede_social | parceiro | ex_cliente | indicacao | whatsapp
     origem_detalhe = Column(String(100), nullable=True) # google | instagram | nome livre (rede_social); ou nome do parceiro

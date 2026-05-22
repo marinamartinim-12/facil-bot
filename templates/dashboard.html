@@ -800,6 +800,14 @@
           <div class="data-grid" id="modalDados"></div>
         </div>
         <div id="modalDealSection" style="display:none"></div>
+        <!-- Dados extras para o requerimento de intermediação -->
+        <div class="modal-section" id="modalDadosContratoSection">
+          <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleDadosContrato()">
+            <h4 style="margin:0">📋 Dados p/ Requerimento</h4>
+            <span id="dcToggleIcon" style="font-size:.85rem;color:var(--muted)">▼ expandir</span>
+          </div>
+          <div id="dcBody" style="display:none;margin-top:.75rem"></div>
+        </div>
         <div class="modal-section" style="flex:1;display:flex;flex-direction:column;gap:.5rem">
           <h4>📝 Observações</h4>
           <!-- Lista somente leitura -->
@@ -1371,22 +1379,45 @@
     set('fc_req_cpf',     lead.cpf);
     set('fc_req_celular', lead.telefone);
 
-    // Cidade coletada pelo bot
-    if (lead.cidade) set('fc_req_cidade', lead.cidade);
-
     // Modalidade
     const mod = (lead.modalidade || '').toLowerCase();
     const sel = document.getElementById('fc_modalidade');
     if (sel) sel.value = mod.includes('refin') ? 'refinanciamento' : 'financiamento';
 
-    // ── Dados do veículo ───────────────────────────────────────────────────
-    // Prioriza deal_veiculo (contrato fechado) → carro_interesse (coletado pelo bot)
-    const veiculo = (lead.deal_veiculo || lead.carro_interesse || '').trim();
+    // ── Dados extras salvos no lead (dados_contrato) ───────────────────────
+    const dc = lead.dados_contrato || {};
+    set('fc_req_rg',       dc.req_rg);
+    set('fc_req_rua',      dc.req_rua);
+    set('fc_req_numero',   dc.req_numero);
+    set('fc_req_bairro',   dc.req_bairro);
+    set('fc_req_cep',      dc.req_cep);
+    set('fc_req_cidade',   dc.req_cidade);
+    set('fc_vei_placa',    dc.vei_placa);
+    set('fc_vei_ano',      dc.vei_ano);
+    set('fc_vei_cor',      dc.vei_cor);
+    set('fc_vei_renavam',  dc.vei_renavam);
+    set('fc_vei_chassi',   dc.vei_chassi);
+    set('fc_prop_nome',    dc.prop_nome);
+    set('fc_prop_cpf',     dc.prop_cpf);
+    set('fc_prop_telefone',dc.prop_telefone);
+    set('fc_pag_nome',     dc.pag_nome);
+    set('fc_pag_cpf',      dc.pag_cpf);
+    set('fc_pag_banco',    dc.pag_banco);
+    set('fc_pag_agencia',  dc.pag_agencia);
+    set('fc_pag_conta',    dc.pag_conta);
+    set('fc_pag_pix',      dc.pag_pix);
+    set('fc_pag_valor',    dc.pag_valor);
+    set('fc_fin_parcelas', dc.fin_parcelas);
+    set('fc_fin_parcela',  dc.fin_parcela);
+    set('fc_fin_vencimento',dc.fin_vencimento);
+
+    // ── Veículo: deal_veiculo > dados_contrato.vei_modelo > carro_interesse
+    const veiculo = (lead.deal_veiculo || dc.vei_modelo || lead.carro_interesse || '').trim();
     set('fc_vei_modelo', veiculo);
 
-    // ── Condições financeiras (pré-preenche se já houver contrato fechado) ─
-    set('fc_fin_valor', lead.deal_valor);
-    set('fc_fin_banco', lead.deal_banco);
+    // ── Financeiro: deal_valor/banco > dados_contrato
+    set('fc_fin_valor', lead.deal_valor || dc.fin_valor);
+    set('fc_fin_banco', lead.deal_banco || dc.fin_banco);
 
     document.getElementById('modalContrato').classList.add('open');
   }
@@ -2517,6 +2548,140 @@
   }
 
   // ═══════ EDIÇÃO DE DADOS DO LEAD ═══════
+  // ═══════ DADOS P/ REQUERIMENTO (extras do lead) ═══════
+
+  function toggleDadosContrato() {
+    const body = document.getElementById('dcBody');
+    const icon = document.getElementById('dcToggleIcon');
+    if (!body) return;
+    if (body.style.display === 'none') {
+      renderDadosContrato(window._modalLeadData, false);
+      body.style.display = '';
+      if (icon) icon.textContent = '▲ recolher';
+    } else {
+      body.style.display = 'none';
+      if (icon) icon.textContent = '▼ expandir';
+    }
+  }
+
+  function renderDadosContrato(lead, editando) {
+    const body = document.getElementById('dcBody');
+    if (!body) return;
+    const dc = (lead && lead.dados_contrato) || {};
+    const s  = 'border:1px solid var(--border);border-radius:6px;padding:.3rem .5rem;font-size:.82rem;width:100%;background:#fff;box-sizing:border-box';
+
+    const row = (label, key, placeholder='', width='1fr') => editando
+      ? `<div><label style="font-size:.72rem;font-weight:600;color:#374151;display:block;margin-bottom:2px">${label}</label>
+           <input id="dc_${key}" value="${escHtml(dc[key]||'')}" placeholder="${placeholder}" style="${s}"></div>`
+      : `<div><label style="font-size:.72rem;color:var(--muted)">${label}</label>
+           <span style="font-size:.82rem">${escHtml(dc[key]||'—')}</span></div>`;
+
+    body.innerHTML = `
+      <!-- Cliente: endereço / RG -->
+      <div style="font-size:.72rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.35rem">👤 Requerente (complemento)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.5rem">
+        ${row('RG',        'req_rg',    'RG')}
+        ${row('CEP',       'req_cep',   '00000-000')}
+      </div>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:.4rem;margin-bottom:.5rem">
+        ${row('Rua / Av.', 'req_rua',   'Nome da rua')}
+        ${row('Número',    'req_numero','Nº')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.75rem">
+        ${row('Bairro',    'req_bairro','Bairro')}
+        ${row('Cidade/UF', 'req_cidade','Ex: Belo Horizonte/MG')}
+      </div>
+
+      <!-- Veículo -->
+      <div style="font-size:.72rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.35rem">🚗 Veículo</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem;margin-bottom:.5rem">
+        ${row('Placa',   'vei_placa',  'ABC1D23')}
+        ${row('Ano',     'vei_ano',    '2020/2021')}
+        ${row('Cor',     'vei_cor',    'Prata')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.75rem">
+        ${row('RENAVAM',  'vei_renavam','00000000000')}
+        ${row('Chassi',   'vei_chassi', '9BW...')}
+      </div>
+
+      <!-- Condições financeiras -->
+      <div style="font-size:.72rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.35rem">💰 Financiamento</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.5rem">
+        ${row('Valor líquido (R$)',  'fin_valor',      'Ex: 44.000,00')}
+        ${row('Banco negociador',   'fin_banco',       'BV, Santander...')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem;margin-bottom:.75rem">
+        ${row('Nº parcelas',  'fin_parcelas',  '60')}
+        ${row('Valor parcela','fin_parcela',   '1.524,00')}
+        ${row('1º vencimento','fin_vencimento','25/03/2026')}
+      </div>
+
+      <!-- Proprietário / Vendedor -->
+      <div style="font-size:.72rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.35rem">🤝 Proprietário / Vendedor</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.5rem">
+        ${row('Nome',     'prop_nome',    'Nome do proprietário')}
+        ${row('CPF',      'prop_cpf',     '000.000.000-00')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr;gap:.4rem;margin-bottom:.75rem">
+        ${row('Telefone', 'prop_telefone','(00) 00000-0000')}
+      </div>
+
+      <!-- Dados bancários -->
+      <div style="font-size:.72rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.35rem">🏦 Dados Bancários (pagamento ao proprietário)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.5rem">
+        ${row('Nome beneficiário','pag_nome', 'Nome completo')}
+        ${row('CPF beneficiário', 'pag_cpf',  '000.000.000-00')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem;margin-bottom:.5rem">
+        ${row('Banco',   'pag_banco',   'Nubank, Itaú...')}
+        ${row('Agência', 'pag_agencia', '0001')}
+        ${row('Conta',   'pag_conta',   '00000000-0')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.75rem">
+        ${row('PIX',         'pag_pix',   'CPF, telefone ou chave')}
+        ${row('Valor (R$)',  'pag_valor', '44.000,00')}
+      </div>
+
+      ${editando
+        ? `<div style="display:flex;gap:.5rem;margin-top:.25rem">
+             <button class="btn btn-primary btn-sm" onclick="salvarDadosContrato()" style="flex:1">💾 Salvar dados</button>
+             <button class="btn btn-sm" style="background:var(--border);color:var(--navy);flex:1" onclick="renderDadosContrato(window._modalLeadData,false)">✕ Cancelar</button>
+           </div>`
+        : `<button class="btn btn-sm btn-outline" onclick="renderDadosContrato(window._modalLeadData,true)" style="width:100%">✏️ Editar dados do requerimento</button>`
+      }
+    `;
+  }
+
+  async function salvarDadosContrato() {
+    if (!modalLeadId) return;
+    const g = key => document.getElementById('dc_' + key)?.value?.trim() || '';
+    const dc = {
+      req_rg: g('req_rg'), req_rua: g('req_rua'), req_numero: g('req_numero'),
+      req_bairro: g('req_bairro'), req_cep: g('req_cep'), req_cidade: g('req_cidade'),
+      vei_placa: g('vei_placa'), vei_ano: g('vei_ano'), vei_cor: g('vei_cor'),
+      vei_renavam: g('vei_renavam'), vei_chassi: g('vei_chassi'),
+      vei_modelo: g('vei_modelo'),
+      fin_valor: g('fin_valor'), fin_banco: g('fin_banco'),
+      fin_parcelas: g('fin_parcelas'), fin_parcela: g('fin_parcela'), fin_vencimento: g('fin_vencimento'),
+      prop_nome: g('prop_nome'), prop_cpf: g('prop_cpf'), prop_telefone: g('prop_telefone'),
+      pag_nome: g('pag_nome'), pag_cpf: g('pag_cpf'), pag_banco: g('pag_banco'),
+      pag_agencia: g('pag_agencia'), pag_conta: g('pag_conta'),
+      pag_pix: g('pag_pix'), pag_valor: g('pag_valor'),
+    };
+    try {
+      const r = await fetch(`/api/leads/${modalLeadId}`, {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ dados_contrato: dc }),
+      });
+      if (!r.ok) { alert('Erro ao salvar.'); return; }
+      const leadAtualizado = await r.json();
+      window._modalLeadData = leadAtualizado;
+      const idx = allLeads.findIndex(l => l.id === modalLeadId);
+      if (idx !== -1) allLeads[idx] = leadAtualizado;
+      renderDadosContrato(leadAtualizado, false);
+    } catch { alert('Erro de rede.'); }
+  }
+
   function renderDadosLead(lead, editando) {
     const inpStyle = 'border:1px solid var(--border);border-radius:6px;padding:.3rem .5rem;font-size:.82rem;width:100%;background:#fff;font-family:inherit';
     const inputNome   = editando ? `<input id="ei_nome"  value="${escHtml(lead.nome&&lead.nome!=='—'?lead.nome:'')}" style="${inpStyle}" placeholder="Nome do cliente">` : `<span>${escHtml(lead.nome||'—')}</span>`;

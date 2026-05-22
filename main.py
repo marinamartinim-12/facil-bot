@@ -262,6 +262,7 @@ async def startup():
         ("leads",           "deal_banco",         "VARCHAR(30)"),
         ("leads",           "deal_conta_pg",      "VARCHAR(50)"),
         ("leads",           "deal_operadora",     "VARCHAR(150)"),
+        ("leads",           "dados_contrato",     "TEXT"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -1249,6 +1250,11 @@ async def editar_lead(
                 if len(valor) == 11:
                     valor = f"{valor[:3]}.{valor[3:6]}.{valor[6:9]}-{valor[9:]}"
             setattr(lead, campo, valor if valor != "" else None)
+    # Dados extras para o requerimento (JSON blob)
+    if "dados_contrato" in body:
+        import json as _json
+        dc = body["dados_contrato"]
+        lead.dados_contrato = _json.dumps(dc, ensure_ascii=False) if isinstance(dc, dict) else None
     lead.atualizado_em = datetime.utcnow()
     db.commit()
     db.refresh(lead)
@@ -2305,6 +2311,8 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "deal_banco":      l.deal_banco or "",
         "deal_conta_pg":   l.deal_conta_pg or "",
         "deal_operadora":  l.deal_operadora or "",
+        # Dados extras p/ requerimento
+        "dados_contrato": json.loads(l.dados_contrato) if l.dados_contrato else {},
     }
 
 
