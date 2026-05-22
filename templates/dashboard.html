@@ -3342,13 +3342,11 @@
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
         </div>
         <div>
-          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Retorno</label>
-          <select id="fc_retorno" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box;background:#fff"
+          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Retorno <span style="font-weight:400;color:#6b7280">(número: 0, 1, 2, 3…)</span></label>
+          <input type="number" id="fc_retorno" min="0" max="20" step="1" placeholder="Ex: 3"
+            oninput="_fcCalcularComissao()"
+            style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
-            <option value="">Selecionar</option>
-            <option>R0</option><option>R1</option><option>R2</option>
-            <option>R3</option><option>R4</option><option>R5</option><option>R6</option>
-          </select>
         </div>
       </div>
       <div>
@@ -3380,15 +3378,23 @@
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
         <div>
           <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Valor Financiado (R$)</label>
-          <input type="text" id="fc_valor" placeholder="Ex: 44699,00" inputmode="decimal" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
+          <input type="text" id="fc_valor" placeholder="Ex: 44699,00" inputmode="decimal"
+            oninput="_fcCalcularComissao()"
+            style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
         </div>
         <div>
-          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Comissão (R$)</label>
-          <input type="text" id="fc_comissao" placeholder="Ex: 3699,00" inputmode="decimal" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
+          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">
+            Comissão (R$)
+            <span id="fc_comissao_hint" style="font-weight:400;color:#059669;font-size:.68rem;margin-left:4px"></span>
+          </label>
+          <input type="text" id="fc_comissao" placeholder="Calculado automaticamente" inputmode="decimal"
+            style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box;background:#f0fdf4"
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
         </div>
       </div>
+      <!-- Preview do cálculo -->
+      <div id="fc_calc_preview" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.5rem .85rem;font-size:.78rem;color:#166534"></div>
       <div id="fc_erro" style="font-size:.8rem;color:#dc2626;display:none;padding:.4rem .75rem;background:#fee2e2;border-radius:7px;border:1px solid #fecaca"></div>
     </div>
     <!-- Footer -->
@@ -3406,6 +3412,37 @@
   // ═══ FECHAR CONTRATO — lógica do modal ═══
   let _fcLeadId = null;
   let _fcPendingStatus = 'fechado';
+
+  // Cálculo automático: Valor × (Retorno × 1,2%) × 75%
+  function _fcCalcularComissao() {
+    const retorno = parseFloat(document.getElementById('fc_retorno').value);
+    const valorRaw = document.getElementById('fc_valor').value.replace(/\./g,'').replace(',','.');
+    const valor = parseFloat(valorRaw);
+    const preview = document.getElementById('fc_calc_preview');
+    const hint    = document.getElementById('fc_comissao_hint');
+
+    if (!isNaN(retorno) && !isNaN(valor) && valor > 0 && retorno >= 0) {
+      const bruto    = valor * (retorno * 0.012);       // valor × retorno × 1,2%
+      const liquido  = bruto * 0.75;                    // − 25%
+      const pct      = (retorno * 1.2).toFixed(2);
+
+      // Preenche o campo de comissão automaticamente
+      document.getElementById('fc_comissao').value =
+        liquido.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+      // Mostra o passo a passo
+      preview.style.display = '';
+      preview.innerHTML =
+        `<strong>Cálculo:</strong> R$ ${valor.toLocaleString('pt-BR',{minimumFractionDigits:2})} × ${pct}% = ` +
+        `R$ ${bruto.toLocaleString('pt-BR',{minimumFractionDigits:2})} → −25% = ` +
+        `<strong>R$ ${liquido.toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong>`;
+
+      hint.textContent = '✓ calculado';
+    } else {
+      preview.style.display = 'none';
+      hint.textContent = '';
+    }
+  }
 
   function abrirModalFecharContrato(leadId, leadData) {
     _fcLeadId = leadId;
