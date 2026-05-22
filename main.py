@@ -515,18 +515,28 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
 
         # ── Mensagem editada pelo cliente ou pelo atendente ──────────────────
         if body.get("isEdit") or body.get("editedMessage"):
+            print(f"📝 EDIT webhook recebido: {json.dumps(body, ensure_ascii=False)[:500]}")
             edited = body.get("editedMessage") or {}
+            # Z-API aninha o conteúdo em editedMessage.message.*
+            edited_msg = edited.get("message") or {}
             texto_editado = (
-                (edited.get("text") or {}).get("message", "")
+                # estrutura aninhada: editedMessage.message.conversation
+                edited_msg.get("conversation", "")
+                or (edited_msg.get("extendedTextMessage") or {}).get("text", "")
+                # estrutura plana dentro de editedMessage
+                or (edited.get("text") or {}).get("message", "")
                 or (edited.get("extendedTextMessage") or {}).get("text", "")
                 or edited.get("conversation", "")
+                # fallback: texto direto no body (alguns formatos Z-API)
                 or _extrair_texto_zapi(body)
             ).strip()
+            print(f"📝 EDIT texto extraído: '{texto_editado}'")
             if telefone and texto_editado:
                 lead = db.query(Lead).filter(Lead.telefone == telefone).first()
                 if lead:
                     role = "assistant" if body.get("fromMe") else "user"
                     _salvar_msg_webhook(db, telefone, f"✏️ {texto_editado}", role=role)
+                    print(f"📝 EDIT salvo para {telefone} ({role})")
             return JSONResponse({"status": "edit_saved"})
 
         # ── Mensagem enviada do próprio aparelho pelo atendente ──────────────
