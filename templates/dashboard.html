@@ -2034,8 +2034,8 @@
           <div style="overflow-x:auto">
             <table class="rel-table">
               <thead><tr>
-                <th>Data</th><th>Cliente</th><th>Veículo</th><th>Retorno</th>
-                <th>Banco</th><th>Responsável</th>
+                <th>Data</th><th>Cliente</th><th>Veículo</th><th>Operadora</th>
+                <th>Banco</th><th>Retorno</th>
                 <th>Valor Financiado</th><th>Comissão</th>
               </tr></thead>
               <tbody>
@@ -2043,9 +2043,9 @@
                   <td>${esc(c.deal_data)}</td>
                   <td><strong>${esc(c.nome)}</strong></td>
                   <td>${esc(c.deal_veiculo)}</td>
-                  <td><span style="font-weight:700">${esc(c.deal_retorno)}</span></td>
+                  <td style="font-weight:600">${esc(c.deal_operadora)}</td>
                   <td>${esc(c.deal_banco)}</td>
-                  <td>${esc(c.responsavel)}</td>
+                  <td><span style="font-weight:700">${esc(c.deal_retorno)}</span></td>
                   <td style="font-weight:700;color:#065f46">${c.deal_valor !== '—' ? 'R$ '+esc(c.deal_valor) : '—'}</td>
                   <td style="font-weight:700;color:#92400e">${c.deal_comissao !== '—' ? 'R$ '+esc(c.deal_comissao) : '—'}</td>
                 </tr>`).join('')}
@@ -2530,16 +2530,17 @@
       if (lead.status === 'fechado' && lead.deal_data) {
         const isAdm = currentUser?.role === 'admin';
         const financeiroHtml = isAdm ? `
+          <div class="data-item"><label>Retorno</label><span style="font-weight:700">${escHtml(lead.deal_retorno||'—')}</span></div>
           <div class="data-item"><label>Valor Financiado</label><span style="font-weight:700;color:#065f46">${lead.deal_valor ? 'R$ '+escHtml(lead.deal_valor) : '—'}</span></div>
-          <div class="data-item"><label>Comissão</label><span style="font-weight:700;color:#92400e">${lead.deal_comissao ? 'R$ '+escHtml(lead.deal_comissao) : '—'}</span></div>
+          <div class="data-item full"><label>Comissão</label><span style="font-weight:700;color:#92400e">${lead.deal_comissao ? 'R$ '+escHtml(lead.deal_comissao) : '—'}</span></div>
         ` : '';
         elDeal.innerHTML = `
           <div class="modal-section" style="margin-top:.75rem">
             <h4>🏁 Contrato Fechado</h4>
             <div class="data-grid">
               <div class="data-item"><label>Data</label><span>${escHtml(lead.deal_data||'—')}</span></div>
-              <div class="data-item"><label>Retorno</label><span style="font-weight:700">${escHtml(lead.deal_retorno||'—')}</span></div>
               <div class="data-item full"><label>Veículo</label><span>${escHtml(lead.deal_veiculo||'—')}</span></div>
+              <div class="data-item"><label>Operadora</label><span style="font-weight:600">${escHtml(lead.deal_operadora||'—')}</span></div>
               <div class="data-item"><label>Banco</label><span>${escHtml(lead.deal_banco||'—')}</span></div>
               <div class="data-item"><label>Conta PG</label><span>${escHtml(lead.deal_conta_pg||'—')}</span></div>
               ${financeiroHtml}
@@ -3342,9 +3343,8 @@
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
         </div>
         <div>
-          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Retorno <span style="font-weight:400;color:#6b7280">(número: 0, 1, 2, 3…)</span></label>
+          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Retorno <span style="font-weight:400;color:#6b7280">(0, 1, 2, 3…)</span></label>
           <input type="number" id="fc_retorno" min="0" max="20" step="1" placeholder="Ex: 3"
-            oninput="_fcCalcularComissao()"
             style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
         </div>
@@ -3379,22 +3379,25 @@
         <div>
           <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Valor Financiado (R$)</label>
           <input type="text" id="fc_valor" placeholder="Ex: 44699,00" inputmode="decimal"
-            oninput="_fcCalcularComissao()"
             style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
         </div>
         <div>
-          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">
-            Comissão (R$)
-            <span id="fc_comissao_hint" style="font-weight:400;color:#059669;font-size:.68rem;margin-left:4px"></span>
-          </label>
-          <input type="text" id="fc_comissao" placeholder="Calculado automaticamente" inputmode="decimal"
-            style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box;background:#f0fdf4"
+          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Comissão (R$)</label>
+          <input type="text" id="fc_comissao" placeholder="Ex: 3699,00" inputmode="decimal"
+            style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
         </div>
       </div>
-      <!-- Preview do cálculo -->
-      <div id="fc_calc_preview" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.5rem .85rem;font-size:.78rem;color:#166534"></div>
+      <!-- Operadora responsável -->
+      <div>
+        <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Operadora Responsável</label>
+        <select id="fc_operadora"
+          style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box;background:#fff"
+          onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+          <option value="">Selecionar…</option>
+        </select>
+      </div>
       <div id="fc_erro" style="font-size:.8rem;color:#dc2626;display:none;padding:.4rem .75rem;background:#fee2e2;border-radius:7px;border:1px solid #fecaca"></div>
     </div>
     <!-- Footer -->
@@ -3413,38 +3416,28 @@
   let _fcLeadId = null;
   let _fcPendingStatus = 'fechado';
 
-  // Cálculo automático: Valor × (Retorno × 1,2%) × 75%
-  function _fcCalcularComissao() {
-    const retorno = parseFloat(document.getElementById('fc_retorno').value);
-    const valorRaw = document.getElementById('fc_valor').value.replace(/\./g,'').replace(',','.');
-    const valor = parseFloat(valorRaw);
-    const preview = document.getElementById('fc_calc_preview');
-    const hint    = document.getElementById('fc_comissao_hint');
-
-    if (!isNaN(retorno) && !isNaN(valor) && valor > 0 && retorno >= 0) {
-      const bruto    = valor * (retorno * 0.012);       // valor × retorno × 1,2%
-      const liquido  = bruto * 0.75;                    // − 25%
-      const pct      = (retorno * 1.2).toFixed(2);
-
-      // Preenche o campo de comissão automaticamente
-      document.getElementById('fc_comissao').value =
-        liquido.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
-
-      // Mostra o passo a passo
-      preview.style.display = '';
-      preview.innerHTML =
-        `<strong>Cálculo:</strong> R$ ${valor.toLocaleString('pt-BR',{minimumFractionDigits:2})} × ${pct}% = ` +
-        `R$ ${bruto.toLocaleString('pt-BR',{minimumFractionDigits:2})} → −25% = ` +
-        `<strong>R$ ${liquido.toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong>`;
-
-      hint.textContent = '✓ calculado';
-    } else {
-      preview.style.display = 'none';
-      hint.textContent = '';
-    }
+  // Carrega funcionárias no select de operadora
+  async function _fcCarregarOperadoras(preselect) {
+    const sel = document.getElementById('fc_operadora');
+    if (!sel) return;
+    try {
+      const r = await fetch('/api/usuarios');
+      if (!r.ok) return;
+      const users = await r.json();
+      sel.innerHTML = '<option value="">Selecionar…</option>';
+      users.filter(u => u.ativo).forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.nome;
+        opt.textContent = u.nome + (u.role === 'admin' ? ' (Admin)' : '');
+        if (preselect && u.nome === preselect) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      // Se nenhum pré-selecionado e tem só 1 opção + admin, seleciona o primeiro funcionário
+      if (!preselect && users.length) sel.value = '';
+    } catch {}
   }
 
-  function abrirModalFecharContrato(leadId, leadData) {
+  async function abrirModalFecharContrato(leadId, leadData) {
     _fcLeadId = leadId;
     document.getElementById('fcSubtitle').textContent =
       leadData?.nome && leadData.nome !== '—' ? `Cliente: ${leadData.nome}` : 'Preencha os dados do negócio';
@@ -3453,22 +3446,25 @@
     const veiculo = leadData?.deal_veiculo || leadData?.carro_interesse || '';
     document.getElementById('fc_veiculo').value = veiculo !== '—' ? veiculo : '';
 
-    // Pré-preenche data com hoje
-    const hoje = new Date();
-    document.getElementById('fc_data').value =
-      hoje.toISOString().split('T')[0];
+    // Pré-preenche data com hoje (ou data já salva)
+    if (leadData?.deal_data && leadData.deal_data !== '—') {
+      // Converte DD/MM/YYYY → YYYY-MM-DD para o input date
+      const p = leadData.deal_data.split('/');
+      document.getElementById('fc_data').value = p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : '';
+    } else {
+      document.getElementById('fc_data').value = new Date().toISOString().split('T')[0];
+    }
 
-    // Limpa demais campos
-    ['fc_retorno','fc_banco','fc_conta_pg'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.value = leadData?.[id.replace('fc_','')] || '';
-    });
     document.getElementById('fc_valor').value    = leadData?.deal_valor    || '';
     document.getElementById('fc_comissao').value = leadData?.deal_comissao || '';
     document.getElementById('fc_retorno').value  = leadData?.deal_retorno  || '';
     document.getElementById('fc_banco').value    = leadData?.deal_banco    || '';
     document.getElementById('fc_conta_pg').value = leadData?.deal_conta_pg || '';
     document.getElementById('fc_erro').style.display = 'none';
+
+    // Carrega operadoras e pré-seleciona a responsável do lead
+    const preselect = leadData?.deal_operadora || leadData?.responsavel?.nome || '';
+    await _fcCarregarOperadoras(preselect);
 
     document.getElementById('modalFecharContrato').classList.add('open');
   }
@@ -3507,8 +3503,9 @@
           deal_retorno:  document.getElementById('fc_retorno').value,
           deal_valor:    document.getElementById('fc_valor').value.trim(),
           deal_comissao: document.getElementById('fc_comissao').value.trim(),
-          deal_banco:    document.getElementById('fc_banco').value,
-          deal_conta_pg: document.getElementById('fc_conta_pg').value,
+          deal_banco:      document.getElementById('fc_banco').value,
+          deal_conta_pg:   document.getElementById('fc_conta_pg').value,
+          deal_operadora:  document.getElementById('fc_operadora').value,
         })
       });
       if (r.ok) {

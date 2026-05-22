@@ -261,6 +261,7 @@ async def startup():
         ("leads",           "deal_comissao",      "VARCHAR(20)"),
         ("leads",           "deal_banco",         "VARCHAR(30)"),
         ("leads",           "deal_conta_pg",      "VARCHAR(50)"),
+        ("leads",           "deal_operadora",     "VARCHAR(150)"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -1037,8 +1038,9 @@ async def fechar_contrato_lead(
     lead.deal_retorno  = body.get("deal_retorno", "").strip() or None
     lead.deal_valor    = body.get("deal_valor", "").strip() or None
     lead.deal_comissao = body.get("deal_comissao", "").strip() or None
-    lead.deal_banco    = body.get("deal_banco", "").strip() or None
-    lead.deal_conta_pg = body.get("deal_conta_pg", "").strip() or None
+    lead.deal_banco     = body.get("deal_banco", "").strip() or None
+    lead.deal_conta_pg  = body.get("deal_conta_pg", "").strip() or None
+    lead.deal_operadora = body.get("deal_operadora", "").strip() or None
     lead.status        = StatusLeadEnum.fechado
     lead.atualizado_em = datetime.utcnow()
     if not lead.atribuido_para:
@@ -1102,9 +1104,10 @@ async def relatorio_contratos_mes(
                 "deal_retorno":l.deal_retorno or "—",
                 "deal_valor":  l.deal_valor or "—",
                 "deal_comissao":l.deal_comissao or "—",
-                "deal_banco":  l.deal_banco or "—",
-                "deal_conta_pg":l.deal_conta_pg or "—",
-                "responsavel": l.responsavel.nome if l.responsavel else "—",
+                "deal_banco":     l.deal_banco or "—",
+                "deal_conta_pg":  l.deal_conta_pg or "—",
+                "deal_operadora": l.deal_operadora or (l.responsavel.nome if l.responsavel else "—"),
+                "responsavel":    l.responsavel.nome if l.responsavel else "—",
                 "modalidade":  l.modalidade,
             }
             for l in leads_fechados
@@ -2243,8 +2246,9 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "deal_retorno":  l.deal_retorno or "",
         "deal_valor":    l.deal_valor or "",
         "deal_comissao": l.deal_comissao or "",
-        "deal_banco":    l.deal_banco or "",
-        "deal_conta_pg": l.deal_conta_pg or "",
+        "deal_banco":      l.deal_banco or "",
+        "deal_conta_pg":   l.deal_conta_pg or "",
+        "deal_operadora":  l.deal_operadora or "",
     }
 
 

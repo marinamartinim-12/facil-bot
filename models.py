@@ -104,11 +104,12 @@ class Lead(Base):
     # ── Dados do contrato fechado ─────────────────────────────────────────
     deal_data      = Column(String(10),  nullable=True)   # DD/MM/YYYY
     deal_veiculo   = Column(String(200), nullable=True)
-    deal_retorno   = Column(String(5),   nullable=True)   # R0–R6
-    deal_valor     = Column(String(20),  nullable=True)   # valor financiado
-    deal_comissao  = Column(String(20),  nullable=True)   # comissão recebida
+    deal_retorno   = Column(String(5),   nullable=True)   # número do retorno (admin only)
+    deal_valor     = Column(String(20),  nullable=True)   # valor financiado (admin only)
+    deal_comissao  = Column(String(20),  nullable=True)   # comissão recebida (admin only)
     deal_banco     = Column(String(30),  nullable=True)
     deal_conta_pg  = Column(String(50),  nullable=True)
+    deal_operadora = Column(String(150), nullable=True)   # nome da operadora responsável
     observacoes = Column(Text, nullable=True)
     origem = Column(String(50), nullable=True)        # rede_social | parceiro | ex_cliente | indicacao | whatsapp
     origem_detalhe = Column(String(100), nullable=True) # google | instagram | nome livre (rede_social); ou nome do parceiro
