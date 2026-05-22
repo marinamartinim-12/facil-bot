@@ -1580,6 +1580,62 @@ async def atualizar_config(
     return {"status": "ok", "chave": chave}
 
 
+# ─── Bancos (lista gerenciável) ───────────────────────────────────────────────────
+
+def _get_bancos_lista(db: Session) -> list:
+    import json as _json
+    cfg = db.query(Configuracao).filter(Configuracao.chave == "bancos_lista").first()
+    if not cfg:
+        return []
+    try:
+        return _json.loads(cfg.valor)
+    except Exception:
+        return []
+
+def _set_bancos_lista(db: Session, bancos: list):
+    import json as _json
+    cfg = db.query(Configuracao).filter(Configuracao.chave == "bancos_lista").first()
+    if not cfg:
+        cfg = Configuracao(chave="bancos_lista", descricao="Lista de bancos para o formulário de contrato")
+        db.add(cfg)
+    cfg.valor = _json.dumps(bancos, ensure_ascii=False)
+    cfg.atualizado_em = datetime.utcnow()
+    db.commit()
+
+@app.get("/api/bancos")
+async def listar_bancos(db: Session = Depends(get_db), usuario: Usuario = Depends(requer_login)):
+    return _get_bancos_lista(db)
+
+@app.post("/api/bancos")
+async def adicionar_banco(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    body = await request.json()
+    nome = (body.get("nome") or "").strip().upper()
+    if not nome:
+        raise HTTPException(status_code=400, detail="Nome do banco é obrigatório")
+    bancos = _get_bancos_lista(db)
+    if nome not in bancos:
+        bancos.append(nome)
+        bancos.sort()
+        _set_bancos_lista(db, bancos)
+    return bancos
+
+@app.delete("/api/bancos/{nome}")
+async def remover_banco(
+    nome: str,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    bancos = _get_bancos_lista(db)
+    nome_upper = nome.strip().upper()
+    bancos = [b for b in bancos if b.upper() != nome_upper]
+    _set_bancos_lista(db, bancos)
+    return bancos
+
+
 # ─── Relatórios (admin) ───────────────────────────────────────────────────────────
 
 def _duracao_str(segundos: int) -> str:

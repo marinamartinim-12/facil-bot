@@ -3383,16 +3383,17 @@
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
         <div>
-          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Banco <span style="font-weight:400;color:#6b7280">(digite livremente)</span></label>
-          <input type="text" id="fc_banco" list="fc_banco_list" placeholder="" autocomplete="off"
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.25rem">
+            <label style="font-size:.75rem;font-weight:600;color:#374151">Banco</label>
+            <button type="button" onclick="_fcAdicionarBanco()" title="Adicionar banco à lista"
+              style="font-size:.7rem;color:#065f46;background:none;border:none;cursor:pointer;padding:0;font-weight:600;display:flex;align-items:center;gap:.2rem">
+              ＋ Adicionar banco
+            </button>
+          </div>
+          <input type="text" id="fc_banco" list="fc_banco_list" placeholder="Selecione ou digite" autocomplete="off"
             style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
-          <datalist id="fc_banco_list">
-            <option>BV</option><option>STD</option><option>SAFRA</option>
-            <option>PAN</option><option>C6</option><option>DIGI</option>
-            <option>ITAU</option><option>VOLKS</option><option>DAY</option>
-            <option>BRADESCO</option><option>CAIXA</option><option>SANTANDER</option>
-          </datalist>
+          <datalist id="fc_banco_list"></datalist>
         </div>
         <div>
           <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Conta Pagamento</label>
@@ -3446,6 +3447,37 @@
   let _fcPendingStatus = 'fechado';
 
   // Carrega funcionárias no select de operadora
+  async function _fcCarregarBancos() {
+    const dl = document.getElementById('fc_banco_list');
+    if (!dl) return;
+    try {
+      const r = await fetch('/api/bancos');
+      if (!r.ok) return;
+      const bancos = await r.json();
+      dl.innerHTML = bancos.map(b => `<option value="${b}">`).join('');
+    } catch {}
+  }
+
+  async function _fcAdicionarBanco() {
+    const nome = (prompt('Nome do banco (ex: BV, SANTANDER, BRADESCO):') || '').trim().toUpperCase();
+    if (!nome) return;
+    try {
+      const r = await fetch('/api/bancos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome })
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        alert('Erro: ' + (d.detail || r.status));
+        return;
+      }
+      await _fcCarregarBancos();
+      // Preenche o campo com o banco recém-adicionado
+      document.getElementById('fc_banco').value = nome;
+    } catch(e) { alert('Erro ao adicionar banco: ' + e.message); }
+  }
+
   async function _fcCarregarOperadoras(preselect) {
     const sel = document.getElementById('fc_operadora');
     if (!sel) return;
@@ -3491,9 +3523,9 @@
     document.getElementById('fc_conta_pg').value = leadData?.deal_conta_pg || '';
     document.getElementById('fc_erro').style.display = 'none';
 
-    // Carrega operadoras e pré-seleciona a responsável do lead
+    // Carrega lista de bancos e operadoras
     const preselect = leadData?.deal_operadora || leadData?.responsavel?.nome || '';
-    await _fcCarregarOperadoras(preselect);
+    await Promise.all([_fcCarregarBancos(), _fcCarregarOperadoras(preselect)]);
 
     document.getElementById('modalFecharContrato').classList.add('open');
   }
