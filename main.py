@@ -263,6 +263,9 @@ async def startup():
         ("leads",           "deal_conta_pg",      "VARCHAR(50)"),
         ("leads",           "deal_operadora",     "VARCHAR(150)"),
         ("leads",           "dados_contrato",     "TEXT"),
+        ("leads",           "cidade",             "VARCHAR(100)"),
+        ("leads",           "renda",              "VARCHAR(30)"),
+        ("leads",           "profissao",          "VARCHAR(100)"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -1196,6 +1199,108 @@ async def relatorio_contratos_csv(
                              media_type="text/csv; charset=utf-8-sig", headers=headers)
 
 
+# ─── Analytics / Perfil para Anúncios ────────────────────────────────────────────
+
+@app.get("/api/relatorio/perfil")
+async def relatorio_perfil(
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Painel de perfil de clientes para direcionar anúncios (admin only)."""
+    from collections import Counter
+    import re as _re
+
+    fechados  = db.query(Lead).filter(Lead.status == StatusLeadEnum.fechado).all()
+    todos     = db.query(Lead).all()
+
+    # ── Faixa etária ─────────────────────────────────────────────────────────
+    faixas = {"Até 25": 0, "26-35": 0, "36-45": 0, "46-55": 0, "56+": 0, "N/I": 0}
+    for l in fechados:
+        idade_str = _calc_idade(l.data_nascimento)
+        if idade_str == "—" or not idade_str.isdigit():
+            faixas["N/I"] += 1
+        else:
+            i = int(idade_str)
+            if   i <= 25: faixas["Até 25"] += 1
+            elif i <= 35: faixas["26-35"]  += 1
+            elif i <= 45: faixas["36-45"]  += 1
+            elif i <= 55: faixas["46-55"]  += 1
+            else:         faixas["56+"]    += 1
+
+    # ── Renda ─────────────────────────────────────────────────────────────────
+    rendas = Counter(l.renda for l in fechados if l.renda)
+
+    # ── Profissão (top 8) ─────────────────────────────────────────────────────
+    profissoes = Counter(l.profissao.strip().title() for l in fechados if l.profissao).most_common(8)
+
+    # ── Modalidade ────────────────────────────────────────────────────────────
+    modalidades = Counter(l.modalidade for l in fechados)
+
+    # ── Origem com taxa de conversão ──────────────────────────────────────────
+    origem_total   = Counter(l.origem or "whatsapp" for l in todos)
+    origem_fechado = Counter(l.origem or "whatsapp" for l in fechados)
+    origens_conv = []
+    for orig, total in sorted(origem_total.items(), key=lambda x: -x[1]):
+        fechou = origem_fechado.get(orig, 0)
+        taxa = round(fechou / total * 100) if total else 0
+        origens_conv.append({"origem": orig, "total": total, "fechados": fechou, "taxa": taxa})
+
+    # ── Top veículos (top 8) ──────────────────────────────────────────────────
+    veiculos_raw = [l.deal_veiculo or l.carro_interesse for l in fechados if l.deal_veiculo or l.carro_interesse]
+    # Extrai marca (primeira palavra)
+    marcas = Counter()
+    for v in veiculos_raw:
+        marca = v.strip().split()[0].upper() if v.strip() else "?"
+        marcas[marca] += 1
+    top_veiculos = marcas.most_common(8)
+
+    # ── Cidade (top 8) ────────────────────────────────────────────────────────
+    cidades = Counter(l.cidade.strip().title() for l in fechados if l.cidade).most_common(8)
+
+    # ── Dia da semana (todos os leads — horário de entrada) ───────────────────
+    dias = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+    dia_count = Counter()
+    hora_count = Counter()
+    for l in todos:
+        if l.criado_em:
+            dia_count[dias[l.criado_em.weekday()]] += 1
+            hora_count[l.criado_em.hour] += 1
+
+    # ── Valor médio financiado ────────────────────────────────────────────────
+    def _to_float(v):
+        try:
+            return float(str(v).replace("R$","").replace(".","").replace(",",".").strip())
+        except Exception:
+            return 0.0
+    valores = [_to_float(l.deal_valor) for l in fechados if l.deal_valor]
+    valor_medio = round(sum(valores) / len(valores)) if valores else 0
+
+    # ── Tempo médio até fechar (dias) ─────────────────────────────────────────
+    tempos = []
+    for l in fechados:
+        if l.criado_em and l.atualizado_em:
+            dias_delta = (l.atualizado_em - l.criado_em).days
+            if 0 <= dias_delta <= 365:
+                tempos.append(dias_delta)
+    tempo_medio = round(sum(tempos) / len(tempos), 1) if tempos else 0
+
+    return {
+        "total_fechados": len(fechados),
+        "total_leads":    len(todos),
+        "valor_medio":    valor_medio,
+        "tempo_medio_dias": tempo_medio,
+        "faixas_etarias": faixas,
+        "rendas":         dict(rendas),
+        "profissoes":     profissoes,
+        "modalidades":    dict(modalidades),
+        "origens":        origens_conv,
+        "top_veiculos":   top_veiculos,
+        "cidades":        cidades,
+        "dias_semana":    {d: dia_count.get(d, 0) for d in dias},
+        "horas":          {str(h): hora_count.get(h, 0) for h in range(0, 24)},
+    }
+
+
 @app.post("/api/conversa/iniciar")
 async def iniciar_conversa(
     request: Request,
@@ -1320,7 +1425,7 @@ async def editar_lead(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     body = await request.json()
-    campos_editaveis = ["nome", "cpf", "data_nascimento", "carro_interesse", "modalidade", "observacoes"]
+    campos_editaveis = ["nome", "cpf", "data_nascimento", "carro_interesse", "modalidade", "observacoes", "cidade", "renda", "profissao"]
     for campo in campos_editaveis:
         if campo in body:
             valor = body[campo]
@@ -2423,6 +2528,10 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "deal_operadora":  l.deal_operadora or "",
         # Dados extras p/ requerimento
         "dados_contrato": json.loads(l.dados_contrato) if l.dados_contrato else {},
+        # Perfil do cliente
+        "cidade":   l.cidade   or "",
+        "renda":    l.renda    or "",
+        "profissao": l.profissao or "",
     }
 
 

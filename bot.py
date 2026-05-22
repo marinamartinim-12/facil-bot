@@ -309,6 +309,8 @@ def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, q
     if dados.get("data_nascimento"):
         normalizada = _normalizar_data_nascimento(dados["data_nascimento"])
         lead.data_nascimento = normalizada if normalizada else dados["data_nascimento"]
+    if dados.get("cidade"):
+        lead.cidade = dados["cidade"]
     if dados.get("carro_interesse"):
         lead.carro_interesse = dados["carro_interesse"]
     if dados.get("modalidade"):

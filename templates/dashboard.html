@@ -715,6 +715,12 @@
           </table>
         </div>
 
+        <!-- ── PERFIL PARA ANÚNCIOS ── -->
+        <div class="rel-card" id="relPerfilCard">
+          <h3>📊 Perfil dos Clientes — Dados para Anúncios</h3>
+          <div id="relPerfil"><p style="font-size:.83rem;color:var(--muted);text-align:center;padding:1rem">Carregando…</p></div>
+        </div>
+
         <!-- ── CONTRATOS FECHADOS ── -->
         <div class="rel-card">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem">
@@ -2048,6 +2054,7 @@
     await carregarRelatorioParceiros();
     await carregarSessoes();
     await carregarRelatorioContratosMes();
+    await carregarRelatorioPerfil();
   }
 
   let _contratosData = []; // cache para export
@@ -2131,6 +2138,149 @@
   function _exportarContratosCSV() {
     const periodo = document.getElementById('filtroPeriodoContratos')?.value || 'mes';
     window.location.href = `/api/relatorio/contratos/csv?periodo=${periodo}`;
+  }
+
+  async function carregarRelatorioPerfil() {
+    const el = document.getElementById('relPerfil');
+    const card = document.getElementById('relPerfilCard');
+    if (!el || !card) return;
+    if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
+    try {
+      const r = await fetch('/api/relatorio/perfil');
+      if (!r.ok) return;
+      const d = await r.json();
+
+      const bar = (val, max, cor='#065f46') =>
+        `<div style="display:flex;align-items:center;gap:.5rem">
+           <div style="flex:1;background:#e5e7eb;border-radius:99px;height:8px;overflow:hidden">
+             <div style="height:100%;width:${max?Math.round(val/max*100):0}%;background:${cor};border-radius:99px"></div>
+           </div>
+           <span style="font-size:.75rem;font-weight:700;min-width:28px;text-align:right">${val}</span>
+         </div>`;
+
+      const card2 = (titulo, html) =>
+        `<div style="background:#fafbfd;border:1px solid var(--border);border-radius:10px;padding:.9rem 1rem">
+           <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.6rem">${titulo}</div>
+           ${html}
+         </div>`;
+
+      // ── KPIs ──────────────────────────────────────────────────────────────
+      const kpis = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem;margin-bottom:1rem">
+          ${[
+            ['Contratos fechados', d.total_fechados, '#065f46'],
+            ['Total de leads', d.total_leads, '#1e40af'],
+            ['Valor médio financiado', 'R$ '+d.valor_medio.toLocaleString('pt-BR'), '#92400e'],
+            ['Tempo médio p/ fechar', d.tempo_medio_dias+' dias', '#7c3aed'],
+          ].map(([l,v,c])=>`
+            <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:.75rem 1rem;text-align:center">
+              <div style="font-size:.68rem;color:var(--muted);font-weight:600;text-transform:uppercase">${l}</div>
+              <div style="font-size:1.4rem;font-weight:800;color:${c}">${v}</div>
+            </div>`).join('')}
+        </div>`;
+
+      // ── Faixa etária ──────────────────────────────────────────────────────
+      const maxFaixa = Math.max(...Object.values(d.faixas_etarias), 1);
+      const faixasHtml = card2('👥 Faixa etária dos clientes convertidos',
+        Object.entries(d.faixas_etarias).filter(([k])=>k!=='N/I').map(([k,v])=>
+          `<div style="margin-bottom:.3rem"><div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:2px"><span>${k} anos</span></div>${bar(v,maxFaixa)}</div>`
+        ).join('') + (d.faixas_etarias['N/I'] ? `<div style="font-size:.72rem;color:var(--muted);margin-top:.3rem">Sem data de nasc.: ${d.faixas_etarias['N/I']}</div>` : ''));
+
+      // ── Renda ─────────────────────────────────────────────────────────────
+      const maxRenda = Math.max(...Object.values(d.rendas), 1);
+      const rendaHtml = card2('💰 Faixa de renda',
+        Object.keys(d.rendas).length === 0
+          ? '<span style="font-size:.78rem;color:var(--muted)">Nenhum dado ainda — preencha nos leads.</span>'
+          : Object.entries(d.rendas).map(([k,v])=>
+              `<div style="margin-bottom:.3rem"><div style="font-size:.78rem;margin-bottom:2px">${k}</div>${bar(v,maxRenda,'#92400e')}</div>`
+            ).join(''));
+
+      // ── Profissão ─────────────────────────────────────────────────────────
+      const maxProf = d.profissoes.length ? d.profissoes[0][1] : 1;
+      const profHtml = card2('💼 Profissões (top 8)',
+        d.profissoes.length === 0
+          ? '<span style="font-size:.78rem;color:var(--muted)">Nenhum dado ainda — preencha nos leads.</span>'
+          : d.profissoes.map(([k,v])=>
+              `<div style="margin-bottom:.3rem"><div style="font-size:.78rem;margin-bottom:2px">${k}</div>${bar(v,maxProf,'#7c3aed')}</div>`
+            ).join(''));
+
+      // ── Modalidade ────────────────────────────────────────────────────────
+      const totalMod = Object.values(d.modalidades).reduce((a,b)=>a+b,0)||1;
+      const labMod2 = {financiamento:'Financiamento',refinanciamento:'Refinanciamento',indefinido:'Indefinido'};
+      const corMod  = {financiamento:'#4c1d95',refinanciamento:'#075985',indefinido:'#6b7280'};
+      const modHtml = card2('🚗 Modalidade',
+        Object.entries(d.modalidades).map(([k,v])=>
+          `<div style="margin-bottom:.35rem">
+             <div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:2px">
+               <span>${labMod2[k]||k}</span><span>${Math.round(v/totalMod*100)}%</span>
+             </div>${bar(v,totalMod,corMod[k]||'#6b7280')}
+           </div>`
+        ).join(''));
+
+      // ── Origem com conversão ──────────────────────────────────────────────
+      const labOrig = {rede_social:'Rede Social',parceiro:'Parceiro',ex_cliente:'Ex-cliente',indicacao:'Indicação',whatsapp:'WhatsApp'};
+      const maxOrig = Math.max(...d.origens.map(o=>o.total),1);
+      const origHtml = card2('📣 Origem — volume e taxa de conversão',
+        d.origens.map(o=>
+          `<div style="margin-bottom:.5rem">
+             <div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:2px">
+               <span><strong>${labOrig[o.origem]||o.origem}</strong></span>
+               <span style="color:#065f46;font-weight:700">${o.taxa}% conv. &nbsp;·&nbsp; ${o.fechados}/${o.total}</span>
+             </div>${bar(o.total,maxOrig,'#3b82f6')}
+           </div>`
+        ).join(''));
+
+      // ── Top veículos ──────────────────────────────────────────────────────
+      const maxVei = d.top_veiculos.length ? d.top_veiculos[0][1] : 1;
+      const veiHtml = card2('🏎 Marcas mais financiadas',
+        d.top_veiculos.length === 0
+          ? '<span style="font-size:.78rem;color:var(--muted)">Nenhum dado ainda.</span>'
+          : d.top_veiculos.map(([k,v])=>
+              `<div style="margin-bottom:.3rem"><div style="font-size:.78rem;margin-bottom:2px">${k}</div>${bar(v,maxVei,'#f97316')}</div>`
+            ).join(''));
+
+      // ── Cidades ──────────────────────────────────────────────────────────
+      const maxCid = d.cidades.length ? d.cidades[0][1] : 1;
+      const cidHtml = card2('📍 Cidades (contratos fechados)',
+        d.cidades.length === 0
+          ? '<span style="font-size:.78rem;color:var(--muted)">Nenhum dado ainda — cidade será salva automaticamente do bot.</span>'
+          : d.cidades.map(([k,v])=>
+              `<div style="margin-bottom:.3rem"><div style="font-size:.78rem;margin-bottom:2px">${k}</div>${bar(v,maxCid,'#0891b2')}</div>`
+            ).join(''));
+
+      // ── Dia da semana ─────────────────────────────────────────────────────
+      const dias = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+      const maxDia = Math.max(...Object.values(d.dias_semana),1);
+      const diaHtml = card2('📅 Dia da semana — leads entram',
+        dias.map(d2=>
+          `<div style="margin-bottom:.3rem"><div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:2px"><span>${d2}</span><span>${d.dias_semana[d2]||0}</span></div>${bar(d.dias_semana[d2]||0,maxDia,'#1e40af')}</div>`
+        ).join(''));
+
+      // ── Hora do dia ───────────────────────────────────────────────────────
+      const horasArr = Array.from({length:24},(_,h)=>({h,v:d.horas[String(h)]||0}));
+      const maxHora = Math.max(...horasArr.map(x=>x.v),1);
+      const comerciais = [7,8,9,10,11,12,13,14,15,16,17,18,19,20];
+      const horaHtml = card2('🕐 Horário de contato',
+        `<div style="display:grid;grid-template-columns:repeat(8,1fr);gap:3px">
+           ${horasArr.map(({h,v})=>{
+             const pct = Math.round(v/maxHora*100);
+             const destaque = comerciais.includes(h) && pct > 20;
+             return `<div style="text-align:center">
+               <div style="background:${destaque?'#065f46':'#e5e7eb'};height:${Math.max(4,pct*0.4)}px;border-radius:3px 3px 0 0;margin-bottom:2px"></div>
+               <div style="font-size:.6rem;color:var(--muted)">${String(h).padStart(2,'0')}h</div>
+             </div>`;
+           }).join('')}
+         </div>
+         <div style="font-size:.7rem;color:var(--muted);margin-top:.4rem">Verde escuro = horário de pico em horário comercial</div>`);
+
+      // ── Layout grid ──────────────────────────────────────────────────────
+      el.innerHTML = kpis + `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+          ${faixasHtml}${rendaHtml}${profHtml}${modHtml}
+          ${origHtml}${veiHtml}${cidHtml}${diaHtml}
+          <div style="grid-column:1/-1">${horaHtml}</div>
+        </div>`;
+    } catch(e) { console.error(e); }
   }
 
   async function carregarRelatorioParceiros() {
@@ -2734,6 +2884,12 @@
     const inputCPF    = editando ? `<input id="ei_cpf"   value="${escHtml(lead.cpf&&lead.cpf!=='—'?lead.cpf:'')}" style="${inpStyle}" placeholder="000.000.000-00">` : `<span>${escHtml(lead.cpf||'—')}</span>`;
     const inputNasc   = editando ? `<input id="ei_nasc"  value="${escHtml(lead.data_nascimento&&lead.data_nascimento!=='—'?lead.data_nascimento:'')}" style="${inpStyle}" placeholder="DD/MM/AAAA">` : `<span>${escHtml(lead.data_nascimento||'—')}</span>`;
     const inputCarro  = editando ? `<input id="ei_carro" value="${escHtml(lead.carro_interesse&&lead.carro_interesse!=='—'?lead.carro_interesse:'')}" style="${inpStyle}" placeholder="Ex: Honda Civic 2020">` : `<span>${escHtml(lead.carro_interesse||'—')}</span>`;
+    const inputCidade = editando ? `<input id="ei_cidade" value="${escHtml(lead.cidade||'')}" style="${inpStyle}" placeholder="Ex: Belo Horizonte/MG">` : `<span>${escHtml(lead.cidade||'—')}</span>`;
+    const inputProf   = editando ? `<input id="ei_prof" value="${escHtml(lead.profissao||'')}" style="${inpStyle}" placeholder="Ex: Motorista, Servidor público…">` : `<span>${escHtml(lead.profissao||'—')}</span>`;
+    const rendaOpts   = ['','Até R$2.000','R$2.000 a R$5.000','R$5.000 a R$10.000','Acima de R$10.000'];
+    const inputRenda  = editando
+      ? `<select id="ei_renda" style="${inpStyle}">${rendaOpts.map(o=>`<option value="${o}" ${lead.renda===o?'selected':''}>${o||'Não informado'}</option>`).join('')}</select>`
+      : `<span>${escHtml(lead.renda||'—')}</span>`;
     const inputMod    = editando
       ? `<select id="ei_mod" style="${inpStyle}">
            <option value="indefinido" ${(lead.modalidade==='indefinido'||!lead.modalidade)?'selected':''}>Indefinido</option>
@@ -2756,6 +2912,9 @@
       <div class="data-item"><label>Nasc.</label>${inputNasc}</div>
       <div class="data-item full"><label>Veículo de interesse</label>${inputCarro}</div>
       <div class="data-item"><label>Modalidade</label>${inputMod}</div>
+      <div class="data-item"><label>Cidade</label>${inputCidade}</div>
+      <div class="data-item"><label>Profissão</label>${inputProf}</div>
+      <div class="data-item full"><label>Faixa de renda</label>${inputRenda}</div>
       <div class="data-item"><label>Responsável</label><span>${lead.responsavel ? escHtml(lead.responsavel.nome) : '—'}</span></div>
       <div class="data-item"><label>Cadastrado</label><span>${escHtml(lead.criado_em||'—')}</span></div>
       ${lead.assumido_em ? `<div class="data-item"><label>Assumido em</label><span>${escHtml(lead.assumido_em)}</span></div>` : ''}
@@ -2803,11 +2962,14 @@
   async function salvarDadosLead() {
     if (!modalLeadId) return;
     const body = {
-      nome:             document.getElementById('ei_nome')?.value.trim()  || null,
-      cpf:              document.getElementById('ei_cpf')?.value.trim()   || null,
-      data_nascimento:  document.getElementById('ei_nasc')?.value.trim()  || null,
-      carro_interesse:  document.getElementById('ei_carro')?.value.trim() || null,
-      modalidade:       document.getElementById('ei_mod')?.value          || null,
+      nome:             document.getElementById('ei_nome')?.value.trim()   || null,
+      cpf:              document.getElementById('ei_cpf')?.value.trim()    || null,
+      data_nascimento:  document.getElementById('ei_nasc')?.value.trim()   || null,
+      carro_interesse:  document.getElementById('ei_carro')?.value.trim()  || null,
+      modalidade:       document.getElementById('ei_mod')?.value           || null,
+      cidade:           document.getElementById('ei_cidade')?.value.trim() || null,
+      profissao:        document.getElementById('ei_prof')?.value.trim()   || null,
+      renda:            document.getElementById('ei_renda')?.value         || null,
     };
     try {
       const r = await fetch(`/api/leads/${modalLeadId}`, {

@@ -111,6 +111,9 @@ class Lead(Base):
     deal_conta_pg  = Column(String(50),  nullable=True)
     deal_operadora = Column(String(150), nullable=True)   # nome da operadora responsável
     dados_contrato = Column(Text, nullable=True)           # JSON com dados extras p/ requerimento
+    cidade     = Column(String(100), nullable=True)        # coletado pelo bot
+    renda      = Column(String(30),  nullable=True)        # faixa de renda (preenchido pela atendente)
+    profissao  = Column(String(100), nullable=True)        # profissão (preenchido pela atendente)
     observacoes = Column(Text, nullable=True)
     origem = Column(String(50), nullable=True)        # rede_social | parceiro | ex_cliente | indicacao | whatsapp
     origem_detalhe = Column(String(100), nullable=True) # google | instagram | nome livre (rede_social); ou nome do parceiro
