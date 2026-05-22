@@ -2604,44 +2604,6 @@
         ${row('Chassi',   'vei_chassi', '9BW...')}
       </div>
 
-      <!-- Condições financeiras -->
-      <div style="font-size:.72rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.35rem">💰 Financiamento</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.5rem">
-        ${row('Valor líquido (R$)',  'fin_valor',      'Ex: 44.000,00')}
-        ${row('Banco negociador',   'fin_banco',       'BV, Santander...')}
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem;margin-bottom:.75rem">
-        ${row('Nº parcelas',  'fin_parcelas',  '60')}
-        ${row('Valor parcela','fin_parcela',   '1.524,00')}
-        ${row('1º vencimento','fin_vencimento','25/03/2026')}
-      </div>
-
-      <!-- Proprietário / Vendedor -->
-      <div style="font-size:.72rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.35rem">🤝 Proprietário / Vendedor</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.5rem">
-        ${row('Nome',     'prop_nome',    'Nome do proprietário')}
-        ${row('CPF',      'prop_cpf',     '000.000.000-00')}
-      </div>
-      <div style="display:grid;grid-template-columns:1fr;gap:.4rem;margin-bottom:.75rem">
-        ${row('Telefone', 'prop_telefone','(00) 00000-0000')}
-      </div>
-
-      <!-- Dados bancários -->
-      <div style="font-size:.72rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.35rem">🏦 Dados Bancários (pagamento ao proprietário)</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.5rem">
-        ${row('Nome beneficiário','pag_nome', 'Nome completo')}
-        ${row('CPF beneficiário', 'pag_cpf',  '000.000.000-00')}
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem;margin-bottom:.5rem">
-        ${row('Banco',   'pag_banco',   'Nubank, Itaú...')}
-        ${row('Agência', 'pag_agencia', '0001')}
-        ${row('Conta',   'pag_conta',   '00000000-0')}
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.75rem">
-        ${row('PIX',         'pag_pix',   'CPF, telefone ou chave')}
-        ${row('Valor (R$)',  'pag_valor', '44.000,00')}
-      </div>
-
       ${editando
         ? `<div style="display:flex;gap:.5rem;margin-top:.25rem">
              <button class="btn btn-primary btn-sm" onclick="salvarDadosContrato()" style="flex:1">💾 Salvar dados</button>
@@ -2660,13 +2622,6 @@
       req_bairro: g('req_bairro'), req_cep: g('req_cep'), req_cidade: g('req_cidade'),
       vei_placa: g('vei_placa'), vei_ano: g('vei_ano'), vei_cor: g('vei_cor'),
       vei_renavam: g('vei_renavam'), vei_chassi: g('vei_chassi'),
-      vei_modelo: g('vei_modelo'),
-      fin_valor: g('fin_valor'), fin_banco: g('fin_banco'),
-      fin_parcelas: g('fin_parcelas'), fin_parcela: g('fin_parcela'), fin_vencimento: g('fin_vencimento'),
-      prop_nome: g('prop_nome'), prop_cpf: g('prop_cpf'), prop_telefone: g('prop_telefone'),
-      pag_nome: g('pag_nome'), pag_cpf: g('pag_cpf'), pag_banco: g('pag_banco'),
-      pag_agencia: g('pag_agencia'), pag_conta: g('pag_conta'),
-      pag_pix: g('pag_pix'), pag_valor: g('pag_valor'),
     };
     try {
       const r = await fetch(`/api/leads/${modalLeadId}`, {
