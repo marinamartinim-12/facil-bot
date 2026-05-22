@@ -715,9 +715,21 @@
           </table>
         </div>
 
-        <!-- ── CONTRATOS FECHADOS NO MÊS ── -->
+        <!-- ── CONTRATOS FECHADOS ── -->
         <div class="rel-card">
-          <h3>🏁 Contratos Fechados no Mês</h3>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem">
+            <h3 style="margin:0">🏁 Contratos Fechados</h3>
+            <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+              <select id="filtroPeriodoContratos" onchange="carregarRelatorioContratosMes()"
+                style="border:1px solid var(--border);border-radius:8px;padding:.35rem .7rem;font-size:.82rem;outline:none">
+                <option value="semana">Esta semana</option>
+                <option value="mes" selected>Este mês</option>
+                <option value="tudo">Tudo</option>
+              </select>
+              <button id="btnExportContratos" onclick="_exportarContratosCSV()"
+                class="btn btn-sm btn-outline" style="padding:.35rem .9rem">⬇️ Excel</button>
+            </div>
+          </div>
           <div id="relContratosMes">
             <p style="font-size:.83rem;color:var(--muted);text-align:center;padding:1rem">Carregando…</p>
           </div>
@@ -2038,21 +2050,26 @@
     await carregarRelatorioContratosMes();
   }
 
+  let _contratosData = []; // cache para export
+
   async function carregarRelatorioContratosMes() {
     const el = document.getElementById('relContratosMes');
     if (!el) return;
+    const periodo = document.getElementById('filtroPeriodoContratos')?.value || 'mes';
     try {
-      const r = await fetch('/api/relatorio/contratos-mes');
+      const r = await fetch(`/api/relatorio/contratos-mes?periodo=${periodo}`);
       if (!r.ok) return;
       const d = await r.json();
+      if (d.contratos) _contratosData = d.contratos;
+
       const pct = Math.min(d.percentual || 0, 100);
       const corBarra = pct >= 100 ? '#065f46' : pct >= 60 ? '#f97316' : '#3b82f6';
-      const mesLabel = (d.mes || '').replace(/^\w/, c => c.toUpperCase());
+      const periodoLabel = {semana:'Esta Semana', mes: (d.mes||'').replace(/^\w/,c=>c.toUpperCase()), tudo:'Todos os tempos'}[periodo] || '';
 
       const resumoHtml = `
         <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;margin-bottom:1rem">
           <div>
-            <div style="font-size:.7rem;text-transform:uppercase;color:var(--muted);font-weight:700">Contratos — ${mesLabel}</div>
+            <div style="font-size:.7rem;text-transform:uppercase;color:var(--muted);font-weight:700">Contratos — ${periodoLabel}</div>
             <div style="font-size:2rem;font-weight:800;color:var(--navy);line-height:1.1">${d.total} <span style="font-size:.9rem;font-weight:500;color:var(--muted)">/ ${d.meta}</span></div>
           </div>
           <div style="flex:1;min-width:160px">
@@ -2076,34 +2093,44 @@
 
       let tabelaHtml = '';
       if (d.contratos && d.contratos.length) {
+        const isAdm = currentUser?.role === 'admin';
         tabelaHtml = `
           <div style="overflow-x:auto">
             <table class="rel-table">
               <thead><tr>
-                <th>Data</th><th>Cliente</th><th>Veículo</th><th>Operadora</th>
-                <th>Banco</th><th>Retorno</th>
-                <th>Valor Financiado</th><th>Comissão</th>
+                <th>Data</th><th>Cliente</th><th>Idade</th><th>Veículo</th>
+                <th>Operadora</th><th>Banco</th><th>Conta PG</th><th>Origem</th>
+                ${isAdm ? '<th>Retorno</th><th>Valor Financiado</th><th>Comissão</th>' : ''}
               </tr></thead>
               <tbody>
                 ${d.contratos.map(c => `<tr>
-                  <td>${esc(c.deal_data)}</td>
+                  <td style="white-space:nowrap">${esc(c.deal_data)}</td>
                   <td><strong>${esc(c.nome)}</strong></td>
+                  <td style="text-align:center">${esc(c.idade||'—')}</td>
                   <td>${esc(c.deal_veiculo)}</td>
                   <td style="font-weight:600">${esc(c.deal_operadora)}</td>
                   <td>${esc(c.deal_banco)}</td>
-                  <td><span style="font-weight:700">${esc(c.deal_retorno)}</span></td>
-                  <td style="font-weight:700;color:#065f46">${c.deal_valor !== '—' ? 'R$ '+esc(c.deal_valor) : '—'}</td>
-                  <td style="font-weight:700;color:#92400e">${c.deal_comissao !== '—' ? 'R$ '+esc(c.deal_comissao) : '—'}</td>
+                  <td>${esc(c.deal_conta_pg)}</td>
+                  <td style="font-size:.78rem">${esc(c.origem||'—')}</td>
+                  ${isAdm ? `
+                  <td style="text-align:center;font-weight:700">${esc(c.deal_retorno)}</td>
+                  <td style="font-weight:700;color:#065f46;white-space:nowrap">${c.deal_valor !== '—' ? 'R$ '+esc(c.deal_valor) : '—'}</td>
+                  <td style="font-weight:700;color:#92400e;white-space:nowrap">${c.deal_comissao !== '—' ? 'R$ '+esc(c.deal_comissao) : '—'}</td>` : ''}
                 </tr>`).join('')}
               </tbody>
             </table>
           </div>`;
       } else {
-        tabelaHtml = '<p style="font-size:.83rem;color:var(--muted);text-align:center;padding:1rem">Nenhum contrato fechado este mês ainda.</p>';
+        tabelaHtml = `<p style="font-size:.83rem;color:var(--muted);text-align:center;padding:1rem">Nenhum contrato fechado no período.</p>`;
       }
 
       el.innerHTML = resumoHtml + tabelaHtml;
     } catch {}
+  }
+
+  function _exportarContratosCSV() {
+    const periodo = document.getElementById('filtroPeriodoContratos')?.value || 'mes';
+    window.location.href = `/api/relatorio/contratos/csv?periodo=${periodo}`;
   }
 
   async function carregarRelatorioParceiros() {

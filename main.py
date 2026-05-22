@@ -1052,25 +1052,64 @@ async def fechar_contrato_lead(
     return _serial_lead(lead, db)
 
 
+def _calc_idade(data_nasc_str: str | None) -> str:
+    """Calcula idade a partir de DD/MM/YYYY."""
+    if not data_nasc_str or data_nasc_str == "—":
+        return "—"
+    try:
+        from datetime import date
+        partes = data_nasc_str.strip().split("/")
+        if len(partes) != 3:
+            return "—"
+        nasc = date(int(partes[2]), int(partes[1]), int(partes[0]))
+        hoje = date.today()
+        idade = hoje.year - nasc.year - ((hoje.month, hoje.day) < (nasc.month, nasc.day))
+        return str(idade)
+    except Exception:
+        return "—"
+
+
+def _origem_label(origem: str | None, detalhe: str | None) -> str:
+    mapa = {
+        "rede_social": "Rede Social",
+        "parceiro": "Parceiro",
+        "ex_cliente": "Ex-cliente",
+        "indicacao": "Indicação",
+        "whatsapp": "WhatsApp",
+    }
+    base = mapa.get(origem or "", origem or "WhatsApp")
+    if detalhe:
+        return f"{base} ({detalhe})"
+    return base
+
+
+def _contratos_periodo(db, periodo: str = "mes") -> list:
+    """Retorna leads fechados do período. periodo = 'semana' | 'mes' | 'tudo'."""
+    hoje = datetime.utcnow()
+    if periodo == "semana":
+        dia_semana = hoje.weekday()  # 0=seg
+        inicio = datetime(hoje.year, hoje.month, hoje.day) - timedelta(days=dia_semana)
+    elif periodo == "mes":
+        inicio = datetime(hoje.year, hoje.month, 1)
+    else:
+        inicio = None
+
+    q = db.query(Lead).filter(Lead.status == StatusLeadEnum.fechado)
+    if inicio:
+        q = q.filter(Lead.atualizado_em >= inicio)
+    return q.order_by(Lead.atualizado_em.desc()).all()
+
+
 @app.get("/api/relatorio/contratos-mes")
 async def relatorio_contratos_mes(
+    periodo: str = "mes",
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
-    """Retorna contagem e metas do mês atual. Totais financeiros só para admin."""
+    """Retorna contagem e metas do período. Totais financeiros só para admin."""
+    leads_fechados = _contratos_periodo(db, periodo)
+
     hoje = datetime.utcnow()
-    inicio_mes = datetime(hoje.year, hoje.month, 1)
-
-    leads_fechados = (
-        db.query(Lead)
-        .filter(
-            Lead.status == StatusLeadEnum.fechado,
-            Lead.atualizado_em >= inicio_mes,
-        )
-        .order_by(Lead.atualizado_em.desc())
-        .all()
-    )
-
     total = len(leads_fechados)
     cfg_meta = db.query(Configuracao).filter(Configuracao.chave == "meta_contratos").first()
     meta = int(cfg_meta.valor) if cfg_meta and cfg_meta.valor.isdigit() else 20
@@ -1081,6 +1120,7 @@ async def relatorio_contratos_mes(
         "meta":       meta,
         "percentual": min(percentual, 100),
         "mes":        hoje.strftime("%B %Y"),
+        "periodo":    periodo,
     }
 
     if usuario.role == RoleEnum.admin:
@@ -1097,24 +1137,63 @@ async def relatorio_contratos_mes(
         resultado["total_comissao"] = total_comissao
         resultado["contratos"] = [
             {
-                "id":          l.id,
-                "nome":        l.nome or "—",
-                "telefone":    l.telefone,
-                "deal_data":   l.deal_data or "—",
-                "deal_veiculo":l.deal_veiculo or "—",
-                "deal_retorno":l.deal_retorno or "—",
-                "deal_valor":  l.deal_valor or "—",
-                "deal_comissao":l.deal_comissao or "—",
-                "deal_banco":     l.deal_banco or "—",
-                "deal_conta_pg":  l.deal_conta_pg or "—",
+                "id":            l.id,
+                "nome":          l.nome or "—",
+                "data_nascimento": l.data_nascimento or "—",
+                "idade":         _calc_idade(l.data_nascimento),
+                "telefone":      l.telefone,
+                "deal_data":     l.deal_data or "—",
+                "deal_veiculo":  l.deal_veiculo or "—",
+                "deal_retorno":  l.deal_retorno or "—",
+                "deal_valor":    l.deal_valor or "—",
+                "deal_comissao": l.deal_comissao or "—",
+                "deal_banco":    l.deal_banco or "—",
+                "deal_conta_pg": l.deal_conta_pg or "—",
                 "deal_operadora": l.deal_operadora or (l.responsavel.nome if l.responsavel else "—"),
-                "responsavel":    l.responsavel.nome if l.responsavel else "—",
-                "modalidade":  l.modalidade,
+                "responsavel":   l.responsavel.nome if l.responsavel else "—",
+                "modalidade":    l.modalidade,
+                "origem":        _origem_label(l.origem, l.origem_detalhe),
             }
             for l in leads_fechados
         ]
 
     return resultado
+
+
+@app.get("/api/relatorio/contratos/csv")
+async def relatorio_contratos_csv(
+    periodo: str = "mes",
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Exporta contratos fechados do período como CSV (admin only)."""
+    from fastapi.responses import StreamingResponse
+    import csv, io
+    leads = _contratos_periodo(db, periodo)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Cliente", "Idade", "Data", "Veículo", "Retorno",
+                     "Valor Financiado", "Comissão", "Banco", "Conta PG",
+                     "Origem", "Operadora Responsável"])
+    for l in leads:
+        writer.writerow([
+            l.nome or "—",
+            _calc_idade(l.data_nascimento),
+            l.deal_data or "—",
+            l.deal_veiculo or "—",
+            l.deal_retorno or "—",
+            l.deal_valor or "—",
+            l.deal_comissao or "—",
+            l.deal_banco or "—",
+            l.deal_conta_pg or "—",
+            _origem_label(l.origem, l.origem_detalhe),
+            l.deal_operadora or (l.responsavel.nome if l.responsavel else "—"),
+        ])
+    output.seek(0)
+    nome_arquivo = f"contratos_{periodo}.csv"
+    headers = {"Content-Disposition": f"attachment; filename={nome_arquivo}"}
+    return StreamingResponse(iter([output.getvalue()]),
+                             media_type="text/csv; charset=utf-8-sig", headers=headers)
 
 
 @app.post("/api/conversa/iniciar")
