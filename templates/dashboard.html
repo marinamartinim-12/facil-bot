@@ -1354,13 +1354,40 @@
   function gerarContrato() {
     if (!modalLeadId) return;
     const lead = allLeads.find(l => l.id === modalLeadId) || {};
+
+    // Limpa todos os campos do formulário antes de preencher
+    ['fc_req_nome','fc_req_cpf','fc_req_rg','fc_req_rua','fc_req_numero',
+     'fc_req_bairro','fc_req_cep','fc_req_cidade','fc_req_celular',
+     'fc_vei_modelo','fc_vei_placa','fc_vei_ano','fc_vei_cor','fc_vei_renavam','fc_vei_chassi',
+     'fc_fin_valor','fc_fin_banco','fc_fin_parcelas','fc_fin_parcela','fc_fin_vencimento',
+     'fc_prop_nome','fc_prop_cpf','fc_prop_telefone',
+     'fc_pag_nome','fc_pag_cpf','fc_pag_banco','fc_pag_agencia','fc_pag_conta','fc_pag_pix','fc_pag_valor'
+    ].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+
     const set = (id, val) => { const el = document.getElementById(id); if (el && val && val !== '—') el.value = val; };
+
+    // ── Dados do requerente (cliente) ──────────────────────────────────────
     set('fc_req_nome',    lead.nome);
     set('fc_req_cpf',     lead.cpf);
     set('fc_req_celular', lead.telefone);
+
+    // Cidade coletada pelo bot
+    if (lead.cidade) set('fc_req_cidade', lead.cidade);
+
+    // Modalidade
     const mod = (lead.modalidade || '').toLowerCase();
     const sel = document.getElementById('fc_modalidade');
     if (sel) sel.value = mod.includes('refin') ? 'refinanciamento' : 'financiamento';
+
+    // ── Dados do veículo ───────────────────────────────────────────────────
+    // Prioriza deal_veiculo (contrato fechado) → carro_interesse (coletado pelo bot)
+    const veiculo = (lead.deal_veiculo || lead.carro_interesse || '').trim();
+    set('fc_vei_modelo', veiculo);
+
+    // ── Condições financeiras (pré-preenche se já houver contrato fechado) ─
+    set('fc_fin_valor', lead.deal_valor);
+    set('fc_fin_banco', lead.deal_banco);
+
     document.getElementById('modalContrato').classList.add('open');
   }
 
