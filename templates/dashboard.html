@@ -3356,20 +3356,22 @@
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
         <div>
-          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Banco</label>
-          <select id="fc_banco" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box;background:#fff"
+          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Banco <span style="font-weight:400;color:#6b7280">(digite livremente)</span></label>
+          <input type="text" id="fc_banco" list="fc_banco_list" placeholder="" autocomplete="off"
+            style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
-            <option value="">Selecionar</option>
+          <datalist id="fc_banco_list">
             <option>BV</option><option>STD</option><option>SAFRA</option>
             <option>PAN</option><option>C6</option><option>DIGI</option>
             <option>ITAU</option><option>VOLKS</option><option>DAY</option>
-          </select>
+            <option>BRADESCO</option><option>CAIXA</option><option>SANTANDER</option>
+          </datalist>
         </div>
         <div>
           <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Conta Pagamento</label>
-          <select id="fc_conta_pg" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box;background:#fff"
+          <select id="fc_conta_pg" autocomplete="off" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box;background:#fff"
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
-            <option value="">Selecionar</option>
+            <option value=""></option>
             <option>NUBANK</option><option>ITAU</option>
             <option>STD</option><option>SANTANDER</option>
           </select>
