@@ -1715,21 +1715,18 @@ async def relatorio_parceiros(
     return resultado
 
 
-@app.get("/api/relatorio/sessoes")
-async def relatorio_sessoes(
-    db: Session = Depends(get_db),
-    admin: Usuario = Depends(requer_admin),
-):
-    """Retorna histórico de sessões de login de todos os usuários (admin only)."""
+def _sessoes_funcionarias(db: Session, limit: int = 1000) -> list:
+    """Retorna sessões apenas de funcionárias (sem admin), ordenadas por login desc."""
     sessoes = (
         db.query(SessaoUsuario)
+        .join(Usuario, Usuario.id == SessaoUsuario.usuario_id)
+        .filter(Usuario.role == RoleEnum.funcionario)
         .order_by(SessaoUsuario.login_em.desc())
-        .limit(500)
+        .limit(limit)
         .all()
     )
     resultado = []
     for s in sessoes:
-        # Tempo ativo = diferença entre último heartbeat e login
         fim = s.logout_em or s.ultimo_ativo_em
         tempo_s = max(0, int((fim - s.login_em).total_seconds())) if fim and s.login_em else 0
         resultado.append({
@@ -1743,7 +1740,7 @@ async def relatorio_sessoes(
             "logout_em": s.logout_em.strftime("%d/%m/%Y %H:%M") if s.logout_em else None,
             "tempo_logado": _duracao_str(tempo_s),
             "tempo_ativo": _duracao_str(s.tempo_ativo_s or 0),
-            # Online = sem logout E heartbeat chegou nos últimos 5 minutos
+            "tempo_ativo_s": s.tempo_ativo_s or 0,
             "ativa": (
                 s.logout_em is None
                 and s.ultimo_ativo_em is not None
@@ -1751,6 +1748,40 @@ async def relatorio_sessoes(
             ),
         })
     return resultado
+
+
+@app.get("/api/relatorio/sessoes")
+async def relatorio_sessoes(
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Retorna histórico de sessões somente de funcionárias (admin only)."""
+    return _sessoes_funcionarias(db)
+
+
+@app.get("/api/relatorio/sessoes/csv")
+async def relatorio_sessoes_csv(
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Exporta histórico de sessões como CSV (admin only)."""
+    from fastapi.responses import StreamingResponse
+    import csv, io
+    sessoes = _sessoes_funcionarias(db)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Funcionária", "Login em", "Último acesso", "Logout em",
+                     "Tempo logado", "Tempo ativo", "Localização", "IP"])
+    for s in sessoes:
+        writer.writerow([
+            s["usuario"], s["login_em"], s["ultimo_ativo_em"],
+            s["logout_em"] or "—", s["tempo_logado"], s["tempo_ativo"],
+            s["localizacao"], s["ip"],
+        ])
+    output.seek(0)
+    headers = {"Content-Disposition": "attachment; filename=atividade_funcionarias.csv"}
+    return StreamingResponse(iter([output.getvalue()]),
+                             media_type="text/csv; charset=utf-8-sig", headers=headers)
 
 
 # ─── Dashboard ────────────────────────────────────────────────────────────────────

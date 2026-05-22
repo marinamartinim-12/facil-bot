@@ -749,33 +749,21 @@
         <!-- ── SESSÕES / LOGINS ── -->
         <div class="rel-card">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
-            <h3 style="margin:0">🔐 Histórico de Logins e Atividade</h3>
+            <h3 style="margin:0">🔐 Atividade das Funcionárias</h3>
             <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
-              <select id="filtroSessaoUsuario" style="border:1px solid var(--border);border-radius:8px;padding:.35rem .7rem;font-size:.82rem;outline:none">
-                <option value="">Todos os usuários</option>
+              <select id="filtroPeriodoSessao" onchange="renderTabelaSessoes()"
+                style="border:1px solid var(--border);border-radius:8px;padding:.35rem .7rem;font-size:.82rem;outline:none">
+                <option value="semana">Esta semana</option>
+                <option value="mes" selected>Este mês</option>
+                <option value="tudo">Tudo</option>
               </select>
               <button onclick="carregarSessoes()" class="btn btn-sm" style="background:var(--navy);color:#fff;padding:.35rem .9rem">🔄 Atualizar</button>
+              <a id="btnExportSessoes" href="/api/relatorio/sessoes/csv" download
+                class="btn btn-sm btn-outline" style="padding:.35rem .9rem;text-decoration:none">⬇️ Excel</a>
             </div>
           </div>
-          <div style="overflow-x:auto">
-            <table class="rel-table" style="min-width:750px">
-              <thead>
-                <tr>
-                  <th>Funcionária</th>
-                  <th>Perfil</th>
-                  <th>Login em</th>
-                  <th>Último acesso</th>
-                  <th>Logout em</th>
-                  <th title="Tempo total com o sistema aberto">⏱ Logado</th>
-                  <th title="Tempo realmente interagindo (cliques, digitação, scroll)">🖱 Ativo</th>
-                  <th>Localização</th>
-                  <th>IP</th>
-                </tr>
-              </thead>
-              <tbody id="sessaoBody">
-                <tr><td colspan="8" style="text-align:center;padding:1rem;color:var(--muted)">Carregando…</td></tr>
-              </tbody>
-            </table>
+          <div id="sessaoAccordion" style="display:flex;flex-direction:column;gap:.5rem">
+            <div style="text-align:center;padding:1.5rem;color:var(--muted)">Carregando…</div>
           </div>
         </div>
       </div>
@@ -2152,55 +2140,131 @@
   }
 
   let _todasSessoes = [];
+  let _sessaoAberta = null; // nome da funcionária com accordion aberto
+
   async function carregarSessoes() {
+    const acc = document.getElementById('sessaoAccordion');
+    if (acc) acc.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--muted)">Carregando…</div>';
     try {
       const r = await fetch('/api/relatorio/sessoes');
       if (!r.ok) return;
       _todasSessoes = await r.json();
-
-      // Popula filtro de usuários
-      const sel = document.getElementById('filtroSessaoUsuario');
-      if (!sel) return;
-      const valorAtual = sel.value;
-      const nomes = [...new Set(_todasSessoes.map(s => s.usuario))].sort();
-      sel.innerHTML = '<option value="">Todos os usuários</option>' +
-        nomes.map(n => `<option value="${esc(n)}" ${n===valorAtual?'selected':''}>${esc(n)}</option>`).join('');
-
       renderTabelaSessoes();
     } catch {}
   }
 
-  function renderTabelaSessoes() {
-    const sel = document.getElementById('filtroSessaoUsuario');
-    const filtro = sel ? sel.value : '';
-    const lista = filtro ? _todasSessoes.filter(s => s.usuario === filtro) : _todasSessoes;
-    const tbody = document.getElementById('sessaoBody');
-    if (!tbody) return;
-
-    tbody.innerHTML = lista.length === 0
-      ? '<tr><td colspan="8" style="text-align:center;padding:1rem;color:var(--muted)">Nenhum registro.</td></tr>'
-      : lista.map(s => {
-          const ativaBadge = s.ativa
-            ? '<span style="background:#dcfce7;color:#166534;font-size:.7rem;font-weight:700;padding:2px 7px;border-radius:20px;margin-left:4px">● Online</span>'
-            : '';
-          return `<tr>
-            <td><strong>${esc(s.usuario)}</strong>${ativaBadge}</td>
-            <td><span class="badge badge-${esc(s.role)}">${s.role==='admin'?'Admin':'Funcionária'}</span></td>
-            <td style="white-space:nowrap">${esc(s.login_em)}</td>
-            <td style="white-space:nowrap">${esc(s.ultimo_ativo_em)}</td>
-            <td style="white-space:nowrap">${s.logout_em ? esc(s.logout_em) : '<span style="color:var(--muted);font-size:.78rem">—</span>'}</td>
-            <td style="color:var(--muted)">${esc(s.tempo_logado)}</td>
-            <td><strong style="color:var(--navy)">${esc(s.tempo_ativo)}</strong></td>
-            <td style="font-size:.82rem">${esc(s.localizacao)}</td>
-            <td style="font-size:.75rem;color:var(--muted)">${esc(s.ip)}</td>
-          </tr>`;
-        }).join('');
+  function _filtrarPeriodo(sessoes) {
+    const periodo = document.getElementById('filtroPeriodoSessao')?.value || 'mes';
+    if (periodo === 'tudo') return sessoes;
+    const agora = new Date();
+    const inicio = new Date(agora);
+    if (periodo === 'mes') {
+      inicio.setDate(1); inicio.setHours(0,0,0,0);
+    } else { // semana
+      const dia = inicio.getDay(); // 0=dom
+      inicio.setDate(agora.getDate() - (dia === 0 ? 6 : dia - 1));
+      inicio.setHours(0,0,0,0);
+    }
+    return sessoes.filter(s => {
+      if (!s.login_em || s.login_em === '—') return false;
+      const [d,m,yh] = s.login_em.split('/');
+      const [y,h] = (yh||'').split(' ');
+      const dt = new Date(`${y}-${m}-${d}T${h||'00:00'}:00`);
+      return dt >= inicio;
+    });
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    const sel = document.getElementById('filtroSessaoUsuario');
-    if (sel) sel.addEventListener('change', renderTabelaSessoes);
-  });
+  function renderTabelaSessoes() {
+    const acc = document.getElementById('sessaoAccordion');
+    if (!acc) return;
+    const lista = _filtrarPeriodo(_todasSessoes);
+
+    if (lista.length === 0) {
+      acc.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--muted)">Nenhum registro no período.</div>';
+      return;
+    }
+
+    // Agrupa por funcionária
+    const grupos = {};
+    lista.forEach(s => {
+      if (!grupos[s.usuario]) grupos[s.usuario] = { sessoes: [], totalAtivoS: 0, online: false };
+      grupos[s.usuario].sessoes.push(s);
+      grupos[s.usuario].totalAtivoS += s.tempo_ativo_s || 0;
+      if (s.ativa) grupos[s.usuario].online = true;
+    });
+
+    acc.innerHTML = Object.entries(grupos)
+      .sort(([a],[b]) => a.localeCompare(b))
+      .map(([nome, g]) => {
+        const nSessoes = g.sessoes.length;
+        const ultimaVez = g.sessoes[0]?.ultimo_ativo_em || '—';
+        const totalAtivo = _duracaoStr(g.totalAtivoS);
+        const onlineBadge = g.online
+          ? '<span style="background:#dcfce7;color:#166534;font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:20px;margin-left:6px;white-space:nowrap">● Online</span>'
+          : '';
+        const aberto = _sessaoAberta === nome;
+
+        const subTabela = aberto ? `
+          <div style="margin-top:.6rem;overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:.8rem">
+              <thead>
+                <tr style="background:#f1f5f9;color:var(--navy)">
+                  <th style="padding:.35rem .6rem;text-align:left;font-weight:700;white-space:nowrap">Login em</th>
+                  <th style="padding:.35rem .6rem;text-align:left;font-weight:700;white-space:nowrap">Último acesso</th>
+                  <th style="padding:.35rem .6rem;text-align:left;font-weight:700;white-space:nowrap">Logout em</th>
+                  <th style="padding:.35rem .6rem;text-align:left;font-weight:700;white-space:nowrap">⏱ Logado</th>
+                  <th style="padding:.35rem .6rem;text-align:left;font-weight:700;white-space:nowrap">🖱 Ativo</th>
+                  <th style="padding:.35rem .6rem;text-align:left;font-weight:700">Localização</th>
+                  <th style="padding:.35rem .6rem;text-align:left;font-weight:700">IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${g.sessoes.map(s => `
+                  <tr style="border-bottom:1px solid var(--border)">
+                    <td style="padding:.3rem .6rem;white-space:nowrap">${esc(s.login_em)}</td>
+                    <td style="padding:.3rem .6rem;white-space:nowrap">${esc(s.ultimo_ativo_em)}</td>
+                    <td style="padding:.3rem .6rem;white-space:nowrap;color:${s.logout_em?'inherit':'var(--muted)'}">${s.logout_em||'—'}</td>
+                    <td style="padding:.3rem .6rem;color:var(--muted)">${esc(s.tempo_logado)}</td>
+                    <td style="padding:.3rem .6rem"><strong style="color:var(--navy)">${esc(s.tempo_ativo)}</strong></td>
+                    <td style="padding:.3rem .6rem;font-size:.78rem">${esc(s.localizacao)}</td>
+                    <td style="padding:.3rem .6rem;font-size:.75rem;color:var(--muted)">${esc(s.ip)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>` : '';
+
+        return `
+          <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+            <div onclick="_toggleSessao('${esc(nome)}')"
+              style="display:flex;align-items:center;justify-content:space-between;padding:.65rem 1rem;background:${aberto?'#f0fdf4':'#fafbfd'};cursor:pointer;gap:.5rem;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:.5rem">
+                <strong style="font-size:.9rem">${esc(nome)}</strong>${onlineBadge}
+              </div>
+              <div style="display:flex;align-items:center;gap:1.2rem;font-size:.8rem;color:var(--muted)">
+                <span title="Sessões no período"><strong style="color:var(--navy)">${nSessoes}</strong> sess.</span>
+                <span title="Tempo ativo total">🖱 <strong style="color:var(--navy)">${totalAtivo}</strong></span>
+                <span title="Último acesso">Último: <strong style="color:var(--navy)">${ultimaVez}</strong></span>
+                <span style="font-size:.9rem;color:var(--navy)">${aberto?'▲':'▼'}</span>
+              </div>
+            </div>
+            ${subTabela}
+          </div>`;
+      }).join('');
+  }
+
+  function _toggleSessao(nome) {
+    _sessaoAberta = _sessaoAberta === nome ? null : nome;
+    renderTabelaSessoes();
+  }
+
+  // Converte segundos para string legível (lado cliente, espelha o backend)
+  function _duracaoStr(s) {
+    if (!s) return '0s';
+    if (s < 60) return s + 's';
+    if (s < 3600) return Math.floor(s/60) + 'min';
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+    return h + 'h' + (m ? ' ' + m + 'min' : '');
+  }
 
   // ═══════ INBOX / ATENDIMENTO ═══════
   let chatLeadAtivo = null;
