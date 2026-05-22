@@ -1609,7 +1609,7 @@ def _set_bancos_lista(db: Session, bancos: list):
     db.commit()
 
 @app.get("/api/bancos")
-async def listar_bancos(db: Session = Depends(get_db), usuario: Usuario = Depends(requer_login)):
+async def listar_bancos(db: Session = Depends(get_db), usuario: Usuario = Depends(obter_usuario_atual)):
     return _get_bancos_lista(db)
 
 @app.post("/api/bancos")
