@@ -345,6 +345,7 @@
     }
     .wsp-tick { color: var(--wsp-tick); font-size: .72rem; }
     .wsp-sender { font-size: .72rem; font-weight: 600; color: var(--wsp-header2); margin-bottom: 1px; }
+    .wsp-bubble-edited { opacity: .88; border-left: 2.5px solid #94a3b8; }
     .wsp-date-divider {
       text-align: center; margin: 8px 0;
     }
@@ -566,7 +567,12 @@
 
       <!-- ── FUNIL ── -->
       <div id="viewFunil">
-        <div class="stats-row" id="statsRow"></div>
+        <div style="display:flex;gap:.75rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:.5rem">
+          <div class="stats-row" id="statsRow" style="flex:1;min-width:0;margin-bottom:0"></div>
+          <div id="metaMesWidget" style="background:#fff;border:1.5px solid #e5e7eb;border-radius:12px;padding:.75rem 1rem;min-width:200px;max-width:250px;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.06)"></div>
+        </div>
+        <!-- Painel financeiro — somente admin -->
+        <div id="dashFinanceiroRow" style="display:none;gap:.65rem;margin-bottom:.6rem;flex-wrap:wrap"></div>
         <div class="kanban" id="kanbanBoard"></div>
       </div>
 
@@ -709,6 +715,14 @@
           </table>
         </div>
 
+        <!-- ── CONTRATOS FECHADOS NO MÊS ── -->
+        <div class="rel-card">
+          <h3>🏁 Contratos Fechados no Mês</h3>
+          <div id="relContratosMes">
+            <p style="font-size:.83rem;color:var(--muted);text-align:center;padding:1rem">Carregando…</p>
+          </div>
+        </div>
+
         <!-- ── RELATÓRIO POR PARCEIRO ── -->
         <div class="rel-card">
           <h3>🤝 Desempenho por Parceiro</h3>
@@ -785,6 +799,7 @@
           <h4>📋 Dados do Cliente</h4>
           <div class="data-grid" id="modalDados"></div>
         </div>
+        <div id="modalDealSection" style="display:none"></div>
         <div class="modal-section" style="flex:1;display:flex;flex-direction:column;gap:.5rem">
           <h4>📝 Observações</h4>
           <!-- Lista somente leitura -->
@@ -928,16 +943,79 @@
   function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
   // ═══════ REFRESH ═══════
+  let metaMesData = null;
+
   async function refresh() {
     const btn = document.getElementById('btnRefresh');
     btn.classList.add('spinning');
-    await Promise.all([carregarStats(), carregarLeads(), carregarInbox()]);
+    await Promise.all([carregarStats(), carregarLeads(), carregarInbox(), carregarMetaMes()]);
     btn.classList.remove('spinning');
     document.getElementById('lastUpdate').textContent = 'Atualizado ' + new Date().toLocaleTimeString('pt-BR');
   }
 
   async function carregarStats() {
     try { const r = await fetch('/api/stats'); statsData = await r.json(); renderStats(); } catch {}
+  }
+
+  async function carregarMetaMes() {
+    try {
+      const r = await fetch('/api/relatorio/contratos-mes');
+      if (r.ok) { metaMesData = await r.json(); renderMetaMes(); }
+    } catch {}
+  }
+
+  function _fmtBRL(v) {
+    const n = parseFloat(String(v).replace(',','.'));
+    if (isNaN(n)) return '—';
+    return 'R$ ' + n.toLocaleString('pt-BR', {minimumFractionDigits:2,maximumFractionDigits:2});
+  }
+
+  function renderMetaMes() {
+    const el = document.getElementById('metaMesWidget');
+    if (!el || !metaMesData) return;
+    const m = metaMesData;
+    const pct = Math.min(m.percentual || 0, 100);
+    const corBarra = pct >= 100 ? '#065f46' : pct >= 60 ? '#f97316' : '#3b82f6';
+    const mesLabel = (m.mes || '').replace(/^\w/, c => c.toUpperCase());
+
+    el.innerHTML = `
+      <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin-bottom:.25rem">
+        Meta ${mesLabel}
+      </div>
+      <div style="display:flex;align-items:baseline;gap:.35rem">
+        <span style="font-size:1.6rem;font-weight:800;color:var(--navy);line-height:1">${m.total}</span>
+        <span style="font-size:.8rem;color:var(--muted)">/ ${m.meta} contratos</span>
+      </div>
+      <div style="margin:.45rem 0 .1rem;background:#e5e7eb;border-radius:99px;height:8px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${corBarra};border-radius:99px;transition:width .6s ease"></div>
+      </div>
+      <div style="font-size:.7rem;color:${corBarra};font-weight:700">${pct}% da meta atingida</div>
+    `;
+
+    // ── Painel financeiro (somente admin) ────────────────────────────────
+    const painelRow = document.getElementById('dashFinanceiroRow');
+    if (!painelRow) return;
+    if (m.total_valor === undefined) { painelRow.style.display = 'none'; return; }
+
+    const mesAtual = new Date().toLocaleString('pt-BR', {month:'long', year:'numeric'});
+
+    const card = (icon, label, valor, corFundo, corTexto, corBorda) => `
+      <div style="flex:1;min-width:160px;background:${corFundo};border:1.5px solid ${corBorda};border-radius:12px;padding:.75rem 1rem;box-shadow:0 1px 4px rgba(0,0,0,.05)">
+        <div style="font-size:.67rem;text-transform:uppercase;letter-spacing:.06em;color:${corTexto};opacity:.75;font-weight:700;margin-bottom:.2rem">${icon} ${label}</div>
+        <div style="font-size:1.35rem;font-weight:800;color:${corTexto};line-height:1.1">${valor}</div>
+        <div style="font-size:.67rem;color:${corTexto};opacity:.6;margin-top:.15rem">${mesAtual}</div>
+      </div>`;
+
+    const ticketMedio = m.total > 0 ? _fmtBRL(m.total_valor / m.total) : '—';
+    const comissaoMedia = m.total > 0 ? _fmtBRL(m.total_comissao / m.total) : '—';
+
+    painelRow.style.display = 'flex';
+    painelRow.innerHTML =
+      card('📦', 'Volume Financiado',  _fmtBRL(m.total_valor),    '#f0fdf4', '#065f46', '#bbf7d0') +
+      card('🏆', 'Comissão Total',     _fmtBRL(m.total_comissao), '#fefce8', '#854d0e', '#fde68a') +
+      card('🎫', 'Ticket Médio',       ticketMedio,               '#eff6ff', '#1e40af', '#bfdbfe') +
+      card('💡', 'Comissão Média',     comissaoMedia,             '#fdf4ff', '#7e22ce', '#e9d5ff') +
+      card('🏁', 'Contratos no Mês',   `${m.total} / ${m.meta}`,  '#f8fafc', '#1e293b', '#e2e8f0');
   }
 
   async function carregarLeads() {
@@ -1076,10 +1154,16 @@
   }
 
   async function moverLead(id, novoStatus, confirmar = true) {
+    // Fechamento abre formulário de dados do contrato
+    if (novoStatus === 'fechado') {
+      const lead = allLeads.find(l => l.id === id);
+      abrirModalFecharContrato(id, lead || {});
+      return;
+    }
     if (confirmar) {
       const labels = {
         assumido:'Assumir este lead?', proposta_enviada:'Marcar proposta como enviada?',
-        fechado:'Marcar como fechado?', perdido:'Marcar como perdido?',
+        perdido:'Marcar como perdido?',
         qualificado:'Mover para Qualificado?', em_atendimento:'Devolver para Atendimento IA?'
       };
       if (!confirm(labels[novoStatus] || 'Confirmar?')) return;
@@ -1329,9 +1413,16 @@
   }
 
   async function moverLeadModal(id, novoStatus) {
+    // Fechamento abre formulário de dados do contrato
+    if (novoStatus === 'fechado') {
+      const lead = allLeads.find(l => l.id === id) || window._modalLeadData || {};
+      closeModal();
+      abrirModalFecharContrato(id, lead);
+      return;
+    }
     const labels = {
       assumido:'Assumir este lead?', proposta_enviada:'Marcar proposta como enviada?',
-      fechado:'Marcar como fechado?', perdido:'Marcar como perdido?'
+      perdido:'Marcar como perdido?'
     };
     if (!confirm(labels[novoStatus] || 'Confirmar?')) return;
     const r = await fetch(`/api/leads/${id}/mover`, {
@@ -1446,7 +1537,10 @@
     document.getElementById('btnSalvarNovoLead').disabled = false;
     document.getElementById('btnSalvarNovoLead').textContent = 'Criar Lead';
 
-    // Carrega parceiros para o select
+    // Limpa autocomplete de parceiro
+    _nlParceiroClear();
+
+    // Carrega cache de parceiros
     await _carregarParceirosSel();
     onChangeOrigem();
 
@@ -1475,19 +1569,61 @@
     setTimeout(() => document.getElementById('nlNome').focus(), 80);
   }
 
+  // ─── Autocomplete de parceiro ─────────────────────────────────────────────
+  function _nlParceiroFiltrar() {
+    const q = (document.getElementById('nlParceiroInput').value || '').toLowerCase().trim();
+    const dd = document.getElementById('nlParceiroDropdown');
+    const lista = q
+      ? _parceirosCache.filter(p => p.nome.toLowerCase().includes(q))
+      : _parceirosCache;
+
+    if (!lista.length) {
+      dd.innerHTML = '<div style="padding:.6rem 1rem;font-size:.83rem;color:var(--muted)">Nenhum parceiro encontrado</div>';
+    } else {
+      dd.innerHTML = lista.map(p => `
+        <div onmousedown="_nlParceiroSelecionar(${p.id}, '${esc(p.nome)}')"
+          style="padding:.55rem 1rem;font-size:.88rem;cursor:pointer;border-bottom:1px solid #f3f4f6;transition:background .1s"
+          onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">
+          <strong>${escHtml(p.nome)}</strong>
+          ${p.telefone ? `<span style="font-size:.75rem;color:var(--muted);margin-left:6px">${escHtml(p.telefone)}</span>` : ''}
+        </div>`).join('');
+    }
+    dd.style.display = '';
+  }
+
+  function _nlParceiroSelecionar(id, nome) {
+    document.getElementById('nlParceiroSel').value   = id;
+    document.getElementById('nlParceiroInput').value = nome;
+    document.getElementById('nlParceiroInput').style.borderColor = '#22c55e';
+    document.getElementById('nlParceiroDropdown').style.display  = 'none';
+    // Chip
+    const chip = document.getElementById('nlParceiroChip');
+    document.getElementById('nlParceiroChipNome').textContent = nome;
+    chip.style.display = 'inline-flex';
+  }
+
+  function _nlParceiroClear() {
+    document.getElementById('nlParceiroSel').value   = '';
+    document.getElementById('nlParceiroInput').value = '';
+    document.getElementById('nlParceiroInput').style.borderColor = 'var(--border)';
+    document.getElementById('nlParceiroChip').style.display = 'none';
+    document.getElementById('nlParceiroDropdown').style.display = 'none';
+    document.getElementById('nlParceiroInput').focus();
+  }
+
+  function _nlParceiroFechar() {
+    document.getElementById('nlParceiroDropdown').style.display = 'none';
+    // Se digitou algo mas não selecionou → mantém o ID anterior ou apaga
+    const id = document.getElementById('nlParceiroSel').value;
+    if (!id) document.getElementById('nlParceiroInput').value = '';
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   async function _carregarParceirosSel() {
     try {
       const r = await fetch('/api/parceiros');
       if (r.ok) {
         _parceirosCache = await r.json();
-        const sel = document.getElementById('nlParceiroSel');
-        sel.innerHTML = '<option value="">Selecione um parceiro…</option>';
-        _parceirosCache.forEach(p => {
-          const opt = document.createElement('option');
-          opt.value = p.id;
-          opt.textContent = p.nome;
-          sel.appendChild(opt);
-        });
       }
     } catch {}
   }
@@ -1736,10 +1872,10 @@
       mostrarParceiroMsg('✓ Parceiro salvo!', true);
       await carregarParceiros();
 
-      // Se veio do modal de novo lead, recarrega select e seleciona o novo parceiro
+      // Se veio do modal de novo lead, recarrega cache e seleciona o novo parceiro no autocomplete
       if (_parceiroRetornarNovoLead) {
         await _carregarParceirosSel();
-        document.getElementById('nlParceiroSel').value = data.id;
+        _nlParceiroSelecionar(data.id, data.nome);
         setTimeout(() => { fecharModalParceiro(); }, 800);
       } else {
         setTimeout(fecharModalParceiro, 800);
@@ -1853,6 +1989,75 @@
     } catch {}
     await carregarRelatorioParceiros();
     await carregarSessoes();
+    await carregarRelatorioContratosMes();
+  }
+
+  async function carregarRelatorioContratosMes() {
+    const el = document.getElementById('relContratosMes');
+    if (!el) return;
+    try {
+      const r = await fetch('/api/relatorio/contratos-mes');
+      if (!r.ok) return;
+      const d = await r.json();
+      const pct = Math.min(d.percentual || 0, 100);
+      const corBarra = pct >= 100 ? '#065f46' : pct >= 60 ? '#f97316' : '#3b82f6';
+      const mesLabel = (d.mes || '').replace(/^\w/, c => c.toUpperCase());
+
+      const resumoHtml = `
+        <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;margin-bottom:1rem">
+          <div>
+            <div style="font-size:.7rem;text-transform:uppercase;color:var(--muted);font-weight:700">Contratos — ${mesLabel}</div>
+            <div style="font-size:2rem;font-weight:800;color:var(--navy);line-height:1.1">${d.total} <span style="font-size:.9rem;font-weight:500;color:var(--muted)">/ ${d.meta}</span></div>
+          </div>
+          <div style="flex:1;min-width:160px">
+            <div style="background:#e5e7eb;border-radius:99px;height:10px;overflow:hidden;margin-bottom:.3rem">
+              <div style="height:100%;width:${pct}%;background:${corBarra};border-radius:99px"></div>
+            </div>
+            <div style="font-size:.75rem;color:${corBarra};font-weight:700">${pct}% da meta atingida</div>
+          </div>
+          ${d.total_valor !== undefined ? `
+          <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.4rem .9rem;text-align:center">
+              <div style="font-size:.68rem;color:#166534;font-weight:600">VOLUME TOTAL</div>
+              <div style="font-size:1rem;font-weight:800;color:#065f46">${_fmtBRL(d.total_valor)}</div>
+            </div>
+            <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:.4rem .9rem;text-align:center">
+              <div style="font-size:.68rem;color:#92400e;font-weight:600">COMISSÃO TOTAL</div>
+              <div style="font-size:1rem;font-weight:800;color:#92400e">${_fmtBRL(d.total_comissao)}</div>
+            </div>
+          </div>` : ''}
+        </div>`;
+
+      let tabelaHtml = '';
+      if (d.contratos && d.contratos.length) {
+        tabelaHtml = `
+          <div style="overflow-x:auto">
+            <table class="rel-table">
+              <thead><tr>
+                <th>Data</th><th>Cliente</th><th>Veículo</th><th>Retorno</th>
+                <th>Banco</th><th>Responsável</th>
+                <th>Valor Financiado</th><th>Comissão</th>
+              </tr></thead>
+              <tbody>
+                ${d.contratos.map(c => `<tr>
+                  <td>${esc(c.deal_data)}</td>
+                  <td><strong>${esc(c.nome)}</strong></td>
+                  <td>${esc(c.deal_veiculo)}</td>
+                  <td><span style="font-weight:700">${esc(c.deal_retorno)}</span></td>
+                  <td>${esc(c.deal_banco)}</td>
+                  <td>${esc(c.responsavel)}</td>
+                  <td style="font-weight:700;color:#065f46">${c.deal_valor !== '—' ? 'R$ '+esc(c.deal_valor) : '—'}</td>
+                  <td style="font-weight:700;color:#92400e">${c.deal_comissao !== '—' ? 'R$ '+esc(c.deal_comissao) : '—'}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`;
+      } else {
+        tabelaHtml = '<p style="font-size:.83rem;color:var(--muted);text-align:center;padding:1rem">Nenhum contrato fechado este mês ainda.</p>';
+      }
+
+      el.innerHTML = resumoHtml + tabelaHtml;
+    } catch {}
   }
 
   async function carregarRelatorioParceiros() {
@@ -2132,8 +2337,18 @@
     mensagem_finalizacao:  { titulo: '🤝 Mensagem de Finalização', subtitulo: 'Enviada após coletar todos os dados' },
     regras_financiamento:  { titulo: '🚗 Regras — Financiamento', subtitulo: 'Instruções para leads de financiamento' },
     regras_refinanciamento:{ titulo: '🔑 Regras — Refinanciamento', subtitulo: 'Instruções para leads de refinanciamento' },
+    meta_contratos:        { titulo: '🎯 Meta de Contratos (mês)', subtitulo: 'Número de contratos fechados a atingir por mês' },
+    followup_horas:        { titulo: '⏱ Follow-up — Aguardar (horas)', subtitulo: 'Horas de silêncio para disparar o 1º follow-up (padrão: 4)' },
+    mensagem_followup:     { titulo: '💬 Follow-up 1 — 1ª tentativa', subtitulo: 'Enviada após X horas sem resposta. Use {nome} para personalizar.' },
+    mensagem_followup_2:   { titulo: '💬 Follow-up 2 — 2ª tentativa', subtitulo: 'Enviada 24h após o 1º follow-up sem resposta. Use {nome} para personalizar.' },
+    mensagem_followup_3:   { titulo: '💬 Follow-up 3 — Última tentativa', subtitulo: 'Enviada 48h após o 2º. Após isso o lead é marcado automaticamente como Perdido.' },
   };
-  const configOrdem = ['mensagem_boas_vindas','mensagem_finalizacao','regras_financiamento','regras_refinanciamento'];
+  const configOrdem = [
+    'mensagem_boas_vindas','mensagem_finalizacao',
+    'regras_financiamento','regras_refinanciamento',
+    'meta_contratos',
+    'followup_horas','mensagem_followup','mensagem_followup_2','mensagem_followup_3',
+  ];
 
   function renderConfiguracoes() {
     const map = {};
@@ -2183,9 +2398,16 @@
     mensagens.forEach(m => {
       const isCliente = m.role === 'user';
       const dir = isCliente ? 'in' : 'out';   // cliente=esquerda, bot=direita
-      const matchFunc = m.conteudo.match(/^\[([^\]]+)\]:\s*/);
-      const conteudo = escHtml((matchFunc ? m.conteudo.replace(matchFunc[0], '') : m.conteudo).trim());
+
+      // Detecta mensagem editada (prefixo ✏️)
+      const isEditada = m.conteudo.startsWith('✏️ ');
+      const textoBase = isEditada ? m.conteudo.slice(3) : m.conteudo;
+
+      // Detecta remetente humano: [Nome]: texto
+      const matchFunc = textoBase.match(/^\[([^\]]+)\]:\s*/);
+      const textoLimpo = (matchFunc ? textoBase.replace(matchFunc[0], '') : textoBase).trim();
       const remetente = matchFunc ? matchFunc[1] : null;
+
       const hora = m.horario || '';
       // Separador de data
       const dataStr = hora ? hora.split(' ')[0] : null;
@@ -2193,13 +2415,24 @@
         ultimaData = dataStr;
         html += `<div class="wsp-date-divider"><span>${dataStr}</span></div>`;
       }
-      // Tick: ✓✓ para bot, nada para cliente
+
+      // Tick: ✓✓ para bot/atendente, nada para cliente
       const tick = !isCliente ? `<span class="wsp-tick">✓✓</span>` : '';
-      const remetenteHtml = remetente ? `<div class="wsp-sender">👤 ${escHtml(remetente)}</div>` : '';
+      const remetenteHtml = remetente
+        ? `<div class="wsp-sender">👤 ${escHtml(remetente)}</div>`
+        : '';
+
+      // Badge de editado
+      const editadoHtml = isEditada
+        ? `<span style="font-size:.68rem;color:#888;font-style:italic;margin-left:4px">✏️ editado</span>`
+        : '';
+
+      const conteudoHtml = escHtml(textoLimpo);
+
       html += `<div class="wsp-row ${dir}">
-        <div class="wsp-bubble">
+        <div class="wsp-bubble${isEditada ? ' wsp-bubble-edited' : ''}">
           ${remetenteHtml}
-          ${conteudo}
+          <span>${conteudoHtml}</span>${editadoHtml}
           <div class="wsp-meta">${hora ? hora.split(' ')[1]||hora : ''} ${tick}</div>
         </div>
       </div>`;
@@ -2290,6 +2523,42 @@
       ${lead.assumido_em ? `<div class="data-item"><label>Assumido em</label><span>${escHtml(lead.assumido_em)}</span></div>` : ''}
       ${btnEditar}
     `;
+
+    // ── Bloco contrato fechado (abaixo dos dados) ────────────────────────
+    const elDeal = document.getElementById('modalDealSection');
+    if (elDeal) {
+      if (lead.status === 'fechado' && lead.deal_data) {
+        const isAdm = currentUser?.role === 'admin';
+        const financeiroHtml = isAdm ? `
+          <div class="data-item"><label>Valor Financiado</label><span style="font-weight:700;color:#065f46">${lead.deal_valor ? 'R$ '+escHtml(lead.deal_valor) : '—'}</span></div>
+          <div class="data-item"><label>Comissão</label><span style="font-weight:700;color:#92400e">${lead.deal_comissao ? 'R$ '+escHtml(lead.deal_comissao) : '—'}</span></div>
+        ` : '';
+        elDeal.innerHTML = `
+          <div class="modal-section" style="margin-top:.75rem">
+            <h4>🏁 Contrato Fechado</h4>
+            <div class="data-grid">
+              <div class="data-item"><label>Data</label><span>${escHtml(lead.deal_data||'—')}</span></div>
+              <div class="data-item"><label>Retorno</label><span style="font-weight:700">${escHtml(lead.deal_retorno||'—')}</span></div>
+              <div class="data-item full"><label>Veículo</label><span>${escHtml(lead.deal_veiculo||'—')}</span></div>
+              <div class="data-item"><label>Banco</label><span>${escHtml(lead.deal_banco||'—')}</span></div>
+              <div class="data-item"><label>Conta PG</label><span>${escHtml(lead.deal_conta_pg||'—')}</span></div>
+              ${financeiroHtml}
+            </div>
+            <button class="btn btn-sm btn-outline" onclick="abrirModalFecharContrato(${lead.id}, window._modalLeadData)" style="margin-top:.5rem;width:100%">✏️ Editar dados do contrato</button>
+          </div>`;
+        elDeal.style.display = '';
+      } else if (lead.status === 'fechado') {
+        elDeal.innerHTML = `
+          <div class="modal-section" style="margin-top:.75rem">
+            <h4>🏁 Contrato Fechado</h4>
+            <p style="font-size:.8rem;color:var(--muted);margin:.3rem 0 .6rem">Dados do contrato ainda não preenchidos.</p>
+            <button class="btn btn-sm" style="background:#065f46;color:#fff;width:100%" onclick="abrirModalFecharContrato(${lead.id}, window._modalLeadData)">📝 Preencher dados</button>
+          </div>`;
+        elDeal.style.display = '';
+      } else {
+        elDeal.style.display = 'none';
+      }
+    }
   }
 
   async function salvarDadosLead() {
@@ -2731,11 +3000,29 @@
         <!-- Sub-opção: Parceiro -->
         <div id="nlParceiroBox" style="grid-column:1/-1;display:none">
           <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Qual parceiro?</label>
-          <div style="display:flex;gap:.5rem;align-items:center">
-            <select id="nlParceiroSel" style="flex:1;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#fff">
-              <option value="">Selecione um parceiro…</option>
-            </select>
-            <button type="button" onclick="abrirModalParceiro(null, true)" class="btn btn-outline btn-sm" style="white-space:nowrap">＋ Cadastrar</button>
+          <div style="display:flex;gap:.5rem;align-items:flex-start">
+            <!-- Campo de busca com autocomplete -->
+            <div style="flex:1;position:relative">
+              <input id="nlParceiroInput" type="text" placeholder="Digite o nome do parceiro…" autocomplete="off"
+                oninput="_nlParceiroFiltrar()"
+                onfocus="_nlParceiroFiltrar()"
+                onblur="setTimeout(_nlParceiroFechar, 180)"
+                style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;box-sizing:border-box;outline:none"
+                onfocusin="this.style.borderColor='var(--navy)'"
+              >
+              <!-- Input oculto que guarda o ID selecionado -->
+              <input type="hidden" id="nlParceiroSel">
+              <!-- Dropdown de sugestões -->
+              <div id="nlParceiroDropdown"
+                style="display:none;position:absolute;top:calc(100% + 3px);left:0;right:0;background:#fff;border:1.5px solid var(--border);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.12);z-index:9999;max-height:200px;overflow-y:auto">
+              </div>
+            </div>
+            <button type="button" onclick="abrirModalParceiro(null, true)" class="btn btn-outline btn-sm" style="white-space:nowrap;margin-top:1px">＋ Cadastrar</button>
+          </div>
+          <!-- Chip do parceiro selecionado -->
+          <div id="nlParceiroChip" style="display:none;margin-top:.4rem;display:inline-flex;align-items:center;gap:6px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:20px;padding:3px 10px 3px 8px;font-size:.8rem;font-weight:600;color:#1e40af">
+            <span id="nlParceiroChipNome"></span>
+            <button type="button" onclick="_nlParceiroClear()" style="background:none;border:none;cursor:pointer;color:#6b7280;font-size:.9rem;line-height:1;padding:0">✕</button>
           </div>
         </div>
 
@@ -3031,6 +3318,178 @@
     msg.style.border      = `1px solid ${sucesso ? '#bbf7d0' : '#fecaca'}`;
   }
 
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MODAL: Fechar Contrato
+════════════════════════════════════════════════════════════════ -->
+<div class="overlay" id="modalFecharContrato" onclick="if(event.target===this)fecharModalContratoDeal()">
+  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:560px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">
+    <!-- Header -->
+    <div style="background:#065f46;color:#fff;padding:1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div>
+        <div style="font-weight:700;font-size:1rem">🏁 Fechar Contrato</div>
+        <div style="font-size:.75rem;opacity:.7;margin-top:2px" id="fcSubtitle">Preencha os dados do negócio</div>
+      </div>
+      <button onclick="fecharModalContratoDeal()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:.3rem .7rem;cursor:pointer;font-size:1.1rem">✕</button>
+    </div>
+    <!-- Body -->
+    <div style="padding:1.25rem;overflow-y:auto;display:flex;flex-direction:column;gap:.85rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+        <div>
+          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Data do Contrato *</label>
+          <input type="date" id="fc_data" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
+            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+        </div>
+        <div>
+          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Retorno</label>
+          <select id="fc_retorno" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box;background:#fff"
+            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+            <option value="">Selecionar</option>
+            <option>R0</option><option>R1</option><option>R2</option>
+            <option>R3</option><option>R4</option><option>R5</option><option>R6</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Veículo</label>
+        <input type="text" id="fc_veiculo" placeholder="Ex: Corolla 2023" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
+          onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+        <div>
+          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Banco</label>
+          <select id="fc_banco" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box;background:#fff"
+            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+            <option value="">Selecionar</option>
+            <option>BV</option><option>STD</option><option>SAFRA</option>
+            <option>PAN</option><option>C6</option><option>DIGI</option>
+            <option>ITAU</option><option>VOLKS</option><option>DAY</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Conta Pagamento</label>
+          <select id="fc_conta_pg" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box;background:#fff"
+            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+            <option value="">Selecionar</option>
+            <option>NUBANK</option><option>ITAU</option>
+            <option>STD</option><option>SANTANDER</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+        <div>
+          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Valor Financiado (R$)</label>
+          <input type="text" id="fc_valor" placeholder="Ex: 44699,00" inputmode="decimal" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
+            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+        </div>
+        <div>
+          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Comissão (R$)</label>
+          <input type="text" id="fc_comissao" placeholder="Ex: 3699,00" inputmode="decimal" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
+            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+        </div>
+      </div>
+      <div id="fc_erro" style="font-size:.8rem;color:#dc2626;display:none;padding:.4rem .75rem;background:#fee2e2;border-radius:7px;border:1px solid #fecaca"></div>
+    </div>
+    <!-- Footer -->
+    <div style="padding:.9rem 1.25rem;border-top:1px solid #e5e7eb;display:flex;gap:.6rem;flex-shrink:0;background:#f9fafb">
+      <button onclick="fecharModalContratoDeal()" style="flex:1;border:1.5px solid #d1d5db;background:#fff;border-radius:8px;padding:.6rem;font-size:.87rem;cursor:pointer;font-weight:600;color:#374151">Cancelar</button>
+      <button onclick="submitFecharContrato()" id="fc_btn_submit"
+        style="flex:2;background:#065f46;color:#fff;border:none;border-radius:8px;padding:.6rem;font-size:.87rem;font-weight:700;cursor:pointer">
+        🏁 Confirmar Fechamento
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ═══ FECHAR CONTRATO — lógica do modal ═══
+  let _fcLeadId = null;
+  let _fcPendingStatus = 'fechado';
+
+  function abrirModalFecharContrato(leadId, leadData) {
+    _fcLeadId = leadId;
+    document.getElementById('fcSubtitle').textContent =
+      leadData?.nome && leadData.nome !== '—' ? `Cliente: ${leadData.nome}` : 'Preencha os dados do negócio';
+
+    // Pré-preenche veículo
+    const veiculo = leadData?.deal_veiculo || leadData?.carro_interesse || '';
+    document.getElementById('fc_veiculo').value = veiculo !== '—' ? veiculo : '';
+
+    // Pré-preenche data com hoje
+    const hoje = new Date();
+    document.getElementById('fc_data').value =
+      hoje.toISOString().split('T')[0];
+
+    // Limpa demais campos
+    ['fc_retorno','fc_banco','fc_conta_pg'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = leadData?.[id.replace('fc_','')] || '';
+    });
+    document.getElementById('fc_valor').value    = leadData?.deal_valor    || '';
+    document.getElementById('fc_comissao').value = leadData?.deal_comissao || '';
+    document.getElementById('fc_retorno').value  = leadData?.deal_retorno  || '';
+    document.getElementById('fc_banco').value    = leadData?.deal_banco    || '';
+    document.getElementById('fc_conta_pg').value = leadData?.deal_conta_pg || '';
+    document.getElementById('fc_erro').style.display = 'none';
+
+    document.getElementById('modalFecharContrato').classList.add('open');
+  }
+
+  function fecharModalContratoDeal() {
+    document.getElementById('modalFecharContrato').classList.remove('open');
+    _fcLeadId = null;
+  }
+
+  async function submitFecharContrato() {
+    if (!_fcLeadId) return;
+    const btn = document.getElementById('fc_btn_submit');
+    const erro = document.getElementById('fc_erro');
+    erro.style.display = 'none';
+
+    const data = document.getElementById('fc_data').value;
+    if (!data) {
+      erro.textContent = 'A data do contrato é obrigatória.';
+      erro.style.display = 'block';
+      return;
+    }
+
+    // Converte data de YYYY-MM-DD para DD/MM/YYYY
+    const partes = data.split('-');
+    const dataFmt = partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : data;
+
+    btn.disabled = true;
+    btn.textContent = 'Salvando…';
+    try {
+      const r = await fetch(`/api/leads/${_fcLeadId}/fechar-contrato`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deal_data:     dataFmt,
+          deal_veiculo:  document.getElementById('fc_veiculo').value.trim(),
+          deal_retorno:  document.getElementById('fc_retorno').value,
+          deal_valor:    document.getElementById('fc_valor').value.trim(),
+          deal_comissao: document.getElementById('fc_comissao').value.trim(),
+          deal_banco:    document.getElementById('fc_banco').value,
+          deal_conta_pg: document.getElementById('fc_conta_pg').value,
+        })
+      });
+      if (r.ok) {
+        fecharModalContratoDeal();
+        await refresh();
+      } else {
+        const d = await r.json();
+        erro.textContent = d.detail || 'Erro ao salvar.';
+        erro.style.display = 'block';
+      }
+    } catch {
+      erro.textContent = 'Erro de conexão. Tente novamente.';
+      erro.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🏁 Confirmar Fechamento';
+    }
+  }
 </script>
 
 </body>

@@ -61,18 +61,26 @@ async def _enviar_followups():
             return
 
         # ── 2. Carrega configurações ──────────────────────────────────────────
-        config_horas = db.query(Configuracao).filter(Configuracao.chave == "followup_horas").first()
-        horas = int(config_horas.valor) if config_horas and config_horas.valor.isdigit() else 4
-        limite = datetime.utcnow() - timedelta(hours=horas)
+        def _cfg(chave, padrao=""):
+            c = db.query(Configuracao).filter(Configuracao.chave == chave).first()
+            return c.valor if c else padrao
 
-        config_msg = db.query(Configuracao).filter(Configuracao.chave == "mensagem_followup").first()
-        texto_padrao = (
-            "Oi! 😊 Vi que nossa conversa ficou parada...\n"
-            "Quando quiser continuar, estou aqui! Gostaria de retomar?"
-        )
-        texto_base = config_msg.valor if config_msg else texto_padrao
+        horas = int(h) if (h := _cfg("followup_horas", "4")).isdigit() else 4
+        limite_1 = datetime.utcnow() - timedelta(hours=horas)   # 1º: X h sem resposta
 
-        # ── 3. Leads ainda no fluxo do bot (dados incompletos) ───────────────
+        msgs = {
+            0: _cfg("mensagem_followup",
+                    "Oi! 😊 Vi que nossa conversa ficou parada...\n"
+                    "Quando quiser continuar, estou aqui! Gostaria de retomar?"),
+            1: _cfg("mensagem_followup_2",
+                    "Olá! 👋 Passando para saber se ainda tem interesse em financiar ou refinanciar seu veículo.\n"
+                    "Estamos com ótimas condições! Ficou alguma dúvida?"),
+            2: _cfg("mensagem_followup_3",
+                    "Oi! Última tentativa de contato por aqui. 😊\n"
+                    "Se mudar de ideia, pode nos chamar a qualquer momento! Ficamos à disposição. 🤝"),
+        }
+
+        # ── 3. Leads ainda no fluxo do bot ───────────────────────────────────
         leads = db.query(Lead).filter(
             Lead.estado_conversa.in_([e.value for e in _ESTADOS_BOT_ATIVO]),
             Lead.status.in_([
@@ -99,31 +107,60 @@ async def _enviar_followups():
                     .first()
                 )
 
-                # Nunca mandou mensagem, ou mandou recentemente → pula
-                if not ultima_user or ultima_user.criado_em > limite:
+                if not ultima_user:
                     continue
 
-                # Já enviou follow-up depois da última mensagem do usuário → pula
-                if lead.followup_em and lead.followup_em > ultima_user.criado_em:
-                    continue
+                tentativa = lead.followup_tentativa or 0
+                agora = datetime.utcnow()
 
-                # Personaliza com nome se disponível
+                # Se o cliente respondeu após o último follow-up → zera a sequência
+                if tentativa > 0 and lead.followup_em and ultima_user.criado_em > lead.followup_em:
+                    lead.followup_tentativa = 0
+                    db.commit()
+                    tentativa = 0
+
+                # ── Decide se é hora de disparar ─────────────────────────────
+                if tentativa == 0:
+                    # 1º: cliente ficou X horas sem responder
+                    if ultima_user.criado_em > limite_1:
+                        continue   # ainda recente
+                elif tentativa == 1:
+                    # 2º: 24h após o 1º sem resposta
+                    if not lead.followup_em or (agora - lead.followup_em) < timedelta(hours=24):
+                        continue
+                elif tentativa == 2:
+                    # 3º: 48h após o 2º sem resposta
+                    if not lead.followup_em or (agora - lead.followup_em) < timedelta(hours=48):
+                        continue
+                else:
+                    continue   # já esgotou as 3 tentativas
+
+                # ── Monta e envia ─────────────────────────────────────────────
                 nome = f" {lead.nome}" if lead.nome else ""
+                texto_base = msgs[tentativa]
                 texto = texto_base.replace("{nome}", nome.strip()).replace("Oi!", f"Oi{nome}!")
 
                 await enviar_zapi(lead.telefone, texto)
                 _salvar_msg_webhook(db, lead.telefone, texto, role="assistant")
-                lead.followup_em = datetime.utcnow()
+
+                lead.followup_em = agora
+                lead.followup_tentativa = tentativa + 1
+
+                # 3º follow-up enviado → marca como Perdido automaticamente
+                if tentativa == 2:
+                    lead.status = StatusLeadEnum.perdido
+                    print(f"🔴 Lead #{lead.id} marcado como Perdido após 3 follow-ups sem resposta")
+
                 db.commit()
                 enviados += 1
-                print(f"📨 Follow-up enviado para {lead.telefone} (lead #{lead.id})")
+                print(f"📨 Follow-up #{tentativa + 1} enviado para {lead.telefone} (lead #{lead.id})")
 
             except Exception as e_lead:
                 print(f"⚠️ Erro ao enviar follow-up para lead #{lead.id}: {e_lead}")
-                db.rollback()   # garante que o próximo lead começa limpo
+                db.rollback()
 
         if enviados:
-            print(f"✅ Follow-ups enviados: {enviados}")
+            print(f"✅ Follow-ups enviados nesta rodada: {enviados}")
         else:
             print("ℹ️ Nenhum lead precisava de follow-up agora")
 
@@ -216,6 +253,14 @@ async def startup():
         ("leads",     "parceiro_id",             "INTEGER"),
         ("parceiros", "telefones_extras",         "TEXT"),
         ("sessoes_usuario", "tempo_ativo_s",      "INTEGER DEFAULT 0"),
+        ("leads",           "followup_tentativa", "INTEGER DEFAULT 0"),
+        ("leads",           "deal_data",          "VARCHAR(10)"),
+        ("leads",           "deal_veiculo",       "VARCHAR(200)"),
+        ("leads",           "deal_retorno",       "VARCHAR(5)"),
+        ("leads",           "deal_valor",         "VARCHAR(20)"),
+        ("leads",           "deal_comissao",      "VARCHAR(20)"),
+        ("leads",           "deal_banco",         "VARCHAR(30)"),
+        ("leads",           "deal_conta_pg",      "VARCHAR(50)"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -443,15 +488,55 @@ async def _reativar_lead_perdido(lead, texto: str, db, enviar_fn) -> bool:
         return False   # deixa o fluxo normal do bot processar
 
 
+def _extrair_texto_zapi(body: dict) -> str:
+    """Extrai o texto de mensagem de qualquer tipo de payload Z-API."""
+    return (
+        (body.get("text") or {}).get("message", "")
+        or (body.get("extendedTextMessage") or {}).get("text", "")
+        or (body.get("listResponseMessage") or {}).get("title", "")
+        or (body.get("buttonsResponseMessage") or {}).get("selectedDisplayText", "")
+        or body.get("body", "")
+        or ""
+    ).strip()
+
+
 @app.post("/webhook/zapi")
 async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
     body = await request.json()
     try:
-        if body.get("fromMe"):
-            return JSONResponse({"status": "ignored"})
         telefone = body.get("phone", "").replace("+", "").replace(" ", "")
-        texto = body.get("text", {}).get("message", "").strip()
-        if not telefone or not texto:
+        if not telefone:
+            return JSONResponse({"status": "ignored"})
+
+        # ── Mensagem editada pelo cliente ou pelo atendente ──────────────────
+        if body.get("isEdit") or body.get("editedMessage"):
+            edited = body.get("editedMessage") or {}
+            texto_editado = (
+                (edited.get("text") or {}).get("message", "")
+                or (edited.get("extendedTextMessage") or {}).get("text", "")
+                or edited.get("conversation", "")
+                or _extrair_texto_zapi(body)
+            ).strip()
+            if telefone and texto_editado:
+                lead = db.query(Lead).filter(Lead.telefone == telefone).first()
+                if lead:
+                    role = "assistant" if body.get("fromMe") else "user"
+                    _salvar_msg_webhook(db, telefone, f"✏️ {texto_editado}", role=role)
+            return JSONResponse({"status": "edit_saved"})
+
+        # ── Mensagem enviada do próprio aparelho pelo atendente ──────────────
+        if body.get("fromMe"):
+            texto = _extrair_texto_zapi(body)
+            if texto:
+                lead = db.query(Lead).filter(Lead.telefone == telefone).first()
+                if lead:
+                    # Salva como mensagem do atendente para aparecer no histórico
+                    _salvar_msg_webhook(db, telefone, texto, role="assistant")
+            return JSONResponse({"status": "fromme_saved"})
+
+        # ── Mensagem recebida do cliente ─────────────────────────────────────
+        texto = _extrair_texto_zapi(body)
+        if not texto:
             return JSONResponse({"status": "ignored"})
 
         lead = db.query(Lead).filter(Lead.telefone == telefone).first()
@@ -932,6 +1017,100 @@ async def mover_lead(
     db.commit()
     db.refresh(lead)
     return _serial_lead(lead, db)
+
+
+@app.post("/api/leads/{lead_id}/fechar-contrato")
+async def fechar_contrato_lead(
+    lead_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Salva os dados financeiros do contrato fechado e marca o lead como Fechado."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+
+    body = await request.json()
+    lead.deal_data     = body.get("deal_data", "").strip() or None
+    lead.deal_veiculo  = body.get("deal_veiculo", "").strip() or None
+    lead.deal_retorno  = body.get("deal_retorno", "").strip() or None
+    lead.deal_valor    = body.get("deal_valor", "").strip() or None
+    lead.deal_comissao = body.get("deal_comissao", "").strip() or None
+    lead.deal_banco    = body.get("deal_banco", "").strip() or None
+    lead.deal_conta_pg = body.get("deal_conta_pg", "").strip() or None
+    lead.status        = StatusLeadEnum.fechado
+    lead.atualizado_em = datetime.utcnow()
+    if not lead.atribuido_para:
+        lead.atribuido_para = usuario.id
+        lead.assumido_em    = datetime.utcnow()
+    db.commit()
+    db.refresh(lead)
+    return _serial_lead(lead, db)
+
+
+@app.get("/api/relatorio/contratos-mes")
+async def relatorio_contratos_mes(
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Retorna contagem e metas do mês atual. Totais financeiros só para admin."""
+    hoje = datetime.utcnow()
+    inicio_mes = datetime(hoje.year, hoje.month, 1)
+
+    leads_fechados = (
+        db.query(Lead)
+        .filter(
+            Lead.status == StatusLeadEnum.fechado,
+            Lead.atualizado_em >= inicio_mes,
+        )
+        .order_by(Lead.atualizado_em.desc())
+        .all()
+    )
+
+    total = len(leads_fechados)
+    cfg_meta = db.query(Configuracao).filter(Configuracao.chave == "meta_contratos").first()
+    meta = int(cfg_meta.valor) if cfg_meta and cfg_meta.valor.isdigit() else 20
+    percentual = round(total / meta * 100) if meta > 0 else 0
+
+    resultado: dict = {
+        "total":      total,
+        "meta":       meta,
+        "percentual": min(percentual, 100),
+        "mes":        hoje.strftime("%B %Y"),
+    }
+
+    if usuario.role == RoleEnum.admin:
+        def _to_float(v):
+            try:
+                return float(str(v).replace("R$","").replace(".","").replace(",",".").strip())
+            except Exception:
+                return 0.0
+
+        total_valor    = sum(_to_float(l.deal_valor)    for l in leads_fechados if l.deal_valor)
+        total_comissao = sum(_to_float(l.deal_comissao) for l in leads_fechados if l.deal_comissao)
+
+        resultado["total_valor"]    = total_valor
+        resultado["total_comissao"] = total_comissao
+        resultado["contratos"] = [
+            {
+                "id":          l.id,
+                "nome":        l.nome or "—",
+                "telefone":    l.telefone,
+                "deal_data":   l.deal_data or "—",
+                "deal_veiculo":l.deal_veiculo or "—",
+                "deal_retorno":l.deal_retorno or "—",
+                "deal_valor":  l.deal_valor or "—",
+                "deal_comissao":l.deal_comissao or "—",
+                "deal_banco":  l.deal_banco or "—",
+                "deal_conta_pg":l.deal_conta_pg or "—",
+                "responsavel": l.responsavel.nome if l.responsavel else "—",
+                "modalidade":  l.modalidade,
+            }
+            for l in leads_fechados
+        ]
+
+    return resultado
 
 
 @app.post("/api/conversa/iniciar")
@@ -1499,7 +1678,12 @@ async def relatorio_sessoes(
             "logout_em": s.logout_em.strftime("%d/%m/%Y %H:%M") if s.logout_em else None,
             "tempo_logado": _duracao_str(tempo_s),
             "tempo_ativo": _duracao_str(s.tempo_ativo_s or 0),
-            "ativa": s.logout_em is None,
+            # Online = sem logout E heartbeat chegou nos últimos 5 minutos
+            "ativa": (
+                s.logout_em is None
+                and s.ultimo_ativo_em is not None
+                and (datetime.utcnow() - s.ultimo_ativo_em).total_seconds() < 300
+            ),
         })
     return resultado
 
@@ -2053,6 +2237,14 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "origem_detalhe": l.origem_detalhe or "",
         "parceiro_id": l.parceiro_id,
         "parceiro_nome": l.parceiro.nome if l.parceiro else "",
+        # Dados do contrato fechado
+        "deal_data":     l.deal_data or "",
+        "deal_veiculo":  l.deal_veiculo or "",
+        "deal_retorno":  l.deal_retorno or "",
+        "deal_valor":    l.deal_valor or "",
+        "deal_comissao": l.deal_comissao or "",
+        "deal_banco":    l.deal_banco or "",
+        "deal_conta_pg": l.deal_conta_pg or "",
     }
 
 
@@ -2106,13 +2298,28 @@ def _criar_config_padrao(db: Session):
         },
         {
             "chave": "mensagem_followup",
-            "descricao": "Mensagem enviada automaticamente após 4h sem resposta do cliente",
+            "descricao": "1º follow-up: enviado após X horas sem resposta do cliente",
             "valor": "Oi! 😊 Vi que nossa conversa ficou parada...\nQuando quiser continuar, estou aqui! Gostaria de retomar?",
         },
         {
+            "chave": "mensagem_followup_2",
+            "descricao": "2º follow-up: enviado 24h após o 1º sem resposta",
+            "valor": "Olá! 👋 Passando para saber se ainda tem interesse em financiar ou refinanciar seu veículo.\nEstamos com ótimas condições e podemos te ajudar! Me conta, ficou alguma dúvida?",
+        },
+        {
+            "chave": "mensagem_followup_3",
+            "descricao": "3º follow-up: última tentativa, enviado 48h após o 2º. Após isso o lead é marcado como Perdido.",
+            "valor": "Oi! Última tentativa de contato por aqui. 😊\nSe mudar de ideia sobre o financiamento ou refinanciamento, pode nos chamar a qualquer momento!\nFicamos à disposição. 🤝",
+        },
+        {
             "chave": "followup_horas",
-            "descricao": "Horas de inatividade antes de enviar o follow-up (padrão: 4)",
+            "descricao": "Horas de inatividade antes de enviar o 1º follow-up (padrão: 4)",
             "valor": "4",
+        },
+        {
+            "chave": "meta_contratos",
+            "descricao": "Meta de contratos fechados no mês (número inteiro)",
+            "valor": "20",
         },
     ]
 

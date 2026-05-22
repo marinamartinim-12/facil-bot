@@ -100,6 +100,15 @@ class Lead(Base):
     atribuido_para = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
     assumido_em = Column(DateTime, nullable=True)
     followup_em = Column(DateTime, nullable=True)
+    followup_tentativa = Column(Integer, default=0)   # 0=nenhum 1=1º enviado 2=2º enviado 3=3º enviado
+    # ── Dados do contrato fechado ─────────────────────────────────────────
+    deal_data      = Column(String(10),  nullable=True)   # DD/MM/YYYY
+    deal_veiculo   = Column(String(200), nullable=True)
+    deal_retorno   = Column(String(5),   nullable=True)   # R0–R6
+    deal_valor     = Column(String(20),  nullable=True)   # valor financiado
+    deal_comissao  = Column(String(20),  nullable=True)   # comissão recebida
+    deal_banco     = Column(String(30),  nullable=True)
+    deal_conta_pg  = Column(String(50),  nullable=True)
     observacoes = Column(Text, nullable=True)
     origem = Column(String(50), nullable=True)        # rede_social | parceiro | ex_cliente | indicacao | whatsapp
     origem_detalhe = Column(String(100), nullable=True) # google | instagram | nome livre (rede_social); ou nome do parceiro
