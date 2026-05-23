@@ -8,7 +8,23 @@ import json
 import os
 import re
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+# Fuso horário de Brasília (UTC-3)
+_TZ_BR = ZoneInfo("America/Sao_Paulo")
+
+def _fmt_br(dt: datetime | None, fmt: str = "%d/%m/%Y %H:%M") -> str | None:
+    """Converte datetime UTC para horário de Brasília e formata."""
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_TZ_BR).strftime(fmt)
+
+def _agora_br() -> datetime:
+    """Retorna o datetime atual no fuso de Brasília."""
+    return datetime.now(_TZ_BR)
 from fastapi import FastAPI, Request, Depends, HTTPException, Query, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
 import secrets
@@ -677,7 +693,7 @@ def _serial_parceiro(p: Parceiro) -> dict:
         "email": p.email or "",
         "observacoes": p.observacoes or "",
         "ativo": p.ativo,
-        "criado_em": p.criado_em.strftime("%d/%m/%Y") if p.criado_em else "",
+        "criado_em": _fmt_br(p.criado_em, "%d/%m/%Y") or "",
         "contatos": [
             {"id": c.id, "nome": c.nome, "telefone": c.telefone or "",
              "email": c.email or "", "cargo": c.cargo or ""}
@@ -925,7 +941,7 @@ async def criar_lead_manual(
         lista.append({
             "texto": obs,
             "usuario": usuario.nome,
-            "em": datetime.utcnow().strftime("%d/%m/%Y %H:%M"),
+            "em": _agora_br().strftime("%d/%m/%Y %H:%M"),
         })
         lead.observacoes = json.dumps(lista, ensure_ascii=False)
 
@@ -968,7 +984,7 @@ async def obter_conversa(
             {
                 "role": m.role,
                 "conteudo": m.conteudo,
-                "horario": m.criado_em.strftime("%d/%m/%Y %H:%M") if m.criado_em else "",
+                "horario": _fmt_br(m.criado_em) or "",
             }
             for m in msgs
         ],
@@ -1098,12 +1114,12 @@ def _origem_label(origem: str | None, detalhe: str | None) -> str:
 
 def _contratos_periodo(db, periodo: str = "mes") -> list:
     """Retorna leads fechados do período. periodo = 'semana' | 'mes' | 'tudo'."""
-    hoje = datetime.utcnow()
+    hoje = _agora_br()
     if periodo == "semana":
         dia_semana = hoje.weekday()  # 0=seg
-        inicio = datetime(hoje.year, hoje.month, hoje.day) - timedelta(days=dia_semana)
+        inicio = datetime(hoje.year, hoje.month, hoje.day, tzinfo=_TZ_BR) - timedelta(days=dia_semana)
     elif periodo == "mes":
-        inicio = datetime(hoje.year, hoje.month, 1)
+        inicio = datetime(hoje.year, hoje.month, 1, tzinfo=_TZ_BR)
     else:
         inicio = None
 
@@ -1132,7 +1148,7 @@ async def relatorio_contratos_mes(
         "total":      total,
         "meta":       meta,
         "percentual": min(percentual, 100),
-        "mes":        hoje.strftime("%B %Y"),
+        "mes":        _agora_br().strftime("%B %Y"),
         "periodo":    periodo,
     }
 
@@ -1418,7 +1434,7 @@ async def inbox(
         resultado.append({
             **_serial_lead(l, db),
             "ultima_mensagem": conteudo_limpo[:60],
-            "ultima_hora": ultima.criado_em.strftime("%H:%M") if ultima and ultima.criado_em else "",
+            "ultima_hora": _fmt_br(ultima.criado_em, "%H:%M") if ultima and ultima.criado_em else "",
         })
     return resultado
 
@@ -1929,9 +1945,9 @@ def _sessoes_funcionarias(db: Session, limit: int = 1000) -> list:
             "role": s.usuario.role if s.usuario else "—",
             "ip": s.ip or "—",
             "localizacao": s.localizacao or "—",
-            "login_em": s.login_em.strftime("%d/%m/%Y %H:%M") if s.login_em else "—",
-            "ultimo_ativo_em": s.ultimo_ativo_em.strftime("%d/%m/%Y %H:%M") if s.ultimo_ativo_em else "—",
-            "logout_em": s.logout_em.strftime("%d/%m/%Y %H:%M") if s.logout_em else None,
+            "login_em": _fmt_br(s.login_em) or "—",
+            "ultimo_ativo_em": _fmt_br(s.ultimo_ativo_em) or "—",
+            "logout_em": _fmt_br(s.logout_em),
             "tempo_logado": _duracao_str(tempo_s),
             "tempo_ativo": _duracao_str(s.tempo_ativo_s or 0),
             "tempo_ativo_s": s.tempo_ativo_s or 0,
@@ -2020,7 +2036,7 @@ async def gerar_contrato_endpoint(
         dados.setdefault("req_celular", lead.telefone or "")
         dados.setdefault("modalidade",  lead.modalidade or "refinanciamento")
         dados.setdefault("data_contrato",
-            datetime.now().strftime("%d de %B de %Y")
+            _agora_br().strftime("%d de %B de %Y")
             .replace("January","Janeiro").replace("February","Fevereiro")
             .replace("March","Marco").replace("April","Abril")
             .replace("May","Maio").replace("June","Junho")
@@ -2257,7 +2273,7 @@ async def submeter_assinatura(token: str, request: Request, db: Session = Depend
         doc_verso_b64  = body.get("doc_verso", "")
         geo            = body.get("geo", "")
         ip             = request.client.host if request.client else "desconhecido"
-        agora          = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        agora          = _agora_br().strftime("%d/%m/%Y %H:%M:%S")
 
         base = CONTRATOS_DIR / f"contrato_{contrato.lead_id}_{token[:8]}"
         d_contrato = json.loads(contrato.dados_contrato or "{}") if contrato.dados_contrato else {}
@@ -2372,8 +2388,8 @@ async def verificar_assinatura(token: str, db: Session = Depends(get_db)):
     d = json.loads(c.dados_contrato or "{}") if c.dados_contrato else {}
     nome = d.get("req_nome") or (c.lead.nome if c.lead else "-") or "-"
     cpf  = d.get("req_cpf")  or (c.lead.cpf  if c.lead else "-") or "-"
-    assinado_em_br = c.assinado_em.strftime("%d/%m/%Y %H:%M:%S") if c.assinado_em else "-"
-    criado_em_br   = c.criado_em.strftime("%d/%m/%Y %H:%M") if c.criado_em else "-"
+    assinado_em_br = _fmt_br(c.assinado_em, "%d/%m/%Y %H:%M:%S") or "-"
+    criado_em_br   = _fmt_br(c.criado_em) or "-"
 
     status_badge = (
         '<span style="background:#16a34a;color:#fff;padding:.3rem .9rem;border-radius:99px;font-weight:700;font-size:.9rem">✅ ASSINADO</span>'
@@ -2450,14 +2466,14 @@ async def listar_contratos(
     return [
         {
             "id": c.id,
-            "criado_em":       c.criado_em.strftime("%d/%m/%Y %H:%M") if c.criado_em else "-",
+            "criado_em":       _fmt_br(c.criado_em) or "-",
             # Requerente
             "status_req":      c.status or "pendente",
-            "assinado_req_em": c.assinado_em.strftime("%d/%m/%Y %H:%M") if c.assinado_em else None,
+            "assinado_req_em": _fmt_br(c.assinado_em),
             "link_req":        f"{base_url}/assinar/{c.token}",
             # Proprietário
             "status_prop":     c.status_prop or "pendente",
-            "assinado_prop_em": c.assinado_prop_em.strftime("%d/%m/%Y %H:%M") if c.assinado_prop_em else None,
+            "assinado_prop_em": _fmt_br(c.assinado_prop_em),
             "link_prop":       f"{base_url}/assinar/{c.token_prop}" if c.token_prop else None,
             # PDF disponível assim que qualquer parte assinar
             "pdf_id":          c.id if c.pdf_assinado else None,
@@ -2519,9 +2535,9 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "status": l.status,
         "estado_conversa": l.estado_conversa,
         "responsavel": responsavel,
-        "assumido_em": l.assumido_em.strftime("%d/%m/%Y %H:%M") if l.assumido_em else None,
-        "criado_em": l.criado_em.strftime("%d/%m/%Y %H:%M") if l.criado_em else "—",
-        "atualizado_em": l.atualizado_em.strftime("%d/%m/%Y %H:%M") if l.atualizado_em else "—",
+        "assumido_em": _fmt_br(l.assumido_em),
+        "criado_em": _fmt_br(l.criado_em) or "—",
+        "atualizado_em": _fmt_br(l.atualizado_em) or "—",
         "observacoes": _parse_observacoes(l.observacoes),
         "origem": l.origem or "whatsapp",
         "origem_detalhe": l.origem_detalhe or "",
@@ -2549,7 +2565,7 @@ def _serial_usuario(u: Usuario) -> dict:
     return {
         "id": u.id, "nome": u.nome, "email": u.email,
         "role": u.role, "ativo": u.ativo,
-        "criado_em": u.criado_em.strftime("%d/%m/%Y") if u.criado_em else "—",
+        "criado_em": _fmt_br(u.criado_em, "%d/%m/%Y") or "—",
     }
 
 
