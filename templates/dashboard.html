@@ -1157,7 +1157,10 @@
         data-lead-id="${l.id}"
         ondragstart="cardDragStart(event, ${l.id})"
         ondragend="cardDragEnd(event)">
-        <div class="card-name" title="${esc(nome)}">${esc(nome)}</div>
+        <div style="display:flex;align-items:center;gap:.4rem">
+          <div class="card-name" style="flex:1" title="${esc(nome)}">${esc(nome)}</div>
+          ${conversasNaoLidas.has(l.id) ? `<span style="min-width:9px;height:9px;border-radius:50%;background:#25D366;display:inline-block;flex-shrink:0" title="Mensagem não lida"></span>` : ''}
+        </div>
         <div class="card-phone">${l.telefone}</div>
         <div class="card-meta">
           <span class="badge badge-${l.modalidade}">${labMod(l.modalidade)}</span>
@@ -2545,7 +2548,10 @@
         ultimasMensagensConhecidas[l.id] = ultimaAtual;
       });
 
-      if (temNovo) tocarNotificacao();
+      if (temNovo) {
+        tocarNotificacao();
+        renderKanban(); // atualiza bolinha nos cards do funil imediatamente
+      }
 
       inboxLeads = novosLeads;
       renderInboxList();
