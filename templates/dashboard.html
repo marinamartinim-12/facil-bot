@@ -2690,7 +2690,7 @@
         const m = Math.floor(_segundos / 60);
         const s = String(_segundos % 60).padStart(2, '0');
         document.getElementById('gravarTimer').textContent = `${m}:${s}`;
-        if (_segundos >= 120) pararGravacao(); // limite 2 min
+        if (_segundos >= 300) pararGravacao(); // limite 5 min
       }, 1000);
 
     } catch (err) {
@@ -2801,7 +2801,7 @@
         const m = Math.floor(_segundosModal / 60);
         const s = String(_segundosModal % 60).padStart(2, '0');
         document.getElementById('gravarTimerModal').textContent = `${m}:${s}`;
-        if (_segundosModal >= 120) pararGravacaoModal();
+        if (_segundosModal >= 300) pararGravacaoModal();
       }, 1000);
     } catch { alert('Não foi possível acessar o microfone.'); }
   }
