@@ -1439,13 +1439,18 @@ async def enviar_audio_gravado(
         raise HTTPException(status_code=404, detail="Lead não encontrado")
 
     body = await request.json()
-    audio_base64 = body.get("audio_base64", "")
-    if not audio_base64:
+    audio_base64_raw = body.get("audio_base64", "")
+    if not audio_base64_raw:
         raise HTTPException(status_code=400, detail="Áudio não recebido")
 
-    # Remove o prefixo data:audio/...;base64, se presente
-    if "," in audio_base64:
-        audio_base64 = audio_base64.split(",", 1)[1]
+    # Z-API aceita base64 puro (sem prefixo data:...)
+    audio_base64 = audio_base64_raw.split(",", 1)[1] if "," in audio_base64_raw else audio_base64_raw
+
+    # Tenta extrair o MIME type para log
+    mime = ""
+    if audio_base64_raw.startswith("data:"):
+        mime = audio_base64_raw.split(";")[0].replace("data:", "")
+    print(f"🎤 Enviando áudio para {lead.telefone} | mime={mime} | tamanho base64={len(audio_base64)}")
 
     # Envia pelo Z-API
     if settings.ZAPI_INSTANCE and settings.ZAPI_TOKEN:
@@ -1453,10 +1458,10 @@ async def enviar_audio_gravado(
         headers = {"Client-Token": settings.ZAPI_CLIENT_TOKEN}
         payload = {"phone": lead.telefone, "audio": audio_base64}
         async with httpx.AsyncClient() as client:
-            resp = await client.post(url, headers=headers, json=payload, timeout=20)
+            resp = await client.post(url, headers=headers, json=payload, timeout=60)
+            print(f"🎤 Z-API resposta: {resp.status_code} — {resp.text[:300]}")
             if resp.status_code != 200:
-                print(f"⚠️ Erro Z-API áudio: {resp.text}")
-                raise HTTPException(status_code=502, detail="Erro ao enviar áudio pelo WhatsApp")
+                raise HTTPException(status_code=502, detail=f"Z-API erro: {resp.text[:200]}")
     else:
         print(f"[Z-API SIMULADO] Áudio para {lead.telefone}")
 
