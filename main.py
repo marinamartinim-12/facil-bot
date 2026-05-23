@@ -1424,6 +1424,46 @@ async def enviar_mensagem_funcionario(
     return {"status": "enviado"}
 
 
+@app.post("/api/leads/{lead_id}/enviar-audio")
+async def enviar_audio_gravado(
+    lead_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Atendente envia áudio gravado no navegador para o cliente."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+
+    body = await request.json()
+    audio_base64 = body.get("audio_base64", "")
+    if not audio_base64:
+        raise HTTPException(status_code=400, detail="Áudio não recebido")
+
+    # Remove o prefixo data:audio/...;base64, se presente
+    if "," in audio_base64:
+        audio_base64 = audio_base64.split(",", 1)[1]
+
+    # Envia pelo Z-API
+    if settings.ZAPI_INSTANCE and settings.ZAPI_TOKEN:
+        url = f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE}/token/{settings.ZAPI_TOKEN}/send-audio"
+        headers = {"Client-Token": settings.ZAPI_CLIENT_TOKEN}
+        payload = {"phone": lead.telefone, "audio": audio_base64}
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, headers=headers, json=payload, timeout=20)
+            if resp.status_code != 200:
+                print(f"⚠️ Erro Z-API áudio: {resp.text}")
+                raise HTTPException(status_code=502, detail="Erro ao enviar áudio pelo WhatsApp")
+    else:
+        print(f"[Z-API SIMULADO] Áudio para {lead.telefone}")
+
+    # Salva no histórico
+    _salvar_msg_webhook(db, lead.telefone, f"[{usuario.nome}]: 🎤 Áudio", role="assistant")
+
+    return {"status": "enviado"}
+
+
 @app.get("/api/inbox")
 async def inbox(
     db: Session = Depends(get_db),

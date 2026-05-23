@@ -416,6 +416,7 @@
     .loading-msg { text-align: center; padding: 2rem; color: var(--muted); font-size: .88rem; }
 
     /* ── INBOX ── */
+    @keyframes pisca { 0%,100%{opacity:1} 50%{opacity:0} }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinning { animation: spin .6s linear infinite; display: inline-block; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
@@ -665,12 +666,28 @@
               <div style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:2rem">👈 Selecione uma conversa ao lado</div>
             </div>
             <!-- Input WhatsApp -->
-            <div class="wsp-input-bar">
+            <div class="wsp-input-bar" id="inputBarNormal">
               <input id="msgInput" type="text" placeholder="Digite uma mensagem"
                 onkeydown="if(event.key==='Enter')enviarMensagem()" />
+              <button class="wsp-send-btn" title="Gravar áudio" onclick="iniciarGravacao()" style="background:#25d366;margin-right:4px">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/></svg>
+              </button>
               <button class="wsp-send-btn" onclick="enviarMensagem()">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M1.101 21.757L23.8 12.028 1.101 2.3l.011 7.912 13.623 1.816-13.623 1.817-.011 7.912z"/></svg>
               </button>
+            </div>
+            <!-- Gravando -->
+            <div class="wsp-input-bar" id="inputBarGravando" style="display:none;gap:.75rem;align-items:center">
+              <span style="width:10px;height:10px;border-radius:50%;background:#e74c3c;display:inline-block;animation:pisca 1s infinite"></span>
+              <span style="flex:1;font-size:.9rem;color:var(--navy);font-weight:500">Gravando… <span id="gravarTimer">0:00</span></span>
+              <button class="btn btn-sm" style="background:#e74c3c;color:white;border:none" onclick="pararGravacao()">⏹ Parar</button>
+              <button class="btn btn-sm" style="background:var(--border);color:var(--navy);border:none" onclick="cancelarGravacao()">✕ Cancelar</button>
+            </div>
+            <!-- Preview do áudio -->
+            <div class="wsp-input-bar" id="inputBarPreview" style="display:none;gap:.75rem;align-items:center;flex-wrap:wrap">
+              <audio id="audioPreview" controls style="flex:1;height:36px;min-width:160px"></audio>
+              <button class="btn btn-sm" style="background:var(--border);color:var(--navy);border:none" onclick="cancelarGravacao()">✕</button>
+              <button class="btn btn-primary btn-sm" id="btnEnviarAudio" onclick="enviarAudio()">Enviar 🎤</button>
             </div>
           </div>
         </div>
@@ -2608,6 +2625,106 @@
       await carregarMensagensChat();
       await carregarInbox();
     } catch {}
+  }
+
+  // ── Gravação de áudio ────────────────────────────────────────────────────
+  let _mediaRecorder = null;
+  let _audioChunks = [];
+  let _audioBlob = null;
+  let _timerInterval = null;
+  let _segundos = 0;
+
+  async function iniciarGravacao() {
+    if (!chatLeadAtivo) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      _audioChunks = [];
+      _segundos = 0;
+
+      // Prefere ogg/opus (melhor compatibilidade WhatsApp), fallback webm
+      const mimeType = MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
+        ? 'audio/ogg;codecs=opus'
+        : 'audio/webm;codecs=opus';
+
+      _mediaRecorder = new MediaRecorder(stream, { mimeType });
+      _mediaRecorder.ondataavailable = e => { if (e.data.size > 0) _audioChunks.push(e.data); };
+      _mediaRecorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        _audioBlob = new Blob(_audioChunks, { type: mimeType });
+        const url = URL.createObjectURL(_audioBlob);
+        document.getElementById('audioPreview').src = url;
+        _mostrarBarra('preview');
+      };
+
+      _mediaRecorder.start(200);
+      _mostrarBarra('gravando');
+
+      // Timer
+      document.getElementById('gravarTimer').textContent = '0:00';
+      _timerInterval = setInterval(() => {
+        _segundos++;
+        const m = Math.floor(_segundos / 60);
+        const s = String(_segundos % 60).padStart(2, '0');
+        document.getElementById('gravarTimer').textContent = `${m}:${s}`;
+        if (_segundos >= 120) pararGravacao(); // limite 2 min
+      }, 1000);
+
+    } catch (err) {
+      alert('Não foi possível acessar o microfone. Verifique as permissões do navegador.');
+    }
+  }
+
+  function pararGravacao() {
+    clearInterval(_timerInterval);
+    if (_mediaRecorder && _mediaRecorder.state !== 'inactive') _mediaRecorder.stop();
+  }
+
+  function cancelarGravacao() {
+    clearInterval(_timerInterval);
+    if (_mediaRecorder && _mediaRecorder.state !== 'inactive') {
+      _mediaRecorder.stream?.getTracks().forEach(t => t.stop());
+      _mediaRecorder.stop();
+    }
+    _audioBlob = null;
+    _audioChunks = [];
+    _mostrarBarra('normal');
+  }
+
+  async function enviarAudio() {
+    if (!_audioBlob || !chatLeadAtivo) return;
+    const btn = document.getElementById('btnEnviarAudio');
+    btn.disabled = true;
+    btn.textContent = 'Enviando…';
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(_audioBlob);
+      reader.onloadend = async () => {
+        const base64 = reader.result; // "data:audio/ogg;base64,..."
+        const resp = await fetch(`/api/leads/${chatLeadAtivo.id}/enviar-audio`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audio_base64: base64 }),
+        });
+        if (resp.ok) {
+          _audioBlob = null;
+          _mostrarBarra('normal');
+          await carregarMensagensChat();
+        } else {
+          alert('Erro ao enviar áudio. Tente novamente.');
+          btn.disabled = false;
+          btn.textContent = 'Enviar 🎤';
+        }
+      };
+    } catch {
+      btn.disabled = false;
+      btn.textContent = 'Enviar 🎤';
+    }
+  }
+
+  function _mostrarBarra(modo) {
+    document.getElementById('inputBarNormal').style.display  = modo === 'normal'   ? 'flex' : 'none';
+    document.getElementById('inputBarGravando').style.display = modo === 'gravando' ? 'flex' : 'none';
+    document.getElementById('inputBarPreview').style.display  = modo === 'preview'  ? 'flex' : 'none';
   }
 
   async function fecharLeadAtivo() {
