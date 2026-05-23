@@ -1198,9 +1198,11 @@
     if (!dragLeadId) return;
     const lead = allLeads.find(l => l.id === dragLeadId);
     if (!lead || lead.status === colKey) return;
-    // Não-admins não podem mover para Desqualificado
-    if (colKey === 'desqualificado' && currentUser.role !== 'admin') {
-      alert('Apenas administradores podem desqualificar leads.');
+    // Não-admins não podem mover para Desqualificado ou Atendimento IA
+    if (currentUser.role !== 'admin' && (colKey === 'desqualificado' || colKey === 'em_atendimento')) {
+      alert(colKey === 'em_atendimento'
+        ? 'Apenas administradores podem devolver leads para o Atendimento IA.'
+        : 'Apenas administradores podem desqualificar leads.');
       dragLeadId = null;
       return;
     }
@@ -1209,6 +1211,11 @@
   }
 
   async function moverLead(id, novoStatus, confirmar = true) {
+    // Não-admins não podem devolver para Atendimento IA
+    if (novoStatus === 'em_atendimento' && currentUser.role !== 'admin') {
+      alert('Apenas administradores podem devolver leads para o Atendimento IA.');
+      return;
+    }
     // Fechamento abre formulário de dados do contrato
     if (novoStatus === 'fechado') {
       const lead = allLeads.find(l => l.id === id);

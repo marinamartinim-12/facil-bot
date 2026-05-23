@@ -1056,9 +1056,11 @@ async def mover_lead(
     if novo_status not in [s.value for s in estagios_validos]:
         raise HTTPException(status_code=400, detail="Estágio inválido")
 
-    # Apenas administradores podem marcar como desqualificado
-    if novo_status == StatusLeadEnum.desqualificado.value and usuario.role != RoleEnum.admin:
-        raise HTTPException(status_code=403, detail="Apenas administradores podem desqualificar leads.")
+    # Apenas administradores podem desqualificar ou devolver para Atendimento IA
+    if usuario.role != RoleEnum.admin and novo_status in (
+        StatusLeadEnum.desqualificado.value, StatusLeadEnum.em_atendimento.value
+    ):
+        raise HTTPException(status_code=403, detail="Apenas administradores podem realizar esta ação.")
 
     lead.status = novo_status
     if novo_status == StatusLeadEnum.assumido and not lead.atribuido_para:
