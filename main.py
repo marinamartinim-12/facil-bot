@@ -4,9 +4,11 @@ FastAPI + Webhook Z-API + Dashboard com login
 """
 
 import asyncio
+import base64
 import json
 import os
 import re
+import uuid
 import httpx
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -1443,25 +1445,43 @@ async def enviar_audio_gravado(
     if not audio_base64_raw:
         raise HTTPException(status_code=400, detail="Áudio não recebido")
 
-    # Z-API aceita base64 puro (sem prefixo data:...)
-    audio_base64 = audio_base64_raw.split(",", 1)[1] if "," in audio_base64_raw else audio_base64_raw
+    # Extrai MIME e bytes
+    mime = "audio/webm"
+    raw_b64 = audio_base64_raw
+    if "," in audio_base64_raw:
+        header, raw_b64 = audio_base64_raw.split(",", 1)
+        mime = header.split(":")[1].split(";")[0] if ":" in header else mime
 
-    # Tenta extrair o MIME type para log
-    mime = ""
-    if audio_base64_raw.startswith("data:"):
-        mime = audio_base64_raw.split(";")[0].replace("data:", "")
-    print(f"🎤 Enviando áudio para {lead.telefone} | mime={mime} | tamanho base64={len(audio_base64)}")
+    ext = "ogg" if "ogg" in mime else "webm"
+    audio_bytes = base64.b64decode(raw_b64)
+    print(f"🎤 Áudio para {lead.telefone} | mime={mime} | bytes={len(audio_bytes)}")
 
-    # Envia pelo Z-API
+    # Envia pelo Z-API usando URL temporária (Z-API não aceita base64 direto)
     if settings.ZAPI_INSTANCE and settings.ZAPI_TOKEN:
-        url = f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE}/token/{settings.ZAPI_TOKEN}/send-audio"
-        headers = {"Client-Token": settings.ZAPI_CLIENT_TOKEN}
-        payload = {"phone": lead.telefone, "audio": audio_base64}
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(url, headers=headers, json=payload, timeout=60)
+        # Salva arquivo temporário
+        audio_id = uuid.uuid4().hex
+        tmp_path = f"/tmp/audio_{audio_id}.{ext}"
+        with open(tmp_path, "wb") as f:
+            f.write(audio_bytes)
+
+        # Monta URL pública do próprio servidor
+        base_url = str(request.base_url).rstrip("/")
+        audio_url = f"{base_url}/api/audio-temp/{audio_id}.{ext}"
+        print(f"🎤 URL temporária: {audio_url}")
+
+        try:
+            zapi_url = f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE}/token/{settings.ZAPI_TOKEN}/send-audio"
+            headers = {"Client-Token": settings.ZAPI_CLIENT_TOKEN}
+            payload = {"phone": lead.telefone, "audio": audio_url}
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(zapi_url, headers=headers, json=payload, timeout=30)
             print(f"🎤 Z-API resposta: {resp.status_code} — {resp.text[:300]}")
             if resp.status_code != 200:
                 raise HTTPException(status_code=502, detail=f"Z-API erro: {resp.text[:200]}")
+        finally:
+            # Remove arquivo temporário
+            try: os.unlink(tmp_path)
+            except: pass
     else:
         print(f"[Z-API SIMULADO] Áudio para {lead.telefone}")
 
@@ -1469,6 +1489,21 @@ async def enviar_audio_gravado(
     _salvar_msg_webhook(db, lead.telefone, f"[{usuario.nome}]: 🎤 Áudio", role="assistant")
 
     return {"status": "enviado"}
+
+
+@app.get("/api/audio-temp/{filename}")
+async def servir_audio_temp(filename: str):
+    """Serve arquivos de áudio temporários para o Z-API baixar."""
+    # Valida que é só hex + extensão (segurança)
+    import re as _re
+    if not _re.match(r'^[a-f0-9]{32}\.(webm|ogg|mp3)$', filename):
+        raise HTTPException(status_code=404)
+    path = f"/tmp/audio_{filename}"
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404)
+    ext = filename.rsplit(".", 1)[-1]
+    media_type = "audio/ogg" if ext == "ogg" else "audio/webm"
+    return FileResponse(path, media_type=media_type)
 
 
 @app.get("/api/inbox")
