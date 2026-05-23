@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from config import get_settings
 from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
-from bot import processar_mensagem, obter_resumo_lead
+from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
 settings = get_settings()
@@ -580,13 +580,23 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
                 return JSONResponse({"status": "reativado"})
             # tratado=False → reiniciou do zero, cai no fluxo normal abaixo
 
-        # Se está sendo atendido por humano, só salva a mensagem
+        # Se está sendo atendido por humano, salva a mensagem e avisa se fora do horário
         if lead and lead.status in [
             StatusLeadEnum.assumido,
             StatusLeadEnum.proposta_enviada,
             StatusLeadEnum.fechado,
         ]:
             _salvar_msg_webhook(db, telefone, texto)
+            prox = _proximo_horario_atendimento()
+            if prox:
+                nome = f" {lead.nome}" if lead.nome else ""
+                aviso = (
+                    f"Olá{nome}! 😊 No momento estamos fora do horário de atendimento. "
+                    f"Funcionamos seg–sex das 09h às 18h e sábado das 09h às 13h. "
+                    f"Retornaremos seu contato {prox}! 🕘"
+                )
+                await enviar_zapi(telefone, aviso)
+                _salvar_msg_webhook(db, telefone, aviso, role="assistant")
             return JSONResponse({"status": "aguardando_humano"})
 
         # Bot qualificando
@@ -639,13 +649,23 @@ async def receber_webhook_meta(request: Request, db: Session = Depends(get_db)):
                     continue
                 # tratado=False → reiniciou do zero, cai no fluxo normal
 
-            # Humano atendendo → só salva
+            # Humano atendendo → salva e avisa se fora do horário
             if lead and lead.status in [
                 StatusLeadEnum.assumido,
                 StatusLeadEnum.proposta_enviada,
                 StatusLeadEnum.fechado,
             ]:
                 _salvar_msg_webhook(db, telefone, texto)
+                prox = _proximo_horario_atendimento()
+                if prox:
+                    nome = f" {lead.nome}" if lead.nome else ""
+                    aviso = (
+                        f"Olá{nome}! 😊 No momento estamos fora do horário de atendimento. "
+                        f"Funcionamos seg–sex das 09h às 18h e sábado das 09h às 13h. "
+                        f"Retornaremos seu contato {prox}! 🕘"
+                    )
+                    await enviar_meta(telefone, aviso)
+                    _salvar_msg_webhook(db, telefone, aviso, role="assistant")
                 continue
 
             respostas = processar_mensagem(telefone, texto, db)
