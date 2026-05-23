@@ -118,6 +118,9 @@
     .btn-outline:hover { border-color: var(--navy); }
     .btn-danger { background: var(--red); color: var(--white); }
     .content { flex: 1; overflow-y: auto; padding: 1.25rem 1.5rem; }
+    .content.funil-mode { overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0; }
+    .content.funil-mode #viewFunil { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+    .content.funil-mode .kanban { flex: 1; height: auto; min-height: 0; overflow-x: auto; overflow-y: auto; }
 
     /* ── STATS ── */
     .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap: .75rem; margin-bottom: 1.25rem; }
@@ -968,6 +971,7 @@
       document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
     }
     _iniciarHeartbeat();   // Registra atividade a cada 60s
+    document.getElementById('mainContent').classList.add('funil-mode'); // view inicial é o funil
     refresh();
     setInterval(refresh, 30000);
     iniciarPollingInbox();  // Atualiza lista de conversas a cada 5s
@@ -988,6 +992,8 @@
     });
     const titles = {funil:'Funil de Leads', lista:'Lista de Leads', usuarios:'Usuários', relatorios:'Relatórios', atendimento:'Atendimentos', configuracoes:'Config. do Bot', parceiros:'Parceiros'};
     document.getElementById('pageTitle').textContent = titles[v] || v;
+    // Funil ocupa toda a área disponível com scroll horizontal próprio
+    document.getElementById('mainContent').classList.toggle('funil-mode', v === 'funil');
     if (v === 'usuarios') carregarUsuarios();
     if (v === 'relatorios') carregarRelatorios();
     if (v === 'lista') renderLista();
