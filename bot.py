@@ -388,7 +388,10 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
     # Conversa já encerrada
     if lead.estado_conversa in (EstadoConversaEnum.finalizado, EstadoConversaEnum.transferido):
         nome = f" {lead.nome}" if lead.nome else ""
-        return [f"Olá{nome}! Em breve uma atendente entrará em contato. 😊"]
+        resposta = f"Olá{nome}! Em breve uma atendente entrará em contato. 😊"
+        _salvar_mensagem(db, telefone, "user", mensagem_cliente)
+        _salvar_mensagem(db, telefone, "assistant", resposta)
+        return [resposta]
 
     # Salva mensagem do cliente
     _salvar_mensagem(db, telefone, "user", mensagem_cliente)
