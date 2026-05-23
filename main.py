@@ -593,7 +593,7 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
                 aviso = (
                     f"Olá{nome}! 😊 No momento estamos fora do horário de atendimento. "
                     f"Funcionamos seg–sex das 09h às 18h e sábado das 09h às 13h. "
-                    f"Retornaremos seu contato {prox}! 🕘"
+                    f"Retornaremos seu contato no primeiro horário disponível! 🕘"
                 )
                 await enviar_zapi(telefone, aviso)
                 _salvar_msg_webhook(db, telefone, aviso, role="assistant")
