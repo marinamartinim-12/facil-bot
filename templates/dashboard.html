@@ -662,7 +662,7 @@
               </div>
             </div>
             <!-- Mensagens -->
-            <div id="chatMessages" style="flex:1;overflow-y:auto;padding:.75rem 1rem;display:flex;flex-direction:column;justify-content:flex-end;gap:1px;background:var(--wsp-bg);background-image:url('data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23c9b99a\' fill-opacity=\'0.15\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')">
+            <div id="chatMessages" style="flex:1;overflow-y:auto;padding:.75rem 1rem;display:flex;flex-direction:column;justify-content:flex-start;gap:1px;background:var(--wsp-bg);background-image:url('data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2020/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23c9b99a\' fill-opacity=\'0.15\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')">
               <div style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:2rem">👈 Selecione uma conversa ao lado</div>
             </div>
             <!-- Input WhatsApp -->
@@ -856,6 +856,30 @@
         <div class="modal-chat-title">💬 Conversa completa</div>
         <div class="modal-chat-msgs" id="modalChat">
           <div class="loading-msg">Carregando…</div>
+        </div>
+        <!-- Input de resposta direto no modal -->
+        <div class="wsp-input-bar" id="modalInputBar" style="border-top:1px solid var(--border)">
+          <input id="modalMsgInput" type="text" placeholder="Digite uma mensagem"
+            onkeydown="if(event.key==='Enter')enviarMensagemModal()" />
+          <button class="wsp-send-btn" title="Gravar áudio" onclick="iniciarGravacaoModal()" style="background:#25d366;margin-right:4px">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/></svg>
+          </button>
+          <button class="wsp-send-btn" onclick="enviarMensagemModal()">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M1.101 21.757L23.8 12.028 1.101 2.3l.011 7.912 13.623 1.816-13.623 1.817-.011 7.912z"/></svg>
+          </button>
+        </div>
+        <!-- Gravando (modal) -->
+        <div class="wsp-input-bar" id="modalInputBarGravando" style="display:none;gap:.75rem;align-items:center;border-top:1px solid var(--border)">
+          <span style="width:10px;height:10px;border-radius:50%;background:#e74c3c;display:inline-block;animation:pisca 1s infinite"></span>
+          <span style="flex:1;font-size:.9rem;color:var(--navy);font-weight:500">Gravando… <span id="gravarTimerModal">0:00</span></span>
+          <button class="btn btn-sm" style="background:#e74c3c;color:white;border:none" onclick="pararGravacaoModal()">⏹ Parar</button>
+          <button class="btn btn-sm" style="background:var(--border);color:var(--navy);border:none" onclick="cancelarGravacaoModal()">✕ Cancelar</button>
+        </div>
+        <!-- Preview (modal) -->
+        <div class="wsp-input-bar" id="modalInputBarPreview" style="display:none;gap:.75rem;align-items:center;flex-wrap:wrap;border-top:1px solid var(--border)">
+          <audio id="audioPreviewModal" controls style="flex:1;height:36px;min-width:160px"></audio>
+          <button class="btn btn-sm" style="background:var(--border);color:var(--navy);border:none" onclick="cancelarGravacaoModal()">✕</button>
+          <button class="btn btn-primary btn-sm" id="btnEnviarAudioModal" onclick="enviarAudioModal()">Enviar 🎤</button>
         </div>
       </div>
     </div>
@@ -2581,7 +2605,7 @@
 
     document.getElementById('msgInput').focus();
     renderInboxList();
-    await carregarMensagensChat();
+    await carregarMensagensChat(true); // sempre vai pro fim na abertura
     if (chatPollingInterval) clearInterval(chatPollingInterval);
     chatPollingInterval = setInterval(carregarMensagensChat, 5000);
   }
@@ -2599,13 +2623,13 @@
     }
   }
 
-  async function carregarMensagensChat() {
+  async function carregarMensagensChat(forcarBaixo = false) {
     if (!chatLeadAtivo) return;
     try {
       const r = await fetch(`/api/leads/${chatLeadAtivo.id}/conversa`);
       const d = await r.json();
       const box = document.getElementById('chatMessages');
-      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+      const atBottom = forcarBaixo || (box.scrollHeight - box.scrollTop - box.clientHeight < 60);
       box.innerHTML = renderMensagens(d.mensagens);
       if (atBottom) box.scrollTop = box.scrollHeight;
     } catch {}
@@ -2725,6 +2749,107 @@
     document.getElementById('inputBarNormal').style.display  = modo === 'normal'   ? 'flex' : 'none';
     document.getElementById('inputBarGravando').style.display = modo === 'gravando' ? 'flex' : 'none';
     document.getElementById('inputBarPreview').style.display  = modo === 'preview'  ? 'flex' : 'none';
+  }
+
+  // ── Envio de texto e áudio pelo modal do funil ───────────────────────────
+  async function enviarMensagemModal() {
+    if (!modalLeadId) return;
+    const input = document.getElementById('modalMsgInput');
+    const texto = input.value.trim();
+    if (!texto) return;
+    input.value = '';
+    try {
+      await fetch(`/api/leads/${modalLeadId}/mensagem`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({mensagem: texto}),
+      });
+      // Recarrega o chat do modal
+      const r = await fetch(`/api/leads/${modalLeadId}/conversa`);
+      const d = await r.json();
+      const chat = document.getElementById('modalChat');
+      chat.innerHTML = renderMensagens(d.mensagens);
+      chat.scrollTop = chat.scrollHeight;
+    } catch {}
+  }
+
+  let _mediaRecorderModal = null;
+  let _audioChunksModal = [];
+  let _audioBlobModal = null;
+  let _timerIntervalModal = null;
+  let _segundosModal = 0;
+
+  async function iniciarGravacaoModal() {
+    if (!modalLeadId) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      _audioChunksModal = [];
+      _segundosModal = 0;
+      const mimeType = MediaRecorder.isTypeSupported('audio/ogg;codecs=opus') ? 'audio/ogg;codecs=opus' : 'audio/webm;codecs=opus';
+      _mediaRecorderModal = new MediaRecorder(stream, { mimeType });
+      _mediaRecorderModal.ondataavailable = e => { if (e.data.size > 0) _audioChunksModal.push(e.data); };
+      _mediaRecorderModal.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        _audioBlobModal = new Blob(_audioChunksModal, { type: mimeType });
+        document.getElementById('audioPreviewModal').src = URL.createObjectURL(_audioBlobModal);
+        _mostrarBarraModal('preview');
+      };
+      _mediaRecorderModal.start(200);
+      _mostrarBarraModal('gravando');
+      document.getElementById('gravarTimerModal').textContent = '0:00';
+      _timerIntervalModal = setInterval(() => {
+        _segundosModal++;
+        const m = Math.floor(_segundosModal / 60);
+        const s = String(_segundosModal % 60).padStart(2, '0');
+        document.getElementById('gravarTimerModal').textContent = `${m}:${s}`;
+        if (_segundosModal >= 120) pararGravacaoModal();
+      }, 1000);
+    } catch { alert('Não foi possível acessar o microfone.'); }
+  }
+
+  function pararGravacaoModal() {
+    clearInterval(_timerIntervalModal);
+    if (_mediaRecorderModal && _mediaRecorderModal.state !== 'inactive') _mediaRecorderModal.stop();
+  }
+
+  function cancelarGravacaoModal() {
+    clearInterval(_timerIntervalModal);
+    if (_mediaRecorderModal && _mediaRecorderModal.state !== 'inactive') {
+      _mediaRecorderModal.stream?.getTracks().forEach(t => t.stop());
+      _mediaRecorderModal.stop();
+    }
+    _audioBlobModal = null;
+    _mostrarBarraModal('normal');
+  }
+
+  async function enviarAudioModal() {
+    if (!_audioBlobModal || !modalLeadId) return;
+    const btn = document.getElementById('btnEnviarAudioModal');
+    btn.disabled = true; btn.textContent = 'Enviando…';
+    const reader = new FileReader();
+    reader.readAsDataURL(_audioBlobModal);
+    reader.onloadend = async () => {
+      try {
+        const resp = await fetch(`/api/leads/${modalLeadId}/enviar-audio`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ audio_base64: reader.result }),
+        });
+        if (resp.ok) {
+          _audioBlobModal = null;
+          _mostrarBarraModal('normal');
+          const r = await fetch(`/api/leads/${modalLeadId}/conversa`);
+          const d = await r.json();
+          const chat = document.getElementById('modalChat');
+          chat.innerHTML = renderMensagens(d.mensagens);
+          chat.scrollTop = chat.scrollHeight;
+        } else { alert('Erro ao enviar áudio.'); btn.disabled = false; btn.textContent = 'Enviar 🎤'; }
+      } catch { btn.disabled = false; btn.textContent = 'Enviar 🎤'; }
+    };
+  }
+
+  function _mostrarBarraModal(modo) {
+    document.getElementById('modalInputBar').style.display         = modo === 'normal'   ? 'flex' : 'none';
+    document.getElementById('modalInputBarGravando').style.display = modo === 'gravando' ? 'flex' : 'none';
+    document.getElementById('modalInputBarPreview').style.display  = modo === 'preview'  ? 'flex' : 'none';
   }
 
   async function fecharLeadAtivo() {
