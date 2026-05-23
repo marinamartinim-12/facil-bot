@@ -2996,12 +2996,20 @@
         ? `<span style="font-size:.68rem;color:#888;font-style:italic;margin-left:4px">✏️ editado</span>`
         : '';
 
-      const conteudoHtml = escHtml(textoLimpo);
+      // Detecta áudio gravado pelo painel: [AUDIO:arquivo.ext]
+      const audioMatch = textoLimpo.match(/^\[AUDIO:([a-f0-9]{32}\.(webm|ogg|mp3))\]$/);
+      let conteudoHtml;
+      if (audioMatch) {
+        const audioSrc = `/api/audio/${audioMatch[1]}`;
+        conteudoHtml = `<audio controls style="max-width:220px;height:36px;display:block" src="${audioSrc}"></audio>`;
+      } else {
+        conteudoHtml = `<span>${escHtml(textoLimpo)}</span>${editadoHtml}`;
+      }
 
       html += `<div class="wsp-row ${dir}">
         <div class="wsp-bubble${isEditada ? ' wsp-bubble-edited' : ''}">
           ${remetenteHtml}
-          <span>${conteudoHtml}</span>${editadoHtml}
+          ${conteudoHtml}
           <div class="wsp-meta">${hora ? hora.split(' ')[1]||hora : ''} ${tick}</div>
         </div>
       </div>`;

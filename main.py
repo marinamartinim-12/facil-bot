@@ -41,6 +41,32 @@ from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, 
 settings = get_settings()
 app = FastAPI(title="Fácil Financiamentos", version="2.0.0")
 
+# Cache para deduplicar mensagens enviadas pelo painel vs. webhook fromMe
+# Chave: (telefone, texto_normalizado) → timestamp do envio
+_msgs_painel_recentes: dict[tuple, float] = {}
+_TTL_DEDUP = 30  # segundos
+
+def _registrar_msg_painel(telefone: str, texto: str):
+    """Registra mensagem enviada pelo painel para evitar duplicata do webhook fromMe."""
+    import time
+    chave = (telefone, texto.strip().lower()[:100])
+    _msgs_painel_recentes[chave] = time.time()
+    # Limpa entradas antigas
+    agora = time.time()
+    expiradas = [k for k, t in _msgs_painel_recentes.items() if agora - t > _TTL_DEDUP]
+    for k in expiradas:
+        del _msgs_painel_recentes[k]
+
+def _e_duplicata_painel(telefone: str, texto: str) -> bool:
+    """Retorna True se essa mensagem foi enviada recentemente pelo painel."""
+    import time
+    chave = (telefone, texto.strip().lower()[:100])
+    ts = _msgs_painel_recentes.get(chave)
+    if ts and time.time() - ts < _TTL_DEDUP:
+        del _msgs_painel_recentes[chave]  # consome a entrada
+        return True
+    return False
+
 
 # ─── Follow-up automático ───────────────────────────────────────────────────────
 
@@ -561,9 +587,11 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
         if body.get("fromMe"):
             texto = _extrair_texto_zapi(body)
             if texto:
+                # Ignora eco de mensagem já enviada pelo painel (evita texto duplicado/errado)
+                if _e_duplicata_painel(telefone, texto):
+                    return JSONResponse({"status": "fromme_ignored_duplicate"})
                 lead = db.query(Lead).filter(Lead.telefone == telefone).first()
                 if lead:
-                    # Salva como mensagem do atendente para aparecer no histórico
                     _salvar_msg_webhook(db, telefone, texto, role="assistant")
             return JSONResponse({"status": "fromme_saved"})
 
@@ -1387,7 +1415,8 @@ async def iniciar_conversa(
         lead.atualizado_em = datetime.utcnow()
         db.commit()
 
-    # Salva e envia
+    # Salva e envia (registra no cache para ignorar o eco fromMe do Z-API)
+    _registrar_msg_painel(telefone, texto)
     _salvar_msg_webhook(db, telefone, f"[{usuario.nome}]: {texto}", role="assistant")
     await enviar_zapi(telefone, texto)
 
@@ -1419,7 +1448,8 @@ async def enviar_mensagem_funcionario(
         lead.atualizado_em = datetime.utcnow()
         db.commit()
 
-    # Salva no histórico como mensagem do atendente
+    # Salva no histórico como mensagem do atendente (registra no cache para ignorar eco fromMe)
+    _registrar_msg_painel(lead.telefone, texto)
     _salvar_msg_webhook(db, lead.telefone, f"[{usuario.nome}]: {texto}", role="assistant")
 
     # Envia pelo WhatsApp
@@ -1456,49 +1486,43 @@ async def enviar_audio_gravado(
     audio_bytes = base64.b64decode(raw_b64)
     print(f"🎤 Áudio para {lead.telefone} | mime={mime} | bytes={len(audio_bytes)}")
 
-    # Envia pelo Z-API usando URL temporária (Z-API não aceita base64 direto)
+    # Salva áudio permanentemente para reprodução no painel
+    audio_id = uuid.uuid4().hex
+    audios_dir = "/app/audios"
+    os.makedirs(audios_dir, exist_ok=True)
+    audio_filename = f"{audio_id}.{ext}"
+    audio_path = f"{audios_dir}/{audio_filename}"
+    with open(audio_path, "wb") as f:
+        f.write(audio_bytes)
+
+    # Envia pelo Z-API usando URL pública do próprio servidor
     if settings.ZAPI_INSTANCE and settings.ZAPI_TOKEN:
-        # Salva arquivo temporário
-        audio_id = uuid.uuid4().hex
-        tmp_path = f"/tmp/audio_{audio_id}.{ext}"
-        with open(tmp_path, "wb") as f:
-            f.write(audio_bytes)
-
-        # Monta URL pública do próprio servidor
         base_url = str(request.base_url).rstrip("/")
-        audio_url = f"{base_url}/api/audio-temp/{audio_id}.{ext}"
-        print(f"🎤 URL temporária: {audio_url}")
-
-        try:
-            zapi_url = f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE}/token/{settings.ZAPI_TOKEN}/send-audio"
-            headers = {"Client-Token": settings.ZAPI_CLIENT_TOKEN}
-            payload = {"phone": lead.telefone, "audio": audio_url}
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(zapi_url, headers=headers, json=payload, timeout=30)
-            print(f"🎤 Z-API resposta: {resp.status_code} — {resp.text[:300]}")
-            if resp.status_code != 200:
-                raise HTTPException(status_code=502, detail=f"Z-API erro: {resp.text[:200]}")
-        finally:
-            # Remove arquivo temporário
-            try: os.unlink(tmp_path)
-            except: pass
+        audio_url = f"{base_url}/api/audio/{audio_filename}"
+        print(f"🎤 URL: {audio_url}")
+        zapi_url = f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE}/token/{settings.ZAPI_TOKEN}/send-audio"
+        headers_zapi = {"Client-Token": settings.ZAPI_CLIENT_TOKEN}
+        payload = {"phone": lead.telefone, "audio": audio_url}
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(zapi_url, headers=headers_zapi, json=payload, timeout=30)
+        print(f"🎤 Z-API resposta: {resp.status_code} — {resp.text[:300]}")
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"Z-API erro: {resp.text[:200]}")
     else:
         print(f"[Z-API SIMULADO] Áudio para {lead.telefone}")
 
-    # Salva no histórico
-    _salvar_msg_webhook(db, lead.telefone, f"[{usuario.nome}]: 🎤 Áudio", role="assistant")
+    # Salva no histórico com referência ao arquivo (para reprodução no painel)
+    _salvar_msg_webhook(db, lead.telefone, f"[{usuario.nome}]: [AUDIO:{audio_filename}]", role="assistant")
 
     return {"status": "enviado"}
 
 
-@app.get("/api/audio-temp/{filename}")
-async def servir_audio_temp(filename: str):
-    """Serve arquivos de áudio temporários para o Z-API baixar."""
-    # Valida que é só hex + extensão (segurança)
-    import re as _re
-    if not _re.match(r'^[a-f0-9]{32}\.(webm|ogg|mp3)$', filename):
+@app.get("/api/audio/{filename}")
+async def servir_audio(filename: str):
+    """Serve arquivos de áudio para o Z-API baixar e para reprodução no painel."""
+    if not re.match(r'^[a-f0-9]{32}\.(webm|ogg|mp3)$', filename):
         raise HTTPException(status_code=404)
-    path = f"/tmp/audio_{filename}"
+    path = f"/app/audios/{filename}"
     if not os.path.exists(path):
         raise HTTPException(status_code=404)
     ext = filename.rsplit(".", 1)[-1]
