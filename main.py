@@ -226,6 +226,34 @@ async def _loop_followup():
         await asyncio.sleep(30 * 60)  # a cada 30 minutos
 
 
+async def _loop_ocultar_inativos():
+    """Roda 1x por dia: oculta do funil leads sem atividade há 30+ dias."""
+    await asyncio.sleep(120)  # aguarda 2 min após startup
+    while True:
+        try:
+            from models import SessionLocal
+            db = SessionLocal()
+            limite = datetime.utcnow() - timedelta(days=30)
+            inativos = db.query(Lead).filter(
+                Lead.atualizado_em < limite,
+                Lead.oculto_funil == False,
+                Lead.status.notin_([
+                    StatusLeadEnum.desqualificado.value,
+                ]),
+            ).all()
+            total = 0
+            for lead in inativos:
+                lead.oculto_funil = True
+                total += 1
+            if total:
+                db.commit()
+                print(f"📦 {total} lead(s) ocultados do funil por inatividade (30 dias)")
+            db.close()
+        except Exception as e:
+            print(f"❌ Erro ao ocultar leads inativos: {e}")
+        await asyncio.sleep(24 * 60 * 60)  # 1x por dia
+
+
 # ─── Startup ────────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
@@ -310,6 +338,7 @@ async def startup():
         ("leads",           "cidade",             "VARCHAR(100)"),
         ("leads",           "renda",              "VARCHAR(30)"),
         ("leads",           "profissao",          "VARCHAR(100)"),
+        ("leads",           "oculto_funil",       "BOOLEAN DEFAULT 0"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -326,6 +355,7 @@ async def startup():
 
     # Inicia tarefa de follow-up automático
     asyncio.create_task(_loop_followup())
+    asyncio.create_task(_loop_ocultar_inativos())
 
     print("✅ Fácil Financiamentos Bot v2 iniciado!")
     print(f"🗄️  Banco: {settings.DATABASE_URL}")
@@ -616,6 +646,10 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
             StatusLeadEnum.proposta_enviada,
             StatusLeadEnum.fechado,
         ]:
+            # Cliente voltou → reexibe no funil se estava oculto
+            if lead.oculto_funil:
+                lead.oculto_funil = False
+                db.commit()
             _salvar_msg_webhook(db, telefone, texto)
             prox = _proximo_horario_atendimento()
             if prox:
@@ -1456,6 +1490,23 @@ async def enviar_mensagem_funcionario(
     await enviar_zapi(lead.telefone, texto)
 
     return {"status": "enviado"}
+
+
+@app.post("/api/leads/{lead_id}/reativar-funil")
+async def reativar_funil(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Traz o lead de volta ao funil (chamado ao abrir o lead na lista)."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404)
+    if lead.oculto_funil:
+        lead.oculto_funil = False
+        lead.atualizado_em = datetime.utcnow()
+        db.commit()
+    return {"status": "ok"}
 
 
 @app.post("/api/leads/{lead_id}/enviar-audio")
@@ -2687,6 +2738,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "cidade":   l.cidade   or "",
         "renda":    l.renda    or "",
         "profissao": l.profissao or "",
+        "oculto_funil": bool(l.oculto_funil),
     }
 
 

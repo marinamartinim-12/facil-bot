@@ -1111,7 +1111,7 @@
   function renderKanban() {
     const board = document.getElementById('kanbanBoard');
     board.innerHTML = colunas.map(col => {
-      const cards = allLeads.filter(l => l.status === col.key);
+      const cards = allLeads.filter(l => l.status === col.key && !l.oculto_funil);
       return `
         <div class="kanban-col"
           ondragover="colDragOver(event, '${col.key}')"
@@ -1252,6 +1252,8 @@
   // ═══════ MODAL LEAD COMPLETO ═══════
   async function verLead(leadId) {
     modalLeadId = leadId;
+    // Reativa no funil se estava oculto por inatividade
+    fetch(`/api/leads/${leadId}/reativar-funil`, { method: 'POST' }).catch(() => {});
     document.getElementById('modalTitle').textContent = 'Carregando…';
     document.getElementById('modalDados').innerHTML = '';
     document.getElementById('novaObs').value = '';
