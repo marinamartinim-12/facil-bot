@@ -2523,33 +2523,36 @@
     } catch {}
   }
 
+  // IDs de conversas com mensagens não lidas (persiste entre polls)
+  const conversasNaoLidas = new Set();
+
   async function carregarInbox() {
     try {
       const r = await fetch('/api/inbox');
       const novosLeads = await r.json();
 
-      // Detecta novas mensagens em qualquer conversa
       let temNovo = false;
       novosLeads.forEach(l => {
-        const chave = l.id;
-        const ultimaConhecida = ultimasMensagensConhecidas[chave];
-        if (ultimaConhecida && l.ultima_hora && l.ultima_hora !== ultimaConhecida) {
-          // Mensagem nova — notifica se não for a conversa ativa
+        const ultimaConhecida = ultimasMensagensConhecidas[l.id];
+        const ultimaAtual = l.ultima_msg_ts || l.ultima_hora || '';
+        if (ultimaConhecida !== undefined && ultimaAtual !== ultimaConhecida) {
+          // Mensagem nova — marca como não lida se não for a conversa aberta agora
           if (!chatLeadAtivo || chatLeadAtivo.id !== l.id) {
-            l._temNovo = true;
+            conversasNaoLidas.add(l.id);
             temNovo = true;
           }
         }
-        ultimasMensagensConhecidas[chave] = l.ultima_hora || '';
+        ultimasMensagensConhecidas[l.id] = ultimaAtual;
       });
 
       if (temNovo) tocarNotificacao();
 
       inboxLeads = novosLeads;
       renderInboxList();
+
+      // Badge = somente conversas não lidas
       const badge = document.getElementById('badgeInbox');
-      const ativos = inboxLeads.filter(l => !['fechado','perdido','desqualificado'].includes(l.status));
-      if (ativos.length > 0) { badge.textContent = ativos.length; badge.style.display = ''; }
+      if (conversasNaoLidas.size > 0) { badge.textContent = conversasNaoLidas.size; badge.style.display = ''; }
       else { badge.style.display = 'none'; }
     } catch {}
   }
@@ -2573,7 +2576,7 @@
       const avatarColors = ['#128C7E','#075e54','#25D366','#34B7F1','#6c47ff'];
       const avatarColor = avatarColors[(nome.charCodeAt(0)||0) % avatarColors.length];
       const preview = l.ultima_mensagem ? (l.ultima_mensagem.length > 38 ? l.ultima_mensagem.slice(0,35)+'…' : l.ultima_mensagem) : '';
-      const novo = l._temNovo ? `<span style="min-width:18px;height:18px;background:#25D366;border-radius:99px;color:#fff;font-size:.65rem;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 5px">●</span>` : '';
+      const novo = conversasNaoLidas.has(l.id) ? `<span style="min-width:18px;height:18px;background:#25D366;border-radius:99px;color:#fff;font-size:.65rem;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 5px">●</span>` : '';
       // Responsável: cor única por atendente (baseada no ID)
       const respTag = respBadge(l.responsavel, {sz: '.68rem'});
       return `<div onclick="abrirChat(${l.id})" class="wsp-conv-item${ativo?' active':''}">
@@ -2599,6 +2602,12 @@
   async function abrirChat(leadId) {
     chatLeadAtivo = inboxLeads.find(l => l.id === leadId);
     if (!chatLeadAtivo) return;
+    // Marca como lida e atualiza badge
+    conversasNaoLidas.delete(leadId);
+    const badge = document.getElementById('badgeInbox');
+    if (conversasNaoLidas.size > 0) { badge.textContent = conversasNaoLidas.size; badge.style.display = ''; }
+    else { badge.style.display = 'none'; }
+    renderInboxList();
     const nome = chatLeadAtivo.nome !== '—' ? chatLeadAtivo.nome : chatLeadAtivo.telefone;
     document.getElementById('chatAvatar').textContent = nome[0].toUpperCase();
     document.getElementById('chatNome').textContent = nome;

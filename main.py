@@ -1490,14 +1490,17 @@ async def inbox(
         )
         if not ultima:
             continue  # ignora leads sem nenhuma mensagem
-        # Limpa prefixo [Nome]: para exibição
         import re
         conteudo_limpo = re.sub(r'^\[[^\]]+\]:\s*', '', ultima.conteudo)
         resultado.append({
             **_serial_lead(l, db),
             "ultima_mensagem": conteudo_limpo[:60],
             "ultima_hora": _fmt_br(ultima.criado_em, "%H:%M") if ultima and ultima.criado_em else "",
+            "ultima_msg_ts": ultima.criado_em.timestamp() if ultima and ultima.criado_em else 0,
         })
+
+    # Ordena pelo timestamp da última mensagem (mais recente primeiro)
+    resultado.sort(key=lambda x: x.get("ultima_msg_ts", 0), reverse=True)
     return resultado
 
 
