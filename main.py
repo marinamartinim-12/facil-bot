@@ -820,6 +820,7 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
             ja_em_atendimento = lead and lead.status in [
                 StatusLeadEnum.assumido,
                 StatusLeadEnum.proposta_enviada,
+                StatusLeadEnum.proposta_aprovada,
                 StatusLeadEnum.fechado,
                 StatusLeadEnum.qualificado,
             ]
@@ -891,6 +892,7 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
         if lead and lead.status in [
             StatusLeadEnum.assumido,
             StatusLeadEnum.proposta_enviada,
+            StatusLeadEnum.proposta_aprovada,
             StatusLeadEnum.fechado,
         ]:
             # Cliente voltou → reexibe no funil se estava oculto
@@ -964,6 +966,7 @@ async def receber_webhook_meta(request: Request, db: Session = Depends(get_db)):
             if lead and lead.status in [
                 StatusLeadEnum.assumido,
                 StatusLeadEnum.proposta_enviada,
+                StatusLeadEnum.proposta_aprovada,
                 StatusLeadEnum.fechado,
             ]:
                 _salvar_msg_webhook(db, telefone, texto)
@@ -1374,6 +1377,7 @@ async def mover_lead(
         StatusLeadEnum.qualificado,
         StatusLeadEnum.assumido,
         StatusLeadEnum.proposta_enviada,
+        StatusLeadEnum.proposta_aprovada,
         StatusLeadEnum.fechado,
         StatusLeadEnum.perdido,
     ]
