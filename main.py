@@ -1147,7 +1147,9 @@ async def atualizar_parceiro(
     p.email            = body.get("email", "").strip() or None
     p.observacoes      = body.get("observacoes", "").strip() or None
     p.nome_agenda      = body.get("nome_agenda", "").strip() or None
-    p.operadora_id     = int(op_id) if op_id else None
+    # Só admin pode alterar a operadora responsável
+    if usuario.role == RoleEnum.admin:
+        p.operadora_id = int(op_id) if op_id else None
 
     db.commit()
     db.refresh(p)

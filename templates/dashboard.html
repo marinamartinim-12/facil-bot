@@ -1968,11 +1968,14 @@
       document.getElementById('pObs').value            = p.observacoes || '';
       document.getElementById('pNomeAgenda').value     = p.nome_agenda || '';
       document.getElementById('pOperadora').value      = p.operadora_id || '';
+      // Só admin pode alterar a operadora de um parceiro já cadastrado
+      document.getElementById('pOperadora').disabled = currentUser?.role !== 'admin';
       _contatosTemp   = p.contatos.map(c => ({...c}));
       _telefonesExtras = Array.isArray(p.telefones_extras) ? [...p.telefones_extras] : [];
     } else {
       ['pNome','pDataNasc','pCpf','pTelefone','pEmail','pObs','pNomeAgenda'].forEach(i => document.getElementById(i).value = '');
-      document.getElementById('pOperadora').value = '';
+      document.getElementById('pOperadora').value    = '';
+      document.getElementById('pOperadora').disabled = false;
       _contatosTemp   = [];
       _telefonesExtras = [];
     }
