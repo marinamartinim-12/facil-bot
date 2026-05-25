@@ -139,12 +139,14 @@ class Parceiro(Base):
     telefones_extras  = Column(Text, nullable=True)   # JSON array de strings
     email             = Column(String(150), nullable=True)
     observacoes       = Column(Text, nullable=True)
+    operadora_id      = Column(Integer, ForeignKey("usuarios.id"), nullable=True)  # operadora responsável
     ativo             = Column(Boolean, default=True)
     criado_em       = Column(DateTime, default=datetime.utcnow)
 
-    contatos = relationship("ContatoParceiro", back_populates="parceiro",
-                            cascade="all, delete-orphan", order_by="ContatoParceiro.id")
-    leads    = relationship("Lead", back_populates="parceiro")
+    contatos  = relationship("ContatoParceiro", back_populates="parceiro",
+                             cascade="all, delete-orphan", order_by="ContatoParceiro.id")
+    leads     = relationship("Lead", back_populates="parceiro")
+    operadora = relationship("Usuario", foreign_keys=[operadora_id])
 
 
 class ContatoParceiro(Base):

@@ -1859,6 +1859,7 @@
             <span>📞 ${p.telefone}</span>
             ${(p.telefones_extras||[]).map(t=>`<span style="display:block;font-size:.75rem;color:var(--muted)">📞 ${t}</span>`).join('')}
             ${p.email ? `<span style="display:block;font-size:.72rem;color:var(--muted)">✉️ ${esc(p.email)}</span>` : ''}
+            ${p.operadora_nome ? `<span style="display:block;font-size:.72rem;color:var(--muted)">👩‍💼 ${esc(p.operadora_nome)}</span>` : ''}
           </div>
           <div style="display:flex;gap:.35rem;flex-shrink:0">
             <button class="btn btn-outline btn-sm" onclick="abrirModalParceiro(${p.id})">✏️</button>
@@ -1914,6 +1915,14 @@
     document.getElementById('parceiroMsg').style.display = 'none';
     document.getElementById('parceiroModalTitulo').textContent = id ? 'Editar Parceiro' : 'Novo Parceiro';
 
+    // Carrega lista de usuários ativos para o select de operadora
+    try {
+      const usrs = await fetch('/api/usuarios').then(r => r.json());
+      const sel = document.getElementById('pOperadora');
+      sel.innerHTML = '<option value="">— Não atribuída —</option>' +
+        usrs.filter(u => u.ativo).map(u => `<option value="${u.id}">${u.nome}</option>`).join('');
+    } catch {}
+
     if (id) {
       const p = _todosParceirosBd.find(x => x.id === id) || (await fetch(`/api/parceiros`).then(r=>r.json()).then(arr=>arr.find(x=>x.id===id)));
       if (!p) return;
@@ -1923,10 +1932,12 @@
       document.getElementById('pTelefone').value       = p.telefone;
       document.getElementById('pEmail').value          = p.email || '';
       document.getElementById('pObs').value            = p.observacoes || '';
+      document.getElementById('pOperadora').value      = p.operadora_id || '';
       _contatosTemp   = p.contatos.map(c => ({...c}));
       _telefonesExtras = Array.isArray(p.telefones_extras) ? [...p.telefones_extras] : [];
     } else {
       ['pNome','pDataNasc','pCpf','pTelefone','pEmail','pObs'].forEach(i => document.getElementById(i).value = '');
+      document.getElementById('pOperadora').value = '';
       _contatosTemp   = [];
       _telefonesExtras = [];
     }
@@ -1981,6 +1992,7 @@
       cpf:             document.getElementById('pCpf').value.trim(),
       email:           document.getElementById('pEmail').value.trim(),
       observacoes:     document.getElementById('pObs').value.trim(),
+      operadora_id:    document.getElementById('pOperadora').value || null,
       contatos:        _contatosTemp,
     };
 
@@ -3820,6 +3832,13 @@
           <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">E-mail</label>
           <input id="pEmail" type="email" placeholder="email@exemplo.com"
             style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        </div>
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Operadora responsável</label>
+          <select id="pOperadora"
+            style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#fff">
+            <option value="">— Não atribuída —</option>
+          </select>
         </div>
         <div style="grid-column:1/-1">
           <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Observações</label>

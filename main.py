@@ -340,6 +340,7 @@ async def startup():
         ("leads",           "profissao",          "VARCHAR(100)"),
         ("leads",           "tem_cnh",            "BOOLEAN"),
         ("leads",           "oculto_funil",       "BOOLEAN DEFAULT 0"),
+        ("parceiros",       "operadora_id",       "INTEGER"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -1021,6 +1022,8 @@ def _serial_parceiro(p: Parceiro) -> dict:
         "telefones_extras": extras,
         "email": p.email or "",
         "observacoes": p.observacoes or "",
+        "operadora_id":   p.operadora_id,
+        "operadora_nome": p.operadora.nome if p.operadora else "",
         "ativo": p.ativo,
         "criado_em": _fmt_br(p.criado_em, "%d/%m/%Y") or "",
         "contatos": [
@@ -1067,6 +1070,9 @@ async def criar_parceiro(
         raise HTTPException(status_code=400, detail=f"Já existe um parceiro com este telefone: {existente.nome}")
 
     extras = [t.strip() for t in body.get("telefones_extras", []) if t.strip()]
+    operadora_id = body.get("operadora_id") or None
+    if operadora_id:
+        operadora_id = int(operadora_id)
     p = Parceiro(
         nome=nome,
         data_nascimento=body.get("data_nascimento", "").strip() or None,
@@ -1075,6 +1081,7 @@ async def criar_parceiro(
         telefones_extras=json.dumps(extras, ensure_ascii=False) if extras else None,
         email=body.get("email", "").strip() or None,
         observacoes=body.get("observacoes", "").strip() or None,
+        operadora_id=operadora_id,
     )
     db.add(p)
     db.flush()
@@ -1128,6 +1135,7 @@ async def atualizar_parceiro(
             raise HTTPException(status_code=400, detail="Já existe um parceiro com este telefone")
 
     extras = [t.strip() for t in body.get("telefones_extras", []) if t.strip()]
+    op_id = body.get("operadora_id") or None
     p.nome             = nome
     p.data_nascimento  = body.get("data_nascimento", "").strip() or None
     p.cpf              = cpf
@@ -1135,6 +1143,7 @@ async def atualizar_parceiro(
     p.telefones_extras = json.dumps(extras, ensure_ascii=False) if extras else None
     p.email            = body.get("email", "").strip() or None
     p.observacoes      = body.get("observacoes", "").strip() or None
+    p.operadora_id     = int(op_id) if op_id else None
 
     db.commit()
     db.refresh(p)
