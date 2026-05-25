@@ -1890,6 +1890,7 @@
             <span>📞 ${p.telefone}</span>
             ${(p.telefones_extras||[]).map(t=>`<span style="display:block;font-size:.75rem;color:var(--muted)">📞 ${t}</span>`).join('')}
             ${p.email ? `<span style="display:block;font-size:.72rem;color:var(--muted)">✉️ ${esc(p.email)}</span>` : ''}
+            ${p.nome_agenda ? `<span style="display:block;font-size:.72rem;color:var(--muted)">📒 ${esc(p.nome_agenda)}</span>` : ''}
             ${p.operadora_nome ? `<span style="display:block;font-size:.72rem;color:var(--muted)">👩‍💼 ${esc(p.operadora_nome)}</span>` : ''}
           </div>
           <div style="display:flex;gap:.35rem;flex-shrink:0">
@@ -1963,11 +1964,12 @@
       document.getElementById('pTelefone').value       = p.telefone;
       document.getElementById('pEmail').value          = p.email || '';
       document.getElementById('pObs').value            = p.observacoes || '';
+      document.getElementById('pNomeAgenda').value     = p.nome_agenda || '';
       document.getElementById('pOperadora').value      = p.operadora_id || '';
       _contatosTemp   = p.contatos.map(c => ({...c}));
       _telefonesExtras = Array.isArray(p.telefones_extras) ? [...p.telefones_extras] : [];
     } else {
-      ['pNome','pDataNasc','pCpf','pTelefone','pEmail','pObs'].forEach(i => document.getElementById(i).value = '');
+      ['pNome','pDataNasc','pCpf','pTelefone','pEmail','pObs','pNomeAgenda'].forEach(i => document.getElementById(i).value = '');
       document.getElementById('pOperadora').value = '';
       _contatosTemp   = [];
       _telefonesExtras = [];
@@ -2023,6 +2025,7 @@
       cpf:             document.getElementById('pCpf').value.trim(),
       email:           document.getElementById('pEmail').value.trim(),
       observacoes:     document.getElementById('pObs').value.trim(),
+      nome_agenda:     document.getElementById('pNomeAgenda').value.trim(),
       operadora_id:    document.getElementById('pOperadora').value || null,
       contatos:        _contatosTemp,
     };
@@ -3862,6 +3865,11 @@
         <div style="grid-column:1/-1">
           <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">E-mail</label>
           <input id="pEmail" type="email" placeholder="email@exemplo.com"
+            style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        </div>
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Como está salvo na agenda</label>
+          <input id="pNomeAgenda" type="text" placeholder="Ex: João Parceiro Imobiliária"
             style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
         </div>
         <div style="grid-column:1/-1">

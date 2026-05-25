@@ -139,6 +139,7 @@ class Parceiro(Base):
     telefones_extras  = Column(Text, nullable=True)   # JSON array de strings
     email             = Column(String(150), nullable=True)
     observacoes       = Column(Text, nullable=True)
+    nome_agenda       = Column(String(200), nullable=True)                          # como está salvo na agenda
     operadora_id      = Column(Integer, ForeignKey("usuarios.id"), nullable=True)  # operadora responsável
     ativo             = Column(Boolean, default=True)
     criado_em       = Column(DateTime, default=datetime.utcnow)

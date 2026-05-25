@@ -340,6 +340,7 @@ async def startup():
         ("leads",           "profissao",          "VARCHAR(100)"),
         ("leads",           "tem_cnh",            "BOOLEAN"),
         ("leads",           "oculto_funil",       "BOOLEAN DEFAULT 0"),
+        ("parceiros",       "nome_agenda",        "VARCHAR(200)"),
         ("parceiros",       "operadora_id",       "INTEGER"),
     ]
     for tabela, coluna, tipo in _migracoes:
@@ -1022,6 +1023,7 @@ def _serial_parceiro(p: Parceiro) -> dict:
         "telefones_extras": extras,
         "email": p.email or "",
         "observacoes": p.observacoes or "",
+        "nome_agenda":    p.nome_agenda or "",
         "operadora_id":   p.operadora_id,
         "operadora_nome": p.operadora.nome if p.operadora else "",
         "ativo": p.ativo,
@@ -1081,6 +1083,7 @@ async def criar_parceiro(
         telefones_extras=json.dumps(extras, ensure_ascii=False) if extras else None,
         email=body.get("email", "").strip() or None,
         observacoes=body.get("observacoes", "").strip() or None,
+        nome_agenda=body.get("nome_agenda", "").strip() or None,
         operadora_id=operadora_id,
     )
     db.add(p)
@@ -1143,6 +1146,7 @@ async def atualizar_parceiro(
     p.telefones_extras = json.dumps(extras, ensure_ascii=False) if extras else None
     p.email            = body.get("email", "").strip() or None
     p.observacoes      = body.get("observacoes", "").strip() or None
+    p.nome_agenda      = body.get("nome_agenda", "").strip() or None
     p.operadora_id     = int(op_id) if op_id else None
 
     db.commit()
