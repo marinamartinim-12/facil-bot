@@ -69,12 +69,13 @@ Envie estas 3 mensagens e salve proximo_estado: "aguardando_nome"
 ━━━ ESTADO "aguardando_nome" ━━━
 Salve o nome. Envie estas 2 mensagens e salve proximo_estado: "aguardando_modalidade"
   [0] "Nós somos especialistas em financiamento de particular para particular, credenciados nas 9 melhores financeiras do Brasil ! Encontraremos as melhores taxas e condições para você."
-  [1] "Qual serviço você procura?\n1 - Financiamento de veículo (quero comprar um carro, novo ou usado).\n2 - Empréstimo com garantia do seu veículo (tenho um carro e preciso de crédito)."
+  [1] "Qual serviço você procura?\n1 - Financiamento de veículo (quero comprar um carro, novo ou usado).\n2 - Empréstimo com garantia do seu veículo (tenho um carro e preciso de crédito).\n3 - Outros assuntos."
 
 ━━━ ESTADO "aguardando_modalidade" ━━━
 Identifique a escolha do cliente:
   • "1" / "financiamento" / "comprar" / "carro novo" / "carro usado" = FINANCIAMENTO → modalidade: "financiamento"
   • "2" / "refinanciamento" / "já tenho" / "crédito" / "garantia" = REFINANCIAMENTO → modalidade: "refinanciamento"
+  • "3" / "outros" / "outro assunto" / "outros assuntos" / qualquer assunto que claramente não seja financiamento nem refinanciamento = OUTROS ASSUNTOS → proximo_estado: "transferido"
 
 Se FINANCIAMENTO → proximo_estado: "coletando_cidade"
   Envie: "Estamos em Belo Horizonte, MG, de que cidade você é ?"
@@ -84,6 +85,9 @@ Se REFINANCIAMENTO → proximo_estado: "coletando_cpf"
   Envie estas 2 mensagens:
   [0] "Com apenas 3 dados, faremos uma pré análise e encontraremos as melhores taxas e condições para você. 🚘🛵🚚"
   [1] "Qual o seu CPF ?"
+
+Se OUTROS ASSUNTOS → proximo_estado: "transferido"
+  Envie: "Claro! Já estou te transferindo para uma de nossas atendentes. 😊 Se quiser, pode nos contar aqui qual o assunto para direcionarmos melhor!"
 
 ━━━ ESTADO "coletando_cidade" ━━━  (somente para Financiamento)
 Salve a cidade. Avalie a distância até BH:
@@ -168,7 +172,7 @@ _ESTADOS_TERMINAIS = {
 _TRANSICOES_VALIDAS: dict[str, list[str]] = {
     EstadoConversaEnum.inicio:                ["aguardando_nome"],
     EstadoConversaEnum.aguardando_nome:       ["aguardando_modalidade"],
-    EstadoConversaEnum.aguardando_modalidade: ["coletando_cidade", "coletando_cpf"],
+    EstadoConversaEnum.aguardando_modalidade: ["coletando_cidade", "coletando_cpf", "transferido"],
     EstadoConversaEnum.coletando_cidade:      ["coletando_cpf", "coletando_cidade", "desqualificado"],
     EstadoConversaEnum.coletando_cpf:         ["coletando_data_nasc"],
     EstadoConversaEnum.coletando_data_nasc:   ["coletando_carro"],
@@ -473,8 +477,21 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
         proximo_estado  = dados.get("proximo_estado", lead.estado_conversa)
         dados_coletados = {k: v for k, v in (dados.get("dados_coletados") or {}).items() if v}
         qualificado     = dados.get("qualificado", True)
+        estado_antes    = lead.estado_conversa  # Guarda antes de atualizar
 
         _atualizar_lead(db, lead, dados_coletados, proximo_estado, qualificado)
+
+        # Aviso de fora de horário para "outros assuntos" (aguardando_modalidade → transferido)
+        if (proximo_estado == "transferido"
+                and estado_antes == EstadoConversaEnum.aguardando_modalidade):
+            prox = _proximo_horario_atendimento()
+            if prox:
+                aviso = (
+                    "No momento estamos fora do horário de atendimento. "
+                    "Funcionamos seg–sex das 09h às 18h e sábado das 09h às 13h. "
+                    "Retornaremos seu contato no primeiro horário disponível! 🕘"
+                )
+                mensagens_bot.append(aviso)
 
     except Exception as ex:
         print(f"⚠️  Falha no parse JSON: {ex}\nResposta raw: {resposta_raw}")

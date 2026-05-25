@@ -579,6 +579,57 @@ def _extrair_texto_zapi(body: dict) -> str:
     ).strip()
 
 
+def _buscar_parceiro_por_telefone(telefone: str, db) -> "Parceiro | None":
+    """Retorna o Parceiro ativo cujo telefone principal ou extra bate com o número."""
+    from models import Parceiro as _Parceiro
+    p = db.query(_Parceiro).filter(_Parceiro.telefone == telefone, _Parceiro.ativo == True).first()
+    if p:
+        return p
+    todos = db.query(_Parceiro).filter(_Parceiro.ativo == True, _Parceiro.telefones_extras != None).all()
+    for p in todos:
+        try:
+            extras = json.loads(p.telefones_extras or "[]")
+            if any(str(e).replace("+", "").replace(" ", "") == telefone for e in extras):
+                return p
+        except Exception:
+            pass
+    return None
+
+
+def _extrair_audio_url_zapi(body: dict) -> str | None:
+    """Extrai a URL do áudio de um webhook Z-API, se houver."""
+    audio = body.get("audio") or {}
+    if audio.get("audioUrl"):
+        return audio["audioUrl"]
+    # Alguns formatos Z-API colocam direto em 'ptt'
+    ptt = body.get("ptt") or {}
+    if ptt.get("audioUrl"):
+        return ptt["audioUrl"]
+    return None
+
+
+async def _salvar_audio_cliente(telefone: str, audio_url: str, db) -> str | None:
+    """Baixa o áudio do cliente, salva em /app/audios/ e retorna o conteúdo [AUDIO:filename]."""
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(audio_url)
+        if resp.status_code != 200:
+            print(f"⚠️ Não foi possível baixar áudio do cliente: {resp.status_code}")
+            return None
+        # Detecta extensão pelo content-type
+        ct = resp.headers.get("content-type", "audio/ogg")
+        ext = "ogg" if "ogg" in ct else ("mp3" if "mp3" in ct or "mpeg" in ct else "webm")
+        audio_id = uuid.uuid4().hex
+        filename = f"{audio_id}.{ext}"
+        os.makedirs("/app/audios", exist_ok=True)
+        with open(f"/app/audios/{filename}", "wb") as f:
+            f.write(resp.content)
+        return f"[AUDIO:{filename}]"
+    except Exception as e:
+        print(f"⚠️ Erro ao salvar áudio do cliente: {e}")
+        return None
+
+
 @app.post("/webhook/zapi")
 async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
     body = await request.json()
@@ -628,7 +679,84 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
         # ── Mensagem recebida do cliente ─────────────────────────────────────
         texto = _extrair_texto_zapi(body)
         if not texto:
+            # Verifica se é mensagem de áudio do cliente
+            audio_url = _extrair_audio_url_zapi(body)
+            if audio_url:
+                lead = db.query(Lead).filter(Lead.telefone == telefone).first()
+                if lead:
+                    conteudo_audio = await _salvar_audio_cliente(telefone, audio_url, db)
+                    if conteudo_audio:
+                        _salvar_msg_webhook(db, telefone, conteudo_audio, role="user")
+                        lead.atualizado_em = datetime.utcnow()
+                        if lead.oculto_funil:
+                            lead.oculto_funil = False
+                        db.commit()
+                        return JSONResponse({"status": "audio_salvo"})
             return JSONResponse({"status": "ignored"})
+
+        # ── Verifica se é número de parceiro ─────────────────────────────────
+        parceiro = _buscar_parceiro_por_telefone(telefone, db)
+        if parceiro:
+            lead = db.query(Lead).filter(Lead.telefone == telefone).first()
+            ja_em_atendimento = lead and lead.status in [
+                StatusLeadEnum.assumido,
+                StatusLeadEnum.proposta_enviada,
+                StatusLeadEnum.fechado,
+                StatusLeadEnum.qualificado,
+            ]
+            if ja_em_atendimento:
+                # Parceiro já transferido — salva mensagem e avisa fora do horário
+                _salvar_msg_webhook(db, telefone, texto, role="user")
+                if lead.oculto_funil:
+                    lead.oculto_funil = False
+                    db.commit()
+                prox = _proximo_horario_atendimento()
+                if prox:
+                    primeiro_nome = parceiro.nome.split()[0]
+                    aviso = (
+                        f"Olá {primeiro_nome}! 😊 No momento estamos fora do horário de atendimento. "
+                        f"Funcionamos seg–sex das 09h às 18h e sábado das 09h às 13h. "
+                        f"Retornaremos seu contato no primeiro horário disponível! 🕘"
+                    )
+                    await enviar_zapi(telefone, aviso)
+                    _salvar_msg_webhook(db, telefone, aviso, role="assistant")
+                return JSONResponse({"status": "parceiro_aguardando_humano"})
+
+            # Primeiro contato do parceiro → boas-vindas e transferência direta
+            primeiro_nome = parceiro.nome.split()[0]
+            msg_boas_vindas = f"Olá {primeiro_nome}! Um momento, já vou te conectar com nossa equipe. 😊"
+
+            if not lead:
+                lead = Lead(telefone=telefone, nome=parceiro.nome, parceiro_id=parceiro.id)
+                db.add(lead)
+                db.commit()
+                db.refresh(lead)
+
+            _salvar_msg_webhook(db, telefone, texto, role="user")
+            lead.estado_conversa = EstadoConversaEnum.transferido
+            lead.status = StatusLeadEnum.qualificado
+            lead.parceiro_id = parceiro.id
+            if not lead.nome:
+                lead.nome = parceiro.nome
+            lead.atualizado_em = datetime.utcnow()
+            lead.oculto_funil = False
+            db.commit()
+
+            await enviar_zapi(telefone, msg_boas_vindas)
+            _salvar_msg_webhook(db, telefone, msg_boas_vindas, role="assistant")
+
+            prox = _proximo_horario_atendimento()
+            if prox:
+                aviso = (
+                    "No momento estamos fora do horário de atendimento. "
+                    "Funcionamos seg–sex das 09h às 18h e sábado das 09h às 13h. "
+                    "Retornaremos seu contato no primeiro horário disponível! 🕘"
+                )
+                await enviar_zapi(telefone, aviso)
+                _salvar_msg_webhook(db, telefone, aviso, role="assistant")
+
+            await _notificar_equipe(telefone, db)
+            return JSONResponse({"status": "parceiro_transferido"})
 
         lead = db.query(Lead).filter(Lead.telefone == telefone).first()
 
