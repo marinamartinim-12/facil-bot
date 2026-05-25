@@ -1841,6 +1841,8 @@
   function renderCarteiraResumo() {
     const el = document.getElementById('carteiraResumo');
     if (!el) return;
+    if (currentUser?.role !== 'admin') { el.style.display = 'none'; return; }
+    el.style.display = 'flex';
     // Conta parceiros por operadora
     const contagem = {};
     let semOp = 0;
