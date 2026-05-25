@@ -3194,6 +3194,14 @@
     const inputRenda  = editando
       ? `<select id="ei_renda" style="${inpStyle}">${rendaOpts.map(o=>`<option value="${o}" ${lead.renda===o?'selected':''}>${o||'Não informado'}</option>`).join('')}</select>`
       : `<span>${escHtml(lead.renda||'—')}</span>`;
+    const cnhLabel = lead.tem_cnh === true ? '✅ Sim' : lead.tem_cnh === false ? '❌ Não' : '—';
+    const inputCnh = editando
+      ? `<select id="ei_cnh" style="${inpStyle}">
+           <option value="" ${lead.tem_cnh===null||lead.tem_cnh===undefined?'selected':''}>Não informado</option>
+           <option value="true"  ${lead.tem_cnh===true ?'selected':''}>✅ Sim — possui CNH</option>
+           <option value="false" ${lead.tem_cnh===false?'selected':''}>❌ Não possui CNH</option>
+         </select>`
+      : `<span>${cnhLabel}</span>`;
     const inputMod    = editando
       ? `<select id="ei_mod" style="${inpStyle}">
            <option value="indefinido" ${(lead.modalidade==='indefinido'||!lead.modalidade)?'selected':''}>Indefinido</option>
@@ -3219,6 +3227,7 @@
       <div class="data-item"><label>Cidade</label>${inputCidade}</div>
       <div class="data-item"><label>Profissão</label>${inputProf}</div>
       <div class="data-item full"><label>Faixa de renda</label>${inputRenda}</div>
+      <div class="data-item full"><label>CNH</label>${inputCnh}</div>
       <div class="data-item"><label>Responsável</label><span>${lead.responsavel ? escHtml(lead.responsavel.nome) : '—'}</span></div>
       <div class="data-item"><label>Cadastrado</label><span>${escHtml(lead.criado_em||'—')}</span></div>
       ${lead.assumido_em ? `<div class="data-item"><label>Assumido em</label><span>${escHtml(lead.assumido_em)}</span></div>` : ''}
@@ -3274,6 +3283,7 @@
       cidade:           document.getElementById('ei_cidade')?.value.trim() || null,
       profissao:        document.getElementById('ei_prof')?.value.trim()   || null,
       renda:            document.getElementById('ei_renda')?.value         || null,
+      tem_cnh:          document.getElementById('ei_cnh')?.value === 'true' ? true : document.getElementById('ei_cnh')?.value === 'false' ? false : null,
     };
     try {
       const r = await fetch(`/api/leads/${modalLeadId}`, {

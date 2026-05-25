@@ -338,6 +338,7 @@ async def startup():
         ("leads",           "cidade",             "VARCHAR(100)"),
         ("leads",           "renda",              "VARCHAR(30)"),
         ("leads",           "profissao",          "VARCHAR(100)"),
+        ("leads",           "tem_cnh",            "BOOLEAN"),
         ("leads",           "oculto_funil",       "BOOLEAN DEFAULT 0"),
     ]
     for tabela, coluna, tipo in _migracoes:
@@ -1903,7 +1904,7 @@ async def editar_lead(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     body = await request.json()
-    campos_editaveis = ["nome", "cpf", "data_nascimento", "carro_interesse", "modalidade", "observacoes", "cidade", "renda", "profissao"]
+    campos_editaveis = ["nome", "cpf", "data_nascimento", "carro_interesse", "modalidade", "observacoes", "cidade", "renda", "profissao", "tem_cnh"]
     for campo in campos_editaveis:
         if campo in body:
             valor = body[campo]
@@ -3010,6 +3011,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "cidade":   l.cidade   or "",
         "renda":    l.renda    or "",
         "profissao": l.profissao or "",
+        "tem_cnh":  l.tem_cnh,   # None=não informado | True=sim | False=não
         "oculto_funil": bool(l.oculto_funil),
     }
 
