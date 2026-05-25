@@ -2998,12 +2998,36 @@
         ? `<span style="font-size:.68rem;color:#888;font-style:italic;margin-left:4px">✏️ editado</span>`
         : '';
 
-      // Detecta áudio gravado pelo painel: [AUDIO:arquivo.ext]
+      // Detecta mídia: [AUDIO:...], [IMAGE:...], [DOC:...|nome]
       const audioMatch = textoLimpo.match(/^\[AUDIO:([a-f0-9]{32}\.(webm|ogg|mp3))\]$/);
+      const imageMatch = textoLimpo.match(/^\[IMAGE:([a-f0-9]{32}\.(jpg|jpeg|png|webp|gif))\]/i);
+      const docMatch   = textoLimpo.match(/^\[DOC:([a-f0-9]{32}\.\w{2,5})\|(.+)\]$/);
       let conteudoHtml;
       if (audioMatch) {
         const audioSrc = `/api/audio/${audioMatch[1]}`;
         conteudoHtml = `<audio controls style="max-width:220px;height:36px;display:block" src="${audioSrc}"></audio>`;
+      } else if (imageMatch) {
+        const imgSrc = `/api/imagem/${imageMatch[1]}`;
+        // Captura legenda se houver (após o marcador)
+        const legendaRaw = textoLimpo.replace(/^\[IMAGE:[^\]]+\]/, '').replace(/^\n/, '').trim();
+        const legendaHtml = legendaRaw ? `<div style="font-size:.82rem;margin-top:4px">${escHtml(legendaRaw)}</div>` : '';
+        conteudoHtml = `
+          <a href="${imgSrc}" target="_blank">
+            <img src="${imgSrc}" style="max-width:220px;max-height:200px;border-radius:8px;display:block;cursor:zoom-in">
+          </a>
+          ${legendaHtml}
+          <a href="${imgSrc}" download style="font-size:.72rem;color:#25d366;margin-top:3px;display:inline-block">⬇ Baixar imagem</a>`;
+      } else if (docMatch) {
+        const docUrl  = `/api/documento/${docMatch[1]}`;
+        const docNome = escHtml(docMatch[2]);
+        conteudoHtml = `
+          <div style="display:flex;align-items:center;gap:8px;padding:2px 0">
+            <span style="font-size:1.6rem;line-height:1">📄</span>
+            <div>
+              <div style="font-size:.85rem;font-weight:500;word-break:break-all">${docNome}</div>
+              <a href="${docUrl}" download="${docNome}" style="font-size:.75rem;color:#25d366">⬇ Baixar</a>
+            </div>
+          </div>`;
       } else {
         conteudoHtml = `<span>${escHtml(textoLimpo)}</span>${editadoHtml}`;
       }

@@ -601,11 +601,84 @@ def _extrair_audio_url_zapi(body: dict) -> str | None:
     audio = body.get("audio") or {}
     if audio.get("audioUrl"):
         return audio["audioUrl"]
-    # Alguns formatos Z-API colocam direto em 'ptt'
     ptt = body.get("ptt") or {}
     if ptt.get("audioUrl"):
         return ptt["audioUrl"]
     return None
+
+
+def _extrair_imagem_zapi(body: dict) -> dict | None:
+    """Extrai URL e legenda de imagem do webhook Z-API."""
+    img = body.get("image") or {}
+    if img.get("imageUrl"):
+        return {"url": img["imageUrl"], "caption": img.get("caption", "")}
+    return None
+
+
+def _extrair_documento_zapi(body: dict) -> dict | None:
+    """Extrai URL, nome e mime de documento/PDF do webhook Z-API."""
+    doc = body.get("document") or {}
+    if doc.get("documentUrl"):
+        return {
+            "url": doc["documentUrl"],
+            "nome": doc.get("fileName", "documento"),
+            "mime": doc.get("mimeType", "application/octet-stream"),
+        }
+    return None
+
+
+async def _salvar_imagem(url: str) -> str | None:
+    """Baixa imagem, salva em /app/imagens/ e retorna marcador [IMAGE:filename]."""
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200:
+            return None
+        ct = resp.headers.get("content-type", "image/jpeg")
+        if "png" in ct:
+            ext = "png"
+        elif "webp" in ct:
+            ext = "webp"
+        elif "gif" in ct:
+            ext = "gif"
+        else:
+            ext = "jpg"
+        img_id = uuid.uuid4().hex
+        filename = f"{img_id}.{ext}"
+        os.makedirs("/app/imagens", exist_ok=True)
+        with open(f"/app/imagens/{filename}", "wb") as f:
+            f.write(resp.content)
+        return f"[IMAGE:{filename}]"
+    except Exception as e:
+        print(f"⚠️ Erro ao salvar imagem: {e}")
+        return None
+
+
+async def _salvar_documento(url: str, nome_original: str) -> str | None:
+    """Baixa documento/PDF, salva em /app/documentos/ e retorna marcador [DOC:filename|nome]."""
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200:
+            return None
+        ct = resp.headers.get("content-type", "")
+        nome_lower = nome_original.lower()
+        if "pdf" in ct or nome_lower.endswith(".pdf"):
+            ext = "pdf"
+        elif "." in nome_original:
+            ext = nome_original.rsplit(".", 1)[-1][:5]
+        else:
+            ext = "bin"
+        doc_id = uuid.uuid4().hex
+        filename = f"{doc_id}.{ext}"
+        nome_display = re.sub(r"[|]", "_", nome_original)[:100] if nome_original else f"documento.{ext}"
+        os.makedirs("/app/documentos", exist_ok=True)
+        with open(f"/app/documentos/{filename}", "wb") as f:
+            f.write(resp.content)
+        return f"[DOC:{filename}|{nome_display}]"
+    except Exception as e:
+        print(f"⚠️ Erro ao salvar documento: {e}")
+        return None
 
 
 async def _salvar_audio_cliente(telefone: str, audio_url: str, db) -> str | None:
@@ -674,24 +747,67 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
                 lead = db.query(Lead).filter(Lead.telefone == telefone).first()
                 if lead:
                     _salvar_msg_webhook(db, telefone, texto, role="assistant")
+            else:
+                # Imagem ou documento enviado do celular pelo atendente
+                lead = db.query(Lead).filter(Lead.telefone == telefone).first()
+                if lead:
+                    img_info = _extrair_imagem_zapi(body)
+                    if img_info:
+                        conteudo = await _salvar_imagem(img_info["url"])
+                        if conteudo:
+                            _salvar_msg_webhook(db, telefone, conteudo, role="assistant")
+                    else:
+                        doc_info = _extrair_documento_zapi(body)
+                        if doc_info:
+                            conteudo = await _salvar_documento(doc_info["url"], doc_info["nome"])
+                            if conteudo:
+                                _salvar_msg_webhook(db, telefone, conteudo, role="assistant")
             return JSONResponse({"status": "fromme_saved"})
 
         # ── Mensagem recebida do cliente ─────────────────────────────────────
         texto = _extrair_texto_zapi(body)
         if not texto:
-            # Verifica se é mensagem de áudio do cliente
+            lead_midia = db.query(Lead).filter(Lead.telefone == telefone).first()
+
+            # Verifica áudio do cliente
             audio_url = _extrair_audio_url_zapi(body)
-            if audio_url:
-                lead = db.query(Lead).filter(Lead.telefone == telefone).first()
-                if lead:
-                    conteudo_audio = await _salvar_audio_cliente(telefone, audio_url, db)
-                    if conteudo_audio:
-                        _salvar_msg_webhook(db, telefone, conteudo_audio, role="user")
-                        lead.atualizado_em = datetime.utcnow()
-                        if lead.oculto_funil:
-                            lead.oculto_funil = False
-                        db.commit()
-                        return JSONResponse({"status": "audio_salvo"})
+            if audio_url and lead_midia:
+                conteudo_audio = await _salvar_audio_cliente(telefone, audio_url, db)
+                if conteudo_audio:
+                    _salvar_msg_webhook(db, telefone, conteudo_audio, role="user")
+                    lead_midia.atualizado_em = datetime.utcnow()
+                    if lead_midia.oculto_funil:
+                        lead_midia.oculto_funil = False
+                    db.commit()
+                    return JSONResponse({"status": "audio_salvo"})
+
+            # Verifica imagem do cliente
+            img_info = _extrair_imagem_zapi(body)
+            if img_info and lead_midia:
+                conteudo_img = await _salvar_imagem(img_info["url"])
+                if conteudo_img:
+                    # Se tem legenda, salva junto
+                    if img_info.get("caption"):
+                        conteudo_img += f"\n{img_info['caption']}"
+                    _salvar_msg_webhook(db, telefone, conteudo_img, role="user")
+                    lead_midia.atualizado_em = datetime.utcnow()
+                    if lead_midia.oculto_funil:
+                        lead_midia.oculto_funil = False
+                    db.commit()
+                    return JSONResponse({"status": "imagem_salva"})
+
+            # Verifica documento/PDF do cliente
+            doc_info = _extrair_documento_zapi(body)
+            if doc_info and lead_midia:
+                conteudo_doc = await _salvar_documento(doc_info["url"], doc_info["nome"])
+                if conteudo_doc:
+                    _salvar_msg_webhook(db, telefone, conteudo_doc, role="user")
+                    lead_midia.atualizado_em = datetime.utcnow()
+                    if lead_midia.oculto_funil:
+                        lead_midia.oculto_funil = False
+                    db.commit()
+                    return JSONResponse({"status": "documento_salvo"})
+
             return JSONResponse({"status": "ignored"})
 
         # ── Verifica se é número de parceiro ─────────────────────────────────
@@ -1707,6 +1823,34 @@ async def servir_audio(filename: str):
     ext = filename.rsplit(".", 1)[-1]
     media_type = "audio/ogg" if ext == "ogg" else "audio/webm"
     return FileResponse(path, media_type=media_type)
+
+
+@app.get("/api/imagem/{filename}")
+async def servir_imagem(filename: str):
+    """Serve arquivos de imagem salvos do WhatsApp."""
+    if not re.match(r'^[a-f0-9]{32}\.(jpg|jpeg|png|webp|gif)$', filename):
+        raise HTTPException(status_code=404)
+    path = f"/app/imagens/{filename}"
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404)
+    ext = filename.rsplit(".", 1)[-1].lower()
+    tipos = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+             "webp": "image/webp", "gif": "image/gif"}
+    return FileResponse(path, media_type=tipos.get(ext, "image/jpeg"))
+
+
+@app.get("/api/documento/{filename}")
+async def servir_documento(filename: str):
+    """Serve documentos/PDFs salvos do WhatsApp com header de download."""
+    if not re.match(r'^[a-f0-9]{32}\.\w{2,5}$', filename):
+        raise HTTPException(status_code=404)
+    path = f"/app/documentos/{filename}"
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404)
+    ext = filename.rsplit(".", 1)[-1].lower()
+    media_type = "application/pdf" if ext == "pdf" else "application/octet-stream"
+    return FileResponse(path, media_type=media_type,
+                        headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 
 @app.get("/api/inbox")
