@@ -1706,12 +1706,19 @@ async def iniciar_conversa(
         db.add(lead)
         db.commit()
         db.refresh(lead)
-    elif lead.status not in [StatusLeadEnum.assumido, StatusLeadEnum.proposta_enviada]:
+    elif lead.status not in [StatusLeadEnum.assumido, StatusLeadEnum.proposta_enviada, StatusLeadEnum.proposta_aprovada]:
         lead.status = StatusLeadEnum.assumido
+        lead.estado_conversa = EstadoConversaEnum.transferido
         lead.atribuido_para = usuario.id
         lead.assumido_em = datetime.utcnow()
         lead.atualizado_em = datetime.utcnow()
         db.commit()
+    else:
+        # Lead já em atendimento humano — garante estado_conversa correto
+        if lead.estado_conversa not in (EstadoConversaEnum.transferido, EstadoConversaEnum.finalizado):
+            lead.estado_conversa = EstadoConversaEnum.transferido
+            lead.atualizado_em = datetime.utcnow()
+            db.commit()
 
     # Salva e envia (registra no cache para ignorar o eco fromMe do Z-API)
     _registrar_msg_painel(telefone, texto)
