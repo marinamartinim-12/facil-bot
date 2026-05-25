@@ -1819,22 +1819,37 @@ async def enviar_audio_gravado(
 
     # Envia pelo Z-API usando URL pública do próprio servidor
     if settings.ZAPI_INSTANCE and settings.ZAPI_TOKEN:
-        base_url = str(request.base_url).rstrip("/")
+        # Usa headers X-Forwarded-* para obter a URL pública correta (Railway termina SSL no load balancer)
+        proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+        host = (request.headers.get("x-forwarded-host")
+                or request.headers.get("host")
+                or str(request.base_url.netloc))
+        base_url = f"{proto}://{host}"
         audio_url = f"{base_url}/api/audio/{audio_filename}"
         print(f"🎤 URL: {audio_url}")
         zapi_url = f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE}/token/{settings.ZAPI_TOKEN}/send-audio"
         headers_zapi = {"Client-Token": settings.ZAPI_CLIENT_TOKEN}
         payload = {"phone": lead.telefone, "audio": audio_url}
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(zapi_url, headers=headers_zapi, json=payload, timeout=30)
-        print(f"🎤 Z-API resposta: {resp.status_code} — {resp.text[:300]}")
-        if resp.status_code != 200:
-            raise HTTPException(status_code=502, detail=f"Z-API erro: {resp.text[:200]}")
+        zapi_ok = False
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(zapi_url, headers=headers_zapi, json=payload, timeout=30)
+            print(f"🎤 Z-API resposta: {resp.status_code} — {resp.text[:300]}")
+            zapi_ok = resp.status_code == 200
+            if not zapi_ok:
+                print(f"⚠️ Z-API retornou {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            print(f"⚠️ Erro ao chamar Z-API: {e}")
     else:
+        zapi_ok = True
         print(f"[Z-API SIMULADO] Áudio para {lead.telefone}")
 
     # Salva no histórico com referência ao arquivo (para reprodução no painel)
+    # Mesmo se Z-API falhou, o arquivo está salvo — o painel pode reproduzir
     _salvar_msg_webhook(db, lead.telefone, f"[{usuario.nome}]: [AUDIO:{audio_filename}]", role="assistant")
+
+    if not zapi_ok:
+        raise HTTPException(status_code=502, detail="Áudio salvo, mas falha ao entregar pelo WhatsApp. Tente reenviar.")
 
     return {"status": "enviado"}
 

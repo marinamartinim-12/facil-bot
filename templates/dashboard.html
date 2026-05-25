@@ -2794,6 +2794,9 @@
 
   function cancelarGravacao() {
     clearInterval(_timerInterval);
+    // Remove onstop ANTES de parar para evitar race condition:
+    // stop() dispara onstop de forma assíncrona, que recriaria _audioBlob e voltaria para 'preview'
+    if (_mediaRecorder) _mediaRecorder.onstop = null;
     if (_mediaRecorder && _mediaRecorder.state !== 'inactive') {
       _mediaRecorder.stream?.getTracks().forEach(t => t.stop());
       _mediaRecorder.stop();
@@ -2809,26 +2812,34 @@
     btn.disabled = true;
     btn.textContent = 'Enviando…';
     try {
-      const reader = new FileReader();
-      reader.readAsDataURL(_audioBlob);
-      reader.onloadend = async () => {
-        const base64 = reader.result; // "data:audio/ogg;base64,..."
-        const resp = await fetch(`/api/leads/${chatLeadAtivo.id}/enviar-audio`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ audio_base64: base64 }),
-        });
-        if (resp.ok) {
-          _audioBlob = null;
-          _mostrarBarra('normal');
-          await carregarMensagensChat();
-        } else {
-          alert('Erro ao enviar áudio. Tente novamente.');
-          btn.disabled = false;
-          btn.textContent = 'Enviar 🎤';
-        }
-      };
-    } catch {
+      // Converte Blob → base64 usando Promise (evita erros silenciosos no onloadend)
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Falha ao ler o áudio'));
+        reader.readAsDataURL(_audioBlob);
+      });
+
+      const resp = await fetch(`/api/leads/${chatLeadAtivo.id}/enviar-audio`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio_base64: base64 }),
+      });
+
+      if (resp.ok) {
+        _audioBlob = null;
+        _audioChunks = [];
+        _mostrarBarra('normal');
+        await carregarMensagensChat();
+      } else {
+        const errData = await resp.json().catch(() => ({}));
+        alert(`Erro ao enviar áudio: ${errData.detail || 'Tente novamente.'}`);
+        btn.disabled = false;
+        btn.textContent = 'Enviar 🎤';
+      }
+    } catch (err) {
+      console.error('Erro ao enviar áudio:', err);
+      alert('Erro ao enviar áudio. Verifique a conexão e tente novamente.');
       btn.disabled = false;
       btn.textContent = 'Enviar 🎤';
     }
