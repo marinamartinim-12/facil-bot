@@ -118,9 +118,10 @@
     .btn-outline:hover { border-color: var(--navy); }
     .btn-danger { background: var(--red); color: var(--white); }
     .content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 1.25rem 1.5rem; }
-    .content.funil-mode { overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0; }
-    .content.funil-mode #viewFunil { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
-    .content.funil-mode .kanban { flex: 1; height: auto; min-height: 0; overflow-x: auto; overflow-y: auto; }
+    .content.funil-mode { overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; padding-bottom: 1rem; }
+    .content.funil-mode #viewFunil { flex: 1; display: flex; flex-direction: column; }
+    .content.funil-mode .kanban { height: auto; overflow-x: auto; overflow-y: visible; align-items: flex-start; }
+    .content.funil-mode .col-cards { overflow-y: visible; max-height: none; }
 
     /* ── STATS ── */
     .stats-row-1 { display: grid; grid-template-columns: repeat(6, 1fr); gap: .65rem; margin-bottom: .65rem; }
