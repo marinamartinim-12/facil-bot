@@ -1957,12 +1957,12 @@
     document.getElementById('parceiroMsg').style.display = 'none';
     document.getElementById('parceiroModalTitulo').textContent = id ? 'Editar Parceiro' : 'Novo Parceiro';
 
-    // Carrega lista de usuários ativos para o select de operadora
+    // Carrega lista de usuários ativos para o select de operadora (endpoint acessível a todas)
     try {
-      const usrs = await fetch('/api/usuarios').then(r => r.json());
+      const usrs = await fetch('/api/usuarios/opcoes').then(r => r.json());
       const sel = document.getElementById('pOperadora');
       sel.innerHTML = '<option value="">— Não atribuída —</option>' +
-        usrs.filter(u => u.ativo).map(u => `<option value="${u.id}">${u.nome}</option>`).join('');
+        usrs.map(u => `<option value="${u.id}">${u.nome}</option>`).join('');
     } catch {}
 
     if (id) {

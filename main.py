@@ -2187,6 +2187,16 @@ async def estatisticas(
 
 # ─── API Usuários (admin) ─────────────────────────────────────────────────────────
 
+@app.get("/api/usuarios/opcoes")
+async def listar_usuarios_opcoes(
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Lista id+nome de usuários ativos — acessível a qualquer usuária logada (para dropdowns)."""
+    usuarios = db.query(Usuario).filter(Usuario.ativo == True).order_by(Usuario.nome).all()
+    return [{"id": u.id, "nome": u.nome} for u in usuarios]
+
+
 @app.get("/api/usuarios")
 async def listar_usuarios(db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
     return [_serial_usuario(u) for u in db.query(Usuario).order_by(Usuario.criado_em).all()]
