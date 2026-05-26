@@ -2181,6 +2181,21 @@ async def estatisticas(
     taxa_prop_aprovada = round(proposta_aprovada / total * 100, 1) if total > 0 else 0
     taxa_fechado       = round(fechados / total * 100, 1) if total > 0 else 0
 
+    # Ranking de funcionárias por contratos fechados no mês
+    inicio_mes_utc = inicio_mes.astimezone(timezone.utc).replace(tzinfo=None)
+    funcionarias = db.query(Usuario).filter(
+        Usuario.role == RoleEnum.funcionario, Usuario.ativo == True
+    ).all()
+    ranking_mes = []
+    for f in funcionarias:
+        qtd = db.query(Lead).filter(
+            Lead.atribuido_para == f.id,
+            Lead.status == StatusLeadEnum.fechado,
+            Lead.atualizado_em >= inicio_mes_utc,
+        ).count()
+        ranking_mes.append({"nome": f.nome, "contratos": qtd})
+    ranking_mes.sort(key=lambda x: x["contratos"], reverse=True)
+
     return {
         "total": total,
         "leads_mes": leads_mes,
@@ -2197,6 +2212,7 @@ async def estatisticas(
         "taxa_qualificacao":   round((conv / total * 100), 1) if total > 0 else 0,
         "taxa_prop_aprovada":  taxa_prop_aprovada,
         "taxa_fechado":        taxa_fechado,
+        "ranking_mes":         ranking_mes,
     }
 
 

@@ -1107,6 +1107,21 @@
   // ═══════ STATS ═══════
   function renderStats() {
     const s = statsData;
+    const medalhas = ['🥇','🥈','🥉'];
+    const ranking = (s.ranking_mes || []);
+    const podiumHtml = ranking.length === 0
+      ? `<div style="color:var(--muted);font-size:.8rem;margin-top:.25rem">Nenhum contrato ainda</div>`
+      : ranking.map((r, i) => {
+          const medalha = medalhas[i] || `${i+1}º`;
+          const destaque = i === 0 ? 'font-weight:800;font-size:.95rem;color:var(--navy)' : 'font-size:.85rem;color:var(--text)';
+          const pts = r.contratos === 1 ? '1 contrato' : `${r.contratos} contratos`;
+          return `<div style="display:flex;align-items:center;gap:.4rem;${i>0?'margin-top:.2rem':''}">
+            <span style="font-size:${i===0?'1.2rem':'1rem'}">${medalha}</span>
+            <span style="${destaque}">${escHtml(r.nome)}</span>
+            <span style="margin-left:auto;font-size:.75rem;color:var(--muted);white-space:nowrap">${pts}</span>
+          </div>`;
+        }).join('');
+
     document.getElementById('statsRow').innerHTML = `
       <div class="stat s1"><div class="stat-label">Total</div><div class="stat-val">${s.total||0}</div></div>
       <div class="stat s2"><div class="stat-label">Recebidos (mês)</div><div class="stat-val">${s.leads_mes||0}</div></div>
@@ -1116,6 +1131,10 @@
       <div class="stat s6"><div class="stat-label">Taxa Qualif.</div><div class="stat-val" style="color:var(--gold3)">${s.taxa_qualificacao||0}%</div></div>
       <div class="stat" style="border-left:4px solid #10b981"><div class="stat-label">% Prop. Aprovada</div><div class="stat-val" style="color:#059669">${s.taxa_prop_aprovada||0}%</div></div>
       <div class="stat" style="border-left:4px solid #8b5cf6"><div class="stat-label">% Contrato Fechado</div><div class="stat-val" style="color:#7c3aed">${s.taxa_fechado||0}%</div></div>
+      <div class="stat" style="border-left:4px solid #f59e0b;min-width:200px;grid-column:span 2">
+        <div class="stat-label">🏆 Ranking do Mês</div>
+        <div style="margin-top:.4rem">${podiumHtml}</div>
+      </div>
     `;
   }
 
