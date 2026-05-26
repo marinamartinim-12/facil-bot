@@ -118,10 +118,14 @@
     .btn-outline:hover { border-color: var(--navy); }
     .btn-danger { background: var(--red); color: var(--white); }
     .content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 1.25rem 1.5rem; }
-    .content.funil-mode { overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; padding-bottom: 1rem; }
-    .content.funil-mode #viewFunil { flex: 1; display: flex; flex-direction: column; }
-    .content.funil-mode .kanban { height: auto; overflow-x: auto; overflow-y: visible; align-items: flex-start; }
-    .content.funil-mode .col-cards { overflow-y: visible; max-height: none; }
+    .content.funil-mode { overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0; }
+    .content.funil-mode #viewFunil { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+    .content.funil-mode .kanban { flex: 1; height: auto; min-height: 0; overflow-x: auto; overflow-y: hidden; }
+    /* Stats recolhível */
+    #statsArea { transition: max-height .3s ease, opacity .3s ease, margin .3s ease; overflow: hidden; }
+    #statsArea.recolhido { max-height: 0 !important; opacity: 0; margin: 0 !important; }
+    #btnToggleStats { background: none; border: 1px solid var(--border); border-radius: 6px; padding: .18rem .5rem; font-size: .72rem; color: var(--muted); cursor: pointer; transition: background .15s; }
+    #btnToggleStats:hover { background: var(--bg); color: var(--navy); }
 
     /* ── STATS ── */
     .stats-row-1 { display: grid; grid-template-columns: repeat(6, 1fr); gap: .65rem; margin-bottom: .65rem; }
@@ -586,6 +590,7 @@
     <div class="top-bar">
       <button class="btn-toggle" onclick="toggleSidebar()" title="Abrir/fechar menu">☰</button>
       <h2 id="pageTitle" style="margin-left:.5rem">Funil de Leads</h2>
+      <button id="btnToggleStats" onclick="toggleStats()" title="Mostrar/ocultar painel" style="display:none;margin-left:.5rem">▲ Ocultar painel</button>
       <div class="top-actions">
         <span style="font-size:.78rem;color:var(--muted)"><span class="dot-live"></span> <span id="lastUpdate">—</span></span>
         <button class="btn btn-outline btn-sm" onclick="refresh()" id="btnRefresh">↻ Atualizar</button>
@@ -1001,6 +1006,8 @@
     }
     _iniciarHeartbeat();   // Registra atividade a cada 60s
     document.getElementById('mainContent').classList.add('funil-mode'); // view inicial é o funil
+    document.getElementById('btnToggleStats').style.display = '';
+    _aplicarEstadoStats();
     refresh();
     setInterval(refresh, 30000);
     iniciarPollingInbox();  // Atualiza lista de conversas a cada 5s
@@ -1023,6 +1030,8 @@
     document.getElementById('pageTitle').textContent = titles[v] || v;
     // Funil ocupa toda a área disponível com scroll horizontal próprio
     document.getElementById('mainContent').classList.toggle('funil-mode', v === 'funil');
+    // Botão de ocultar painel só aparece no funil
+    document.getElementById('btnToggleStats').style.display = v === 'funil' ? '' : 'none';
     if (v === 'usuarios') carregarUsuarios();
     if (v === 'relatorios') carregarRelatorios();
     if (v === 'lista') renderLista();
@@ -1031,6 +1040,27 @@
     if (v === 'parceiros') carregarParceiros();
   }
   function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+  let _statsRecolhido = localStorage.getItem('statsRecolhido') === '1';
+  function toggleStats() {
+    _statsRecolhido = !_statsRecolhido;
+    localStorage.setItem('statsRecolhido', _statsRecolhido ? '1' : '0');
+    _aplicarEstadoStats();
+  }
+  function _aplicarEstadoStats() {
+    const area = document.getElementById('statsArea');
+    const fin  = document.getElementById('dashFinanceiroRow');
+    const btn  = document.getElementById('btnToggleStats');
+    if (!area) return;
+    if (_statsRecolhido) {
+      area.classList.add('recolhido');
+      if (fin) fin.style.display = 'none';
+      if (btn) btn.textContent = '▼ Mostrar painel';
+    } else {
+      area.classList.remove('recolhido');
+      if (btn) btn.textContent = '▲ Ocultar painel';
+    }
+  }
 
   // ═══════ REFRESH ═══════
   let metaMesData = null;
