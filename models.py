@@ -247,6 +247,21 @@ class SessaoUsuario(Base):
     usuario = relationship("Usuario")
 
 
+class AusenciaFuncionaria(Base):
+    """Folgas, férias e afastamentos programados — apenas controle visual."""
+    __tablename__ = "ausencias_funcionaria"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    usuario_id  = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    tipo        = Column(String(20), nullable=False)   # folga | ferias | afastamento
+    data_inicio = Column(String(10), nullable=False)   # YYYY-MM-DD
+    data_fim    = Column(String(10), nullable=False)   # YYYY-MM-DD
+    observacao  = Column(String(300), nullable=True)
+    criado_em   = Column(DateTime, default=datetime.utcnow)
+
+    usuario = relationship("Usuario")
+
+
 def criar_tabelas():
     Base.metadata.create_all(bind=engine)
 

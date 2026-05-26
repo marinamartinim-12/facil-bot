@@ -1730,6 +1730,7 @@
           </div>
           <div class="uc-actions">
             <button class="btn btn-sm btn-outline" onclick="abrirEditarUsuario(${u.id},'${esc(u.nome)}','${esc(u.email)}','${u.role}',${u.ativo})">✏️ Editar</button>
+            <button class="btn btn-sm" style="background:#e8f4fd;color:#1a5276;border:1px solid #aed6f1" onclick="abrirAgendaFuncionaria(${u.id},'${esc(u.nome)}')">📅 Agenda</button>
             ${u.ativo && u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger" onclick="toggleUsuario(${u.id},false)">Desativar</button>` : ''}
             ${!u.ativo ? `<button class="btn btn-sm btn-primary" onclick="toggleUsuario(${u.id},true)">Reativar</button>` : ''}
           </div>
@@ -2247,6 +2248,90 @@
     el.style.background = ok ? '#dcfce7' : '#fee2e2';
     el.style.color      = ok ? '#166534' : '#991b1b';
     el.style.border     = `1px solid ${ok ? '#bbf7d0' : '#fecaca'}`;
+  }
+
+  // ═══════ AGENDA / AUSÊNCIAS DE FUNCIONÁRIAS ═══════
+  let _agendaUserId = null;
+
+  const _TIPO_LABEL = { folga: '🟡 Folga', ferias: '🟢 Férias', afastamento: '🔴 Afastamento' };
+  const _TIPO_BG    = { folga: '#fef9c3', ferias: '#dcfce7', afastamento: '#fee2e2' };
+  const _TIPO_CLR   = { folga: '#713f12', ferias: '#166534', afastamento: '#991b1b' };
+
+  function _fmtData(iso) {
+    // "YYYY-MM-DD" → "DD/MM/YYYY"
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  }
+
+  async function abrirAgendaFuncionaria(uid, nome) {
+    _agendaUserId = uid;
+    document.getElementById('agendaNome').textContent = `📅 Agenda — ${nome}`;
+    document.getElementById('ausenciaMsg').textContent = '';
+    // pré-preenche data início com hoje
+    const hoje = new Date().toISOString().slice(0, 10);
+    document.getElementById('ausenciaInicio').value = hoje;
+    document.getElementById('ausenciaFim').value = hoje;
+    document.getElementById('ausenciaTipo').value = 'folga';
+    document.getElementById('ausenciaObs').value = '';
+    document.getElementById('modalAgendaFuncionaria').classList.add('open');
+    await _carregarAusencias();
+  }
+
+  function fecharAgendaFuncionaria() {
+    document.getElementById('modalAgendaFuncionaria').classList.remove('open');
+    _agendaUserId = null;
+  }
+
+  async function _carregarAusencias() {
+    const lista = document.getElementById('listaAusencias');
+    lista.innerHTML = '<p style="color:var(--muted);font-size:.85rem">Carregando…</p>';
+    try {
+      const r = await fetch(`/api/usuarios/${_agendaUserId}/ausencias`);
+      const aus = await r.json();
+      if (!aus.length) {
+        lista.innerHTML = '<p style="color:var(--muted);font-size:.85rem;font-style:italic">Nenhuma ausência registrada.</p>';
+        return;
+      }
+      lista.innerHTML = aus.map(a => `
+        <div style="display:flex;align-items:center;gap:.6rem;padding:.5rem .75rem;border-radius:8px;background:${_TIPO_BG[a.tipo]||'#f0f4f8'};border:1px solid ${_TIPO_CLR[a.tipo]||'#ccc'}22">
+          <span style="font-size:.8rem;font-weight:700;color:${_TIPO_CLR[a.tipo]||'#333'};white-space:nowrap">${_TIPO_LABEL[a.tipo]||a.tipo}</span>
+          <span style="font-size:.82rem;color:var(--navy);flex:1">${_fmtData(a.data_inicio)} → ${_fmtData(a.data_fim)}${a.observacao ? ` · <em style="color:var(--muted)">${esc(a.observacao)}</em>` : ''}</span>
+          <button onclick="removerAusencia(${a.id})" style="background:none;border:none;cursor:pointer;font-size:1rem;color:var(--muted);padding:0 .2rem" title="Remover">🗑</button>
+        </div>`).join('');
+    } catch {
+      lista.innerHTML = '<p style="color:var(--red);font-size:.85rem">Erro ao carregar ausências.</p>';
+    }
+  }
+
+  async function salvarAusencia() {
+    const msg   = document.getElementById('ausenciaMsg');
+    const tipo  = document.getElementById('ausenciaTipo').value;
+    const inicio = document.getElementById('ausenciaInicio').value;
+    const fim    = document.getElementById('ausenciaFim').value;
+    const obs    = document.getElementById('ausenciaObs').value.trim();
+    if (!inicio || !fim) { msg.textContent = '⚠️ Preencha as datas.'; msg.style.color = 'var(--red)'; return; }
+    if (fim < inicio) { msg.textContent = '⚠️ Data fim deve ser ≥ data início.'; msg.style.color = 'var(--red)'; return; }
+    try {
+      const r = await fetch(`/api/usuarios/${_agendaUserId}/ausencias`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ tipo, data_inicio: inicio, data_fim: fim, observacao: obs || null }),
+      });
+      if (!r.ok) { const d = await r.json(); msg.textContent = '⚠️ ' + d.detail; msg.style.color = 'var(--red)'; return; }
+      msg.textContent = '✅ Ausência registrada!'; msg.style.color = 'var(--green)';
+      document.getElementById('ausenciaObs').value = '';
+      await _carregarAusencias();
+      setTimeout(() => { msg.textContent = ''; }, 2500);
+    } catch { msg.textContent = '⚠️ Erro ao salvar.'; msg.style.color = 'var(--red)'; }
+  }
+
+  async function removerAusencia(aid) {
+    if (!confirm('Remover esta ausência?')) return;
+    try {
+      await fetch(`/api/ausencias/${aid}`, { method: 'DELETE' });
+      await _carregarAusencias();
+    } catch { alert('Erro ao remover ausência.'); }
   }
 
   // ═══════ RELATÓRIOS ═══════
@@ -4149,6 +4234,60 @@
       <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:.25rem">
         <button onclick="fecharEditarUsuario()" class="btn btn-sm" style="background:var(--border);color:var(--navy)">Cancelar</button>
         <button id="btnSalvarEditUsuario" onclick="salvarEditarUsuario()" class="btn btn-primary btn-sm" style="padding:.5rem 1.4rem">Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: Agenda / Ausências da Funcionária (admin) ── -->
+<div class="overlay" id="modalAgendaFuncionaria" onclick="if(event.target===this)fecharAgendaFuncionaria()">
+  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:620px;display:flex;flex-direction:column;overflow:hidden;max-height:92vh">
+    <div class="modal-hd">
+      <span style="font-size:1.15rem">📅</span>
+      <h3 id="agendaNome">Agenda da Funcionária</h3>
+      <button class="modal-close" onclick="fecharAgendaFuncionaria()">×</button>
+    </div>
+    <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:1rem;overflow-y:auto">
+
+      <!-- Lista de ausências registradas -->
+      <div>
+        <p style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:0 0 .6rem">Ausências programadas</p>
+        <div id="listaAusencias" style="display:flex;flex-direction:column;gap:.5rem">
+          <p style="color:var(--muted);font-size:.85rem">Carregando…</p>
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border)">
+
+      <!-- Formulário para nova ausência -->
+      <div>
+        <p style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:0 0 .75rem">➕ Adicionar ausência</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.65rem">
+          <div>
+            <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Tipo</label>
+            <select id="ausenciaTipo" style="width:100%;padding:.5rem .65rem;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;background:#fff">
+              <option value="folga">🟡 Folga</option>
+              <option value="ferias">🟢 Férias</option>
+              <option value="afastamento">🔴 Afastamento</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Data início</label>
+            <input type="date" id="ausenciaInicio" style="width:100%;padding:.5rem .65rem;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem">
+          </div>
+          <div>
+            <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Data fim</label>
+            <input type="date" id="ausenciaFim" style="width:100%;padding:.5rem .65rem;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem">
+          </div>
+        </div>
+        <div style="margin-top:.6rem">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Observação <span style="font-weight:400;text-transform:none">(opcional)</span></label>
+          <input type="text" id="ausenciaObs" placeholder="Ex: emenda de feriado, CID X, etc." style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem">
+        </div>
+        <div style="display:flex;align-items:center;gap:.75rem;margin-top:.75rem">
+          <button class="btn btn-primary btn-sm" style="padding:.5rem 1.4rem" onclick="salvarAusencia()">Salvar</button>
+          <span id="ausenciaMsg" style="font-size:.82rem"></span>
+        </div>
       </div>
     </div>
   </div>

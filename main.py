@@ -34,7 +34,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
@@ -2285,6 +2285,75 @@ async def desativar_usuario(uid: int, db: Session = Depends(get_db), admin: Usua
     u.ativo = False
     db.commit()
     return {"status": "desativado"}
+
+
+# ─── Ausências / Disponibilidade de Funcionárias ────────────────────────────────
+
+@app.get("/api/usuarios/{uid}/ausencias")
+async def listar_ausencias(uid: int, db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
+    u = db.query(Usuario).filter(Usuario.id == uid).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    aus = (db.query(AusenciaFuncionaria)
+             .filter(AusenciaFuncionaria.usuario_id == uid)
+             .order_by(AusenciaFuncionaria.data_inicio)
+             .all())
+    return [
+        {
+            "id": a.id,
+            "tipo": a.tipo,
+            "data_inicio": a.data_inicio,
+            "data_fim": a.data_fim,
+            "observacao": a.observacao,
+            "criado_em": a.criado_em.isoformat() if a.criado_em else None,
+        }
+        for a in aus
+    ]
+
+
+@app.post("/api/usuarios/{uid}/ausencias")
+async def criar_ausencia(uid: int, request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
+    u = db.query(Usuario).filter(Usuario.id == uid).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    body = await request.json()
+    tipo = body.get("tipo", "").strip()
+    if tipo not in ("folga", "ferias", "afastamento"):
+        raise HTTPException(status_code=400, detail="Tipo inválido")
+    data_inicio = body.get("data_inicio", "").strip()
+    data_fim = body.get("data_fim", "").strip()
+    if not data_inicio or not data_fim:
+        raise HTTPException(status_code=400, detail="Datas obrigatórias")
+    if data_fim < data_inicio:
+        raise HTTPException(status_code=400, detail="Data fim deve ser maior ou igual à data início")
+    aus = AusenciaFuncionaria(
+        usuario_id=uid,
+        tipo=tipo,
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+        observacao=body.get("observacao", "").strip() or None,
+    )
+    db.add(aus)
+    db.commit()
+    db.refresh(aus)
+    return {
+        "id": aus.id,
+        "tipo": aus.tipo,
+        "data_inicio": aus.data_inicio,
+        "data_fim": aus.data_fim,
+        "observacao": aus.observacao,
+        "criado_em": aus.criado_em.isoformat() if aus.criado_em else None,
+    }
+
+
+@app.delete("/api/ausencias/{aid}")
+async def remover_ausencia(aid: int, db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
+    aus = db.query(AusenciaFuncionaria).filter(AusenciaFuncionaria.id == aid).first()
+    if not aus:
+        raise HTTPException(status_code=404, detail="Ausência não encontrada")
+    db.delete(aus)
+    db.commit()
+    return {"status": "removida"}
 
 
 # ─── Perfil do próprio usuário ───────────────────────────────────────────────────
