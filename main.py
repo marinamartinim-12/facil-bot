@@ -2162,26 +2162,41 @@ async def estatisticas(
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
     total = db.query(Lead).count()
-    em_atendimento = db.query(Lead).filter(Lead.status == StatusLeadEnum.em_atendimento).count()
-    qualificados = db.query(Lead).filter(Lead.status == StatusLeadEnum.qualificado).count()
-    assumidos = db.query(Lead).filter(Lead.status == StatusLeadEnum.assumido).count()
-    propostas = db.query(Lead).filter(Lead.status == StatusLeadEnum.proposta_enviada).count()
-    fechados = db.query(Lead).filter(Lead.status == StatusLeadEnum.fechado).count()
-    perdidos = db.query(Lead).filter(Lead.status == StatusLeadEnum.perdido).count()
-    desqualificados = db.query(Lead).filter(Lead.status == StatusLeadEnum.desqualificado).count()
-    conv = qualificados + assumidos + propostas + fechados
+    em_atendimento    = db.query(Lead).filter(Lead.status == StatusLeadEnum.em_atendimento).count()
+    qualificados      = db.query(Lead).filter(Lead.status == StatusLeadEnum.qualificado).count()
+    assumidos         = db.query(Lead).filter(Lead.status == StatusLeadEnum.assumido).count()
+    propostas         = db.query(Lead).filter(Lead.status == StatusLeadEnum.proposta_enviada).count()
+    proposta_aprovada = db.query(Lead).filter(Lead.status == StatusLeadEnum.proposta_aprovada).count()
+    fechados          = db.query(Lead).filter(Lead.status == StatusLeadEnum.fechado).count()
+    perdidos          = db.query(Lead).filter(Lead.status == StatusLeadEnum.perdido).count()
+    desqualificados   = db.query(Lead).filter(Lead.status == StatusLeadEnum.desqualificado).count()
+    conv = qualificados + assumidos + propostas + proposta_aprovada + fechados
+
+    # Leads inseridos neste mês calendário
+    agora = _agora_br()
+    inicio_mes = datetime(agora.year, agora.month, 1, tzinfo=_TZ_BR)
+    leads_mes = db.query(Lead).filter(Lead.criado_em >= inicio_mes.astimezone(timezone.utc).replace(tzinfo=None)).count()
+
+    # Taxas de conversão (base = total de leads)
+    taxa_prop_aprovada = round(proposta_aprovada / total * 100, 1) if total > 0 else 0
+    taxa_fechado       = round(fechados / total * 100, 1) if total > 0 else 0
+
     return {
         "total": total,
+        "leads_mes": leads_mes,
         "em_atendimento": em_atendimento,
         "qualificados": qualificados,
         "assumidos": assumidos,
         "propostas": propostas,
+        "proposta_aprovada": proposta_aprovada,
         "fechados": fechados,
         "perdidos": perdidos,
         "desqualificados": desqualificados,
         "financiamento": db.query(Lead).filter(Lead.modalidade == "financiamento").count(),
         "refinanciamento": db.query(Lead).filter(Lead.modalidade == "refinanciamento").count(),
-        "taxa_qualificacao": round((conv / total * 100), 1) if total > 0 else 0,
+        "taxa_qualificacao":   round((conv / total * 100), 1) if total > 0 else 0,
+        "taxa_prop_aprovada":  taxa_prop_aprovada,
+        "taxa_fechado":        taxa_fechado,
     }
 
 

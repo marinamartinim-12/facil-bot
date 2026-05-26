@@ -1109,11 +1109,13 @@
     const s = statsData;
     document.getElementById('statsRow').innerHTML = `
       <div class="stat s1"><div class="stat-label">Total</div><div class="stat-val">${s.total||0}</div></div>
-      <div class="stat s2"><div class="stat-label">Qualificados</div><div class="stat-val">${s.qualificados||0}</div></div>
+      <div class="stat s2"><div class="stat-label">Recebidos (mês)</div><div class="stat-val">${s.leads_mes||0}</div></div>
       <div class="stat s3"><div class="stat-label">Assumidos</div><div class="stat-val">${s.assumidos||0}</div></div>
       <div class="stat s4"><div class="stat-label">Propostas</div><div class="stat-val">${s.propostas||0}</div></div>
       <div class="stat s5"><div class="stat-label">Fechados</div><div class="stat-val">${s.fechados||0}</div></div>
       <div class="stat s6"><div class="stat-label">Taxa Qualif.</div><div class="stat-val" style="color:var(--gold3)">${s.taxa_qualificacao||0}%</div></div>
+      <div class="stat" style="border-left:4px solid #10b981"><div class="stat-label">% Prop. Aprovada</div><div class="stat-val" style="color:#059669">${s.taxa_prop_aprovada||0}%</div></div>
+      <div class="stat" style="border-left:4px solid #8b5cf6"><div class="stat-label">% Contrato Fechado</div><div class="stat-val" style="color:#7c3aed">${s.taxa_fechado||0}%</div></div>
     `;
   }
 
