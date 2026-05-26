@@ -123,13 +123,20 @@
     .content.funil-mode .kanban { flex: 1; height: auto; min-height: 0; overflow-x: auto; overflow-y: auto; }
 
     /* ── STATS ── */
-    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap: .75rem; margin-bottom: 1.25rem; }
+    .stats-row-1 { display: grid; grid-template-columns: repeat(6, 1fr); gap: .65rem; margin-bottom: .65rem; }
+    .stats-row-2 { display: grid; grid-template-columns: repeat(5, 1fr); gap: .65rem; margin-bottom: .75rem; }
+    @media (max-width: 1100px) {
+      .stats-row-1 { grid-template-columns: repeat(3, 1fr); }
+      .stats-row-2 { grid-template-columns: repeat(3, 1fr); }
+    }
     .stat { background: var(--white); border-radius: 10px; padding: 1rem 1.1rem; box-shadow: var(--shadow); border-left: 4px solid transparent; }
     .stat.s1 { border-color: var(--navy); } .stat.s2 { border-color: var(--green); }
     .stat.s3 { border-color: var(--gold); } .stat.s4 { border-color: var(--purple); }
     .stat.s5 { border-color: var(--red); }  .stat.s6 { border-color: #0ea5e9; }
     .stat-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
     .stat-val { font-size: 1.75rem; font-weight: 800; color: var(--navy); line-height: 1.1; }
+    /* compatibilidade com relatórios que ainda usam stats-row */
+    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap: .75rem; margin-bottom: 1.25rem; }
 
     /* ── KANBAN ── */
     .kanban {
@@ -588,9 +595,9 @@
 
       <!-- ── FUNIL ── -->
       <div id="viewFunil">
-        <div style="display:flex;gap:.75rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:.5rem">
-          <div class="stats-row" id="statsRow" style="flex:1;min-width:0;margin-bottom:0"></div>
-          <div id="metaMesWidget" style="background:#fff;border:1.5px solid #e5e7eb;border-radius:12px;padding:.75rem 1rem;min-width:200px;max-width:250px;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.06)"></div>
+        <div id="statsArea">
+          <div class="stats-row-1" id="statsRow1"></div>
+          <div class="stats-row-2" id="statsRow2"></div>
         </div>
         <!-- Painel financeiro — somente admin -->
         <div id="dashFinanceiroRow" style="display:none;gap:.65rem;margin-bottom:.6rem;flex-wrap:wrap"></div>
@@ -1053,26 +1060,10 @@
   }
 
   function renderMetaMes() {
-    const el = document.getElementById('metaMesWidget');
-    if (!el || !metaMesData) return;
+    if (!metaMesData) return;
     const m = metaMesData;
-    const pct = Math.min(m.percentual || 0, 100);
-    const corBarra = pct >= 100 ? '#065f46' : pct >= 60 ? '#f97316' : '#3b82f6';
-    const mesLabel = (m.mes || '').replace(/^\w/, c => c.toUpperCase());
-
-    el.innerHTML = `
-      <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin-bottom:.25rem">
-        Meta ${mesLabel}
-      </div>
-      <div style="display:flex;align-items:baseline;gap:.35rem">
-        <span style="font-size:1.6rem;font-weight:800;color:var(--navy);line-height:1">${m.total}</span>
-        <span style="font-size:.8rem;color:var(--muted)">/ ${m.meta} contratos</span>
-      </div>
-      <div style="margin:.45rem 0 .1rem;background:#e5e7eb;border-radius:99px;height:8px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:${corBarra};border-radius:99px;transition:width .6s ease"></div>
-      </div>
-      <div style="font-size:.7rem;color:${corBarra};font-weight:700">${pct}% da meta atingida</div>
-    `;
+    // Meta agora é renderizada dentro de renderStats() — só atualiza o stats row 2
+    renderStats();
 
     // ── Painel financeiro (somente admin) ────────────────────────────────
     const painelRow = document.getElementById('dashFinanceiroRow');
@@ -1106,34 +1097,66 @@
 
   // ═══════ STATS ═══════
   function renderStats() {
+    if (!statsData) return;
     const s = statsData;
-    const medalhas = ['🥇','🥈','🥉'];
-    const ranking = (s.ranking_mes || []);
-    const podiumHtml = ranking.length === 0
-      ? `<div style="color:var(--muted);font-size:.8rem;margin-top:.25rem">Nenhum contrato ainda</div>`
-      : ranking.map((r, i) => {
-          const medalha = medalhas[i] || `${i+1}º`;
-          const destaque = i === 0 ? 'font-weight:800;font-size:.95rem;color:var(--navy)' : 'font-size:.85rem;color:var(--text)';
-          const pts = r.contratos === 1 ? '1 contrato' : `${r.contratos} contratos`;
-          return `<div style="display:flex;align-items:center;gap:.4rem;${i>0?'margin-top:.2rem':''}">
-            <span style="font-size:${i===0?'1.2rem':'1rem'}">${medalha}</span>
-            <span style="${destaque}">${escHtml(r.nome)}</span>
-            <span style="margin-left:auto;font-size:.75rem;color:var(--muted);white-space:nowrap">${pts}</span>
-          </div>`;
-        }).join('');
 
-    document.getElementById('statsRow').innerHTML = `
+    // ── Linha 1: 6 contadores ────────────────────────────────────────────────
+    const r1 = document.getElementById('statsRow1');
+    if (r1) r1.innerHTML = `
       <div class="stat s1"><div class="stat-label">Total</div><div class="stat-val">${s.total||0}</div></div>
       <div class="stat s2"><div class="stat-label">Recebidos (mês)</div><div class="stat-val">${s.leads_mes||0}</div></div>
       <div class="stat s3"><div class="stat-label">Assumidos</div><div class="stat-val">${s.assumidos||0}</div></div>
       <div class="stat s4"><div class="stat-label">Propostas</div><div class="stat-val">${s.propostas||0}</div></div>
+      <div class="stat" style="border-left:4px solid #10b981"><div class="stat-label">Prop. Aprovada</div><div class="stat-val" style="color:#059669">${s.proposta_aprovada||0}</div></div>
       <div class="stat s5"><div class="stat-label">Fechados</div><div class="stat-val">${s.fechados||0}</div></div>
+    `;
+
+    // ── Linha 2: métricas + meta + ranking ──────────────────────────────────
+    const medalhas = ['🥇','🥈','🥉'];
+    const ranking = (s.ranking_mes || []);
+    const podiumHtml = ranking.length === 0
+      ? `<div style="color:var(--muted);font-size:.78rem;margin-top:.3rem">Nenhum contrato ainda</div>`
+      : ranking.map((r, i) => {
+          const medalha = medalhas[i] || `${i+1}º`;
+          const negrito = i === 0 ? 'font-weight:800;color:var(--navy)' : 'color:var(--text)';
+          const pts = r.contratos === 1 ? '1' : `${r.contratos}`;
+          return `<div style="display:flex;align-items:center;gap:.35rem;${i>0?'margin-top:.18rem':''}">
+            <span style="font-size:${i===0?'1.1rem':'.9rem'}">${medalha}</span>
+            <span style="font-size:.82rem;${negrito};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${escHtml(r.nome)}</span>
+            <span style="font-size:.72rem;color:var(--muted);white-space:nowrap;flex-shrink:0">${pts} ✓</span>
+          </div>`;
+        }).join('');
+
+    // Meta do mês (usa metaMesData se disponível)
+    let metaHtml = `<div style="color:var(--muted);font-size:.78rem;margin-top:.3rem">Carregando…</div>`;
+    if (metaMesData) {
+      const m = metaMesData;
+      const pct = Math.min(m.percentual || 0, 100);
+      const corBarra = pct >= 100 ? '#065f46' : pct >= 60 ? '#f97316' : '#3b82f6';
+      const mesLabel = (m.mes || '').replace(/^\w/, c => c.toUpperCase());
+      metaHtml = `
+        <div style="display:flex;align-items:baseline;gap:.3rem;margin-top:.3rem">
+          <span style="font-size:1.5rem;font-weight:800;color:var(--navy);line-height:1">${m.total}</span>
+          <span style="font-size:.78rem;color:var(--muted)">/ ${m.meta} contratos</span>
+        </div>
+        <div style="margin:.4rem 0 .15rem;background:#e5e7eb;border-radius:99px;height:7px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${corBarra};border-radius:99px;transition:width .6s ease"></div>
+        </div>
+        <div style="font-size:.68rem;color:${corBarra};font-weight:700">${pct}% da meta atingida</div>`;
+    }
+
+    const r2 = document.getElementById('statsRow2');
+    if (r2) r2.innerHTML = `
       <div class="stat s6"><div class="stat-label">Taxa Qualif.</div><div class="stat-val" style="color:var(--gold3)">${s.taxa_qualificacao||0}%</div></div>
       <div class="stat" style="border-left:4px solid #10b981"><div class="stat-label">% Prop. Aprovada</div><div class="stat-val" style="color:#059669">${s.taxa_prop_aprovada||0}%</div></div>
       <div class="stat" style="border-left:4px solid #8b5cf6"><div class="stat-label">% Contrato Fechado</div><div class="stat-val" style="color:#7c3aed">${s.taxa_fechado||0}%</div></div>
-      <div class="stat" style="border-left:4px solid #f59e0b;min-width:200px;grid-column:span 2">
+      <div class="stat" style="border-left:4px solid #3b82f6">
+        <div class="stat-label">Meta ${metaMesData ? (metaMesData.mes||'').replace(/^\w/,c=>c.toUpperCase()) : '—'}</div>
+        ${metaHtml}
+      </div>
+      <div class="stat" style="border-left:4px solid #f59e0b">
         <div class="stat-label">🏆 Ranking do Mês</div>
-        <div style="margin-top:.4rem">${podiumHtml}</div>
+        <div style="margin-top:.3rem">${podiumHtml}</div>
       </div>
     `;
   }
