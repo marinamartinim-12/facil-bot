@@ -977,6 +977,15 @@
     if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
   }
 
+  // Quando a aba volta ao foco (alt+tab, volta do almoço, laptop acorda do sleep),
+  // o setInterval pode ter sido suspenso pelo browser — reinicia imediatamente
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && currentUser) {
+      _registrarAtividade(); // considera que voltou = atividade
+      _iniciarHeartbeat();   // reinicia o intervalo e envia ping imediato
+    }
+  });
+
   async function fazerLogout() {
     _pararHeartbeat();
     await fetch('/auth/logout', {method:'POST'});
