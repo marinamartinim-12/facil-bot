@@ -414,6 +414,17 @@ async def login(request: Request, response: Response, db: Session = Depends(get_
         max_age=60 * 60 * 24 * 7,
     )
 
+    # ── Fecha sessões anteriores que ficaram abertas (aba fechada sem clicar Sair) ──
+    sessoes_abertas = db.query(SessaoUsuario).filter(
+        SessaoUsuario.usuario_id == usuario.id,
+        SessaoUsuario.logout_em == None,
+    ).all()
+    for s in sessoes_abertas:
+        # Usa o último ping como horário real de saída
+        s.logout_em = s.ultimo_ativo_em or s.login_em
+    if sessoes_abertas:
+        db.commit()
+
     # ── Registrar sessão ──────────────────────────────────────────────────────
     ip = _ip_da_requisicao(request)
     geo = await _geo_por_ip(ip)
