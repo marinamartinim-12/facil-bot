@@ -797,18 +797,25 @@
 
         <!-- ── RELATÓRIO POR PARCEIRO ── -->
         <div class="rel-card">
-          <h3>🤝 Desempenho por Parceiro</h3>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem">
+            <h3 style="margin:0">🤝 Desempenho por Parceiro</h3>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+              <input id="relParceiroBusca" type="text" placeholder="Buscar parceiro…" oninput="renderTabelaParceiros()"
+                style="border:1.5px solid var(--border);border-radius:7px;padding:.3rem .7rem;font-size:.82rem;outline:none;min-width:160px">
+              <button onclick="exportarParceirosCSV()" class="btn btn-outline btn-sm">⬇ Excel</button>
+            </div>
+          </div>
           <div style="overflow-x:auto">
             <table class="rel-table" style="min-width:680px">
               <thead>
                 <tr>
                   <th>Parceiro</th>
-                  <th>Leads enviados</th>
+                  <th>Leads</th>
                   <th>Assumidos</th>
-                  <th>Propostas enviadas</th>
-                  <th>Contratos gerados</th>
+                  <th>Propostas</th>
+                  <th>Contratos</th>
                   <th>Fechados</th>
-                  <th>Taxa de fechamento</th>
+                  <th>Taxa</th>
                 </tr>
               </thead>
               <tbody id="relParceiroBody">
@@ -816,6 +823,7 @@
               </tbody>
             </table>
           </div>
+          <div id="relParceiroPag" style="display:flex;align-items:center;justify-content:space-between;margin-top:.6rem;font-size:.8rem;color:var(--muted)"></div>
         </div>
 
         <!-- ── SESSÕES / LOGINS ── -->
@@ -2501,23 +2509,42 @@
     } catch(e) { console.error(e); }
   }
 
+  let _dadosParceiros = [];
+  let _pagParceiros = 0;
+  const _POR_PAG_PARCEIROS = 15;
+
   async function carregarRelatorioParceiros() {
     try {
       const r = await fetch('/api/relatorio/parceiros');
       if (!r.ok) return;
-      const lista = await r.json();
-      const tbody = document.getElementById('relParceiroBody');
-      if (!tbody) return;
-      if (!lista.length) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:1rem;color:var(--muted)">Nenhum parceiro cadastrado.</td></tr>';
-        return;
-      }
-      tbody.innerHTML = lista.map(p => `
+      _dadosParceiros = await r.json();
+      _pagParceiros = 0;
+      renderTabelaParceiros();
+    } catch {}
+  }
+
+  function renderTabelaParceiros() {
+    const busca = (document.getElementById('relParceiroBusca')?.value || '').toLowerCase();
+    const filtrado = _dadosParceiros.filter(p =>
+      p.nome.toLowerCase().includes(busca) || (p.telefone||'').includes(busca)
+    );
+    const total = filtrado.length;
+    const totalPag = Math.ceil(total / _POR_PAG_PARCEIROS) || 1;
+    if (_pagParceiros >= totalPag) _pagParceiros = totalPag - 1;
+    const inicio = _pagParceiros * _POR_PAG_PARCEIROS;
+    const pagina = filtrado.slice(inicio, inicio + _POR_PAG_PARCEIROS);
+
+    const tbody = document.getElementById('relParceiroBody');
+    if (!tbody) return;
+    if (!pagina.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:1rem;color:var(--muted)">Nenhum parceiro encontrado.</td></tr>';
+    } else {
+      tbody.innerHTML = pagina.map(p => `
         <tr>
-          <td>
-            <strong>${esc(p.nome)}</strong>
-            ${!p.ativo ? '<span style="font-size:.65rem;background:#fee2e2;color:#991b1b;border-radius:20px;padding:1px 6px;margin-left:4px">inativo</span>' : ''}
-            <div style="font-size:.72rem;color:var(--muted)">${esc(p.telefone)}</div>
+          <td style="max-width:180px">
+            <strong style="font-size:.85rem">${escHtml(p.nome)}</strong>
+            ${!p.ativo ? '<span style="font-size:.62rem;background:#fee2e2;color:#991b1b;border-radius:20px;padding:1px 5px;margin-left:4px">inativo</span>' : ''}
+            <div style="font-size:.7rem;color:var(--muted)">${escHtml(p.telefone)}</div>
           </td>
           <td><strong>${p.total_leads}</strong></td>
           <td>${p.assumidos}</td>
@@ -2525,13 +2552,44 @@
           <td>${p.contratos}</td>
           <td><strong style="color:var(--green)">${p.fechados}</strong></td>
           <td>
-            <div style="display:flex;align-items:center;gap:.5rem">
-              <div class="progress-bar" style="flex:1;min-width:60px"><div class="progress-fill" style="width:${p.taxa_fechamento}%"></div></div>
-              <span style="font-size:.78rem;font-weight:700;min-width:36px">${p.taxa_fechamento}%</span>
+            <div style="display:flex;align-items:center;gap:.4rem">
+              <div class="progress-bar" style="flex:1;min-width:50px"><div class="progress-fill" style="width:${p.taxa_fechamento}%"></div></div>
+              <span style="font-size:.75rem;font-weight:700;min-width:32px">${p.taxa_fechamento}%</span>
             </div>
           </td>
         </tr>`).join('');
-    } catch {}
+    }
+
+    // Paginação
+    const pag = document.getElementById('relParceiroPag');
+    if (pag) {
+      const de = total === 0 ? 0 : inicio + 1;
+      const ate = Math.min(inicio + _POR_PAG_PARCEIROS, total);
+      pag.innerHTML = `
+        <span>${de}–${ate} de ${total} parceiro${total !== 1 ? 's' : ''}</span>
+        <div style="display:flex;gap:.3rem">
+          <button onclick="_pagParceiros=Math.max(0,_pagParceiros-1);renderTabelaParceiros()" ${_pagParceiros===0?'disabled':''} class="btn btn-outline btn-sm">‹ Anterior</button>
+          <button onclick="_pagParceiros=Math.min(${totalPag-1},_pagParceiros+1);renderTabelaParceiros()" ${_pagParceiros>=totalPag-1?'disabled':''} class="btn btn-outline btn-sm">Próxima ›</button>
+        </div>`;
+    }
+  }
+
+  function exportarParceirosCSV() {
+    const busca = (document.getElementById('relParceiroBusca')?.value || '').toLowerCase();
+    const lista = _dadosParceiros.filter(p =>
+      p.nome.toLowerCase().includes(busca) || (p.telefone||'').includes(busca)
+    );
+    const cabecalho = ['Parceiro','Telefone','Ativo','Leads','Assumidos','Propostas','Contratos','Fechados','Taxa (%)'];
+    const linhas = lista.map(p => [
+      p.nome, p.telefone, p.ativo ? 'Sim' : 'Não',
+      p.total_leads, p.assumidos, p.propostas, p.contratos, p.fechados, p.taxa_fechamento
+    ]);
+    const csv = [cabecalho, ...linhas].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(';')).join('\n');
+    const blob = new Blob(['﻿' + csv], {type: 'text/csv;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `parceiros_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`;
+    a.click(); URL.revokeObjectURL(url);
   }
 
   let _todasSessoes = [];
