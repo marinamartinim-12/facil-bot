@@ -841,6 +841,7 @@
               <button onclick="carregarSessoes()" class="btn btn-sm" style="background:var(--navy);color:#fff;padding:.35rem .9rem">🔄 Atualizar</button>
               <a id="btnExportSessoes" href="/api/relatorio/sessoes/csv" download
                 class="btn btn-sm btn-outline" style="padding:.35rem .9rem;text-decoration:none">⬇️ Excel</a>
+              <button onclick="zerarHistoricoSessoes()" class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;padding:.35rem .9rem">🗑 Zerar histórico</button>
             </div>
           </div>
           <div id="sessaoAccordion" style="display:flex;flex-direction:column;gap:.5rem">
@@ -2778,8 +2779,8 @@
                     <td style="padding:.3rem .6rem;white-space:nowrap;color:${s.logout_em?'inherit':'var(--muted)'}">${s.logout_em||'—'}</td>
                     <td style="padding:.3rem .6rem;color:var(--muted)">${esc(s.tempo_logado)}</td>
                     <td style="padding:.3rem .6rem"><strong style="color:var(--navy)">${esc(s.tempo_ativo)}</strong></td>
-                    <td style="padding:.3rem .6rem;font-size:.78rem">${esc(s.localizacao)}</td>
-                    <td style="padding:.3rem .6rem;font-size:.75rem;color:var(--muted)">${esc(s.ip)}</td>
+                    <td style="padding:.3rem .6rem;font-size:.78rem">${_locBadge(s.localizacao, g.sessoes)}</td>
+                    <td style="padding:.3rem .6rem;font-size:.75rem">${_ipBadge(s.ip, g.sessoes)}</td>
                   </tr>`).join('')}
               </tbody>
             </table>
@@ -2817,6 +2818,40 @@
     if (s < 3600) return Math.floor(s/60) + 'min';
     const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
     return h + 'h' + (m ? ' ' + m + 'min' : '');
+  }
+
+  // Destaca localização se for diferente das outras sessões da mesma funcionária
+  function _locBadge(loc, todasSessoes) {
+    if (!loc || loc === '—') return '<span style="color:var(--muted)">—</span>';
+    const locs = [...new Set(todasSessoes.map(s => s.localizacao).filter(l => l && l !== '—'))];
+    const diferente = locs.length > 1;
+    if (diferente)
+      return `<span title="Localização diferente das outras sessões" style="background:#fee2e2;color:#991b1b;padding:2px 7px;border-radius:20px;font-size:.75rem;font-weight:600">⚠️ ${esc(loc)}</span>`;
+    return `<span style="font-size:.78rem;color:var(--muted)">${esc(loc)}</span>`;
+  }
+
+  // Destaca IP se for diferente das outras sessões da mesma funcionária
+  function _ipBadge(ip, todasSessoes) {
+    if (!ip || ip === '—') return '<span style="color:var(--muted)">—</span>';
+    const ips = [...new Set(todasSessoes.map(s => s.ip).filter(i => i && i !== '—'))];
+    const diferente = ips.length > 1;
+    if (diferente)
+      return `<span title="IP diferente das outras sessões" style="background:#fef9c3;color:#713f12;padding:2px 7px;border-radius:20px;font-size:.73rem;font-weight:600">⚠️ ${esc(ip)}</span>`;
+    return `<span style="font-size:.75rem;color:var(--muted)">${esc(ip)}</span>`;
+  }
+
+  async function zerarHistoricoSessoes() {
+    if (!confirm('Zerar todo o histórico de sessões? Esta ação não pode ser desfeita.')) return;
+    if (!confirm('Confirmar: todos os registros de atividade das funcionárias serão apagados permanentemente.')) return;
+    try {
+      const r = await fetch('/api/relatorio/sessoes', { method: 'DELETE' });
+      if (r.ok) {
+        alert('✅ Histórico zerado. A contagem começa a partir de agora.');
+        carregarSessoes();
+      } else {
+        alert('Erro ao zerar histórico.');
+      }
+    } catch { alert('Erro de conexão.'); }
   }
 
   // ═══════ INBOX / ATENDIMENTO ═══════

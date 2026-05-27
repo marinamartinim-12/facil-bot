@@ -2584,6 +2584,17 @@ async def relatorio_sessoes(
     return _sessoes_funcionarias(db)
 
 
+@app.delete("/api/relatorio/sessoes")
+async def zerar_sessoes(
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Apaga todo o histórico de sessões (admin only)."""
+    db.query(SessaoUsuario).delete()
+    db.commit()
+    return {"status": "zerado"}
+
+
 @app.get("/api/relatorio/sessoes/csv")
 async def relatorio_sessoes_csv(
     db: Session = Depends(get_db),
