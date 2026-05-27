@@ -177,6 +177,28 @@
     .funil-meta-bar-bg { height:4px; border-radius:99px; background:#e2e8f0; margin-top:.2rem; overflow:hidden; }
     .funil-meta-bar { height:100%; border-radius:99px; background:#22c55e; transition:width .5s; }
 
+    /* ── PAINEL EDITAR FILA ── */
+    #filaEditPanel {
+      display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:200;
+      background:#fff; border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,.18);
+      padding:.75rem; min-width:200px;
+    }
+    #filaEditPanel.open { display:block; }
+    .fep-title { font-size:.68rem; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.05em; margin-bottom:.5rem; }
+    .fep-row {
+      display:flex; align-items:center; gap:.5rem;
+      padding:.3rem .4rem; border-radius:7px; margin-bottom:.2rem; background:#f8fafc;
+    }
+    .fep-nome { flex:1; font-size:.82rem; font-weight:600; color:#1e293b; }
+    .fep-btn { background:none; border:1px solid #e2e8f0; border-radius:4px; cursor:pointer; font-size:.65rem; padding:2px 5px; color:#64748b; line-height:1.3; }
+    .fep-btn:hover { background:#f1f5f9; }
+    .fep-actions { display:flex; gap:.4rem; margin-top:.6rem; }
+    .fep-save { flex:1; background:#0d2b4e; color:#fff; border:none; border-radius:7px; padding:.35rem; font-size:.78rem; font-weight:700; cursor:pointer; }
+    .fep-save:hover { background:#1e4a7a; }
+    .fep-cancel { background:none; border:1px solid #e2e8f0; border-radius:7px; padding:.35rem .6rem; font-size:.78rem; color:#64748b; cursor:pointer; }
+    .fep-cancel:hover { background:#f8fafc; }
+    #filaBarra { position:relative; }
+
     /* ── FILA ROTATIVA ── */
     #filaBarra {
       display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
@@ -222,7 +244,7 @@
     .fw-btns  { display: flex; flex-direction: column; gap: 1px; }
     .fw-btn   { background: none; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; font-size: .65rem; padding: 1px 4px; color: #64748b; line-height: 1.3; }
     .fw-btn:hover { background: #f1f5f9; }
-    .fw-footer { border-top: 1px solid var(--border); padding: .35rem .5rem; font-size: .65rem; color: #94a3b8; text-align: center; }
+    .fw-footer { border-top: 1px solid var(--border); padding: .35rem .5rem; font-size: .65rem; color: #94a3b8; text-align: center; line-height:1.4; }
     #funiKanbanWrapper { flex: 1; display: flex; gap: .65rem; overflow: hidden; min-height: 0; }
 
     /* ── KANBAN ── */
@@ -733,6 +755,16 @@
         <div id="filaBarra" style="display:none">
           <span class="fila-titulo">Próximo lead:</span>
           <div id="filaChips"></div>
+          <button id="btnEditarFila" onclick="toggleFilaEditPanel()" title="Editar ordem" style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:.2rem .5rem;cursor:pointer;font-size:.72rem;color:#94a3b8;margin-left:.5rem;transition:background .15s;" onmouseover="this.style.background='rgba(255,255,255,.2)'" onmouseout="this.style.background='rgba(255,255,255,.1)'">✏️ Editar</button>
+          <!-- Painel de edição da ordem -->
+          <div id="filaEditPanel">
+            <div class="fep-title">Arraste ou use as setas para reordenar</div>
+            <div id="filaEditList"></div>
+            <div class="fep-actions">
+              <button class="fep-cancel" onclick="fecharFilaEditPanel()">Cancelar</button>
+              <button class="fep-save" onclick="salvarOrdemFila()">✔ Salvar</button>
+            </div>
+          </div>
         </div>
         <!-- Kanban -->
         <div id="funiKanbanWrapper">
@@ -3161,12 +3193,21 @@
           <div class="fw-av ${isProx ? 'p' : 'o'}">${u.nome[0].toUpperCase()}</div>
           <span class="fw-nome">${esc(u.nome)}</span>
           ${isProx ? '<span class="fw-tag">agora</span>' : ''}
-          <div class="fw-btns">
-            ${i > 0 ? `<button class="fw-btn" onclick="moverFilaItem(${i}, -1)" title="Subir">▲</button>` : '<span style="width:22px"></span>'}
-            ${i < ordem.length - 1 ? `<button class="fw-btn" onclick="moverFilaItem(${i}, 1)" title="Descer">▼</button>` : '<span style="width:22px"></span>'}
-          </div>
         </div>`;
     }).join('');
+
+    // ── Widget footer: log de alteração (só admin vê) ──
+    const footer = document.querySelector('.fw-footer');
+    if (footer) {
+      let txt = '↺ repete automaticamente';
+      if (currentUser && currentUser.perfil === 'admin' && _filaData.alterado_por) {
+        const dt = _filaData.alterado_em ? new Date(_filaData.alterado_em) : null;
+        const hora = dt ? dt.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : '';
+        const dia  = dt ? dt.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) : '';
+        txt += `<br><span style="color:#f97316;font-size:.6rem">✏️ ${esc(_filaData.alterado_por.split(' ')[0])} — ${dia} ${hora}</span>`;
+      }
+      footer.innerHTML = txt;
+    }
   }
 
   async function moverFilaItem(idx, dir) {
@@ -3183,6 +3224,69 @@
       _filaData = await r.json();
       renderFila();
     } catch {}
+  }
+
+  // ── Painel de edição da fila (barra do funil) ──
+  let _filaEditOrdem = [];   // cópia local enquanto edita
+
+  function toggleFilaEditPanel() {
+    const panel = document.getElementById('filaEditPanel');
+    if (panel.classList.contains('open')) {
+      fecharFilaEditPanel();
+    } else {
+      abrirFilaEditPanel();
+    }
+  }
+
+  function abrirFilaEditPanel() {
+    if (!_filaData || !_filaData.ordem) return;
+    _filaEditOrdem = _filaData.ordem.map(u => ({...u}));
+    _renderFilaEditList();
+    document.getElementById('filaEditPanel').classList.add('open');
+    // Fechar ao clicar fora
+    setTimeout(() => document.addEventListener('click', _fecharFilaEditFora), 50);
+  }
+
+  function fecharFilaEditPanel() {
+    document.getElementById('filaEditPanel').classList.remove('open');
+    document.removeEventListener('click', _fecharFilaEditFora);
+  }
+
+  function _fecharFilaEditFora(e) {
+    const panel = document.getElementById('filaEditPanel');
+    const btn   = document.getElementById('btnEditarFila');
+    if (!panel.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+      fecharFilaEditPanel();
+    }
+  }
+
+  function _renderFilaEditList() {
+    document.getElementById('filaEditList').innerHTML = _filaEditOrdem.map((u, i) => `
+      <div class="fep-row">
+        <span style="font-size:.7rem;font-weight:800;color:#94a3b8;width:14px;text-align:center">${i+1}</span>
+        <span class="fep-nome">${esc(u.nome)}</span>
+        <button class="fep-btn" onclick="_fepMover(${i},-1)" ${i===0?'disabled style="opacity:.3"':''}>▲</button>
+        <button class="fep-btn" onclick="_fepMover(${i}, 1)" ${i===_filaEditOrdem.length-1?'disabled style="opacity:.3"':''}>▼</button>
+      </div>`).join('');
+  }
+
+  function _fepMover(idx, dir) {
+    const novoIdx = idx + dir;
+    if (novoIdx < 0 || novoIdx >= _filaEditOrdem.length) return;
+    [_filaEditOrdem[idx], _filaEditOrdem[novoIdx]] = [_filaEditOrdem[novoIdx], _filaEditOrdem[idx]];
+    _renderFilaEditList();
+  }
+
+  async function salvarOrdemFila() {
+    try {
+      const r = await fetch('/api/fila/ordem', {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ordem: _filaEditOrdem.map(u => u.id) })
+      });
+      _filaData = await r.json();
+      fecharFilaEditPanel();
+      renderFila();
+    } catch { alert('Erro ao salvar ordem.'); }
   }
 
   async function _avancarFila(lead) {

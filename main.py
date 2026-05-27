@@ -2887,14 +2887,23 @@ def _get_fila_cfg(db: Session):
     posicao = int(pos_cfg.valor) if pos_cfg else 0
     return ordem, posicao
 
-def _set_fila_cfg(db: Session, ordem: list, posicao: int):
+def _set_fila_cfg(db: Session, ordem: list, posicao: int, alterado_por: str = None):
     import json
+    from datetime import datetime
     for chave, valor in [("fila_ordem", json.dumps(ordem)), ("fila_posicao", str(posicao))]:
         cfg = db.query(Configuracao).filter(Configuracao.chave == chave).first()
         if cfg:
             cfg.valor = valor
         else:
             db.add(Configuracao(chave=chave, valor=valor, descricao="Fila rotativa de atendimento"))
+    if alterado_por:
+        agora = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        for chave, valor in [("fila_alterado_por", alterado_por), ("fila_alterado_em", agora)]:
+            cfg = db.query(Configuracao).filter(Configuracao.chave == chave).first()
+            if cfg:
+                cfg.valor = valor
+            else:
+                db.add(Configuracao(chave=chave, valor=valor, descricao="Fila rotativa — log de alteração"))
     db.commit()
 
 def _fila_snapshot(db: Session):
@@ -2911,10 +2920,14 @@ def _fila_snapshot(db: Session):
     if not ordem:
         return {"ordem": [], "posicao": 0, "proxima": None}
     posicao = posicao % len(ordem)
+    alt_por_cfg = db.query(Configuracao).filter(Configuracao.chave == "fila_alterado_por").first()
+    alt_em_cfg  = db.query(Configuracao).filter(Configuracao.chave == "fila_alterado_em").first()
     return {
         "ordem": [{"id": uid, "nome": usuarios[uid].nome} for uid in ordem],
         "posicao": posicao,
         "proxima": {"id": ordem[posicao], "nome": usuarios[ordem[posicao]].nome},
+        "alterado_por": alt_por_cfg.valor if alt_por_cfg else None,
+        "alterado_em":  alt_em_cfg.valor  if alt_em_cfg  else None,
     }
 
 @app.get("/api/fila")
@@ -2929,7 +2942,7 @@ async def set_fila_ordem(request: Request, db: Session = Depends(get_db), usuari
     if not isinstance(ordem, list):
         raise HTTPException(status_code=400, detail="ordem deve ser lista de IDs")
     _, posicao = _get_fila_cfg(db)
-    _set_fila_cfg(db, ordem, posicao % len(ordem) if ordem else 0)
+    _set_fila_cfg(db, ordem, posicao % len(ordem) if ordem else 0, alterado_por=usuario.nome)
     return _fila_snapshot(db)
 
 @app.post("/api/fila/avancar")
