@@ -881,6 +881,26 @@
       <!-- ── CONFIGURAÇÕES DO BOT ── -->
       <div id="viewConfiguracoes" style="display:none">
         <div style="max-width:800px">
+
+          <!-- Meta mensal -->
+          <div class="form-card" style="margin-bottom:1rem;padding:1.1rem 1.25rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.85rem;flex-wrap:wrap;gap:.5rem">
+              <div>
+                <div style="font-size:.95rem;font-weight:800;color:var(--navy)">🎯 Meta Mensal — Faixas de Bônus</div>
+                <div style="font-size:.75rem;color:var(--muted);margin-top:.15rem">Defina quantas faixas quiser por mês. O bônus é pago quando a equipe bate a meta.</div>
+              </div>
+              <div style="display:flex;gap:.5rem;align-items:center">
+                <select id="metaMesSelect" onchange="carregarMetaMensal()" style="border:1.5px solid var(--border);border-radius:8px;padding:.35rem .7rem;font-size:.83rem;outline:none;color:var(--navy);font-weight:600"></select>
+              </div>
+            </div>
+            <div id="metaFaixasList" style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.75rem"></div>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+              <button onclick="adicionarFaixaMeta()" class="btn btn-outline btn-sm">+ Adicionar faixa</button>
+              <button onclick="salvarMetaMensal()" class="btn btn-primary btn-sm">💾 Salvar mês</button>
+              <span id="metaMensalMsg" style="font-size:.78rem;color:var(--green)"></span>
+            </div>
+          </div>
+
           <div id="configCards"></div>
           <div id="configMsg" style="margin-top:.75rem;font-size:.85rem"></div>
         </div>
@@ -3049,6 +3069,8 @@
           <div class="dash-tarja-item" style="border-left:1px solid rgba(255,255,255,.12);padding-left:1.2rem;margin-left:.4rem">
             <span class="dash-tarja-label">Meta ${d.mes}</span>
             <span class="dash-tarja-val" style="color:${corMeta}">${pctMeta}%</span>
+            ${d.faixas_meta && d.faixas_meta.length > 1 ? `<span style="font-size:.6rem;color:#94a3b8;margin-top:.1rem">${d.faixas_meta.map(f=>`${f.contratos}▸R$${(f.bonus).toLocaleString('pt-BR')}`).join(' / ')}</span>` : ''}
+            ${d.faixa_atingida ? `<span style="font-size:.65rem;color:#86efac;font-weight:700">🏆 +R$ ${Number(d.faixa_atingida.bonus).toLocaleString('pt-BR')}</span>` : ''}
           </div>
           <div class="dash-tarja-item" style="border-left:1px solid rgba(255,255,255,.12);padding-left:1.2rem;margin-left:.4rem">
             <span class="dash-tarja-label">Total financiado</span>
@@ -3698,10 +3720,99 @@
     await carregarInbox();
   }
 
+  // ═══════ META MENSAL ═══════
+  let _metaFaixas = [];
+
+  function _iniciarSelectMeses() {
+    const sel = document.getElementById('metaMesSelect');
+    if (!sel || sel.options.length > 0) return;
+    const agora = new Date();
+    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    // Mostra mês atual + 3 próximos + 2 anteriores
+    for (let delta = -2; delta <= 3; delta++) {
+      const d = new Date(agora.getFullYear(), agora.getMonth() + delta, 1);
+      const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      const label = `${meses[d.getMonth()]} ${d.getFullYear()}`;
+      const opt = new Option(label, val);
+      if (delta === 0) opt.selected = true;
+      sel.add(opt);
+    }
+  }
+
+  async function carregarMetaMensal() {
+    _iniciarSelectMeses();
+    const sel = document.getElementById('metaMesSelect');
+    if (!sel || !sel.value) return;
+    const [ano, mes] = sel.value.split('-').map(Number);
+    try {
+      const r = await fetch(`/api/meta-mensal?ano=${ano}&mes=${mes}`);
+      if (!r.ok) return;
+      const d = await r.json();
+      _metaFaixas = d.faixas || [];
+      _renderFaixas();
+    } catch {}
+  }
+
+  function _renderFaixas() {
+    const lista = document.getElementById('metaFaixasList');
+    if (!lista) return;
+    if (_metaFaixas.length === 0) {
+      lista.innerHTML = '<div style="font-size:.8rem;color:var(--muted);padding:.3rem 0">Nenhuma faixa configurada. Clique em "+ Adicionar faixa".</div>';
+      return;
+    }
+    lista.innerHTML = _metaFaixas.map((f, i) => `
+      <div style="display:flex;align-items:center;gap:.65rem;background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:.5rem .75rem">
+        <span style="font-size:.72rem;font-weight:700;color:var(--muted);white-space:nowrap">Faixa ${i+1}</span>
+        <div style="display:flex;align-items:center;gap:.35rem;flex:1;flex-wrap:wrap">
+          <label style="font-size:.78rem;color:var(--navy);font-weight:600;white-space:nowrap">🏁 Contratos:</label>
+          <input type="number" min="1" value="${f.contratos}" oninput="_faixaChange(${i},'contratos',this.value)"
+            style="width:70px;border:1.5px solid var(--border);border-radius:6px;padding:.3rem .5rem;font-size:.85rem;outline:none;font-weight:700">
+          <label style="font-size:.78rem;color:var(--navy);font-weight:600;white-space:nowrap;margin-left:.5rem">💰 Bônus R$:</label>
+          <input type="number" min="0" step="50" value="${f.bonus}" oninput="_faixaChange(${i},'bonus',this.value)"
+            style="width:90px;border:1.5px solid var(--border);border-radius:6px;padding:.3rem .5rem;font-size:.85rem;outline:none;font-weight:700">
+        </div>
+        <button onclick="_removerFaixa(${i})" style="background:none;border:none;cursor:pointer;font-size:1rem;color:#94a3b8;padding:2px 4px;line-height:1" title="Remover">✕</button>
+      </div>`).join('');
+  }
+
+  function _faixaChange(idx, campo, val) {
+    _metaFaixas[idx][campo] = Number(val);
+  }
+
+  function adicionarFaixaMeta() {
+    const ultimo = _metaFaixas[_metaFaixas.length - 1];
+    _metaFaixas.push({ contratos: (ultimo ? ultimo.contratos + 5 : 20), bonus: (ultimo ? ultimo.bonus + 500 : 500) });
+    _renderFaixas();
+  }
+
+  function _removerFaixa(idx) {
+    _metaFaixas.splice(idx, 1);
+    _renderFaixas();
+  }
+
+  async function salvarMetaMensal() {
+    const sel = document.getElementById('metaMesSelect');
+    if (!sel || !sel.value) return;
+    const [ano, mes] = sel.value.split('-').map(Number);
+    const msg = document.getElementById('metaMensalMsg');
+    try {
+      const r = await fetch('/api/meta-mensal', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ano, mes, faixas: _metaFaixas })
+      });
+      if (!r.ok) { msg.textContent = '⚠️ Erro ao salvar.'; msg.style.color='var(--red)'; return; }
+      msg.textContent = '✔ Salvo!'; msg.style.color='var(--green)';
+      setTimeout(() => msg.textContent = '', 3000);
+      carregarDashboard(); // atualiza o dashboard com a nova meta
+    } catch { msg.textContent = '⚠️ Erro de conexão.'; msg.style.color='var(--red)'; }
+  }
+
   // ═══════ CONFIGURAÇÕES ═══════
   let configData = [];
   async function carregarConfiguracoes() {
     try { const r = await fetch('/api/config'); configData = await r.json(); renderConfiguracoes(); } catch {}
+    carregarMetaMensal();
   }
 
   const configLabels = {

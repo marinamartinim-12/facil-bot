@@ -2216,9 +2216,14 @@ async def dashboard_stats(
     conv_aprovada  = round(aprovadas_mes / propostas_mes * 100, 1) if propostas_mes > 0 else 0
 
     # ── Meta do mês ───────────────────────────────────────────────────────
-    meta_cfg = db.query(Configuracao).filter(Configuracao.chave == "meta_contratos").first()
-    meta = int(meta_cfg.valor) if meta_cfg else 20
+    faixas_meta = _get_meta_faixas(db, agora.year, agora.month)
+    meta = faixas_meta[0]["contratos"] if faixas_meta else 20  # menor faixa como base
     pct_meta = round(fechados_mes / meta * 100, 1) if meta > 0 else 0
+    # faixa atingida = maior faixa cujo threshold <= fechados_mes
+    faixa_atingida = None
+    for f in faixas_meta:
+        if fechados_mes >= f["contratos"]:
+            faixa_atingida = f
 
     # ── Ranking do mês ────────────────────────────────────────────────────
     funcionarias = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario, Usuario.ativo == True).all()
@@ -2262,6 +2267,8 @@ async def dashboard_stats(
         "conv_aprovada": conv_aprovada,
         "meta": meta,
         "pct_meta": pct_meta,
+        "faixas_meta": faixas_meta,
+        "faixa_atingida": faixa_atingida,
         "ranking": ranking,
         "tarja": tarja,
     }
@@ -2520,6 +2527,66 @@ async def atualizar_config(
     config.atualizado_em = datetime.utcnow()
     db.commit()
     return {"status": "ok", "chave": chave}
+
+
+# ─── Meta mensal com faixas de bônus ─────────────────────────────────────────────
+
+def _chave_meta(ano: int, mes: int) -> str:
+    return f"meta_{ano}_{mes:02d}"
+
+def _get_meta_faixas(db: Session, ano: int, mes: int) -> list:
+    import json as _json
+    cfg = db.query(Configuracao).filter(Configuracao.chave == _chave_meta(ano, mes)).first()
+    if cfg:
+        try:
+            return _json.loads(cfg.valor)
+        except Exception:
+            pass
+    # fallback: usa meta_contratos genérica
+    meta_cfg = db.query(Configuracao).filter(Configuracao.chave == "meta_contratos").first()
+    meta_num = int(meta_cfg.valor) if meta_cfg and meta_cfg.valor.isdigit() else 20
+    return [{"contratos": meta_num, "bonus": 0}]
+
+@app.get("/api/meta-mensal")
+async def get_meta_mensal(
+    ano: int = None, mes: int = None,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    if not ano or not mes:
+        agora = _agora_br()
+        ano, mes = agora.year, agora.month
+    return {"ano": ano, "mes": mes, "faixas": _get_meta_faixas(db, ano, mes)}
+
+@app.put("/api/meta-mensal")
+async def set_meta_mensal(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    import json as _json
+    body = await request.json()
+    ano    = body.get("ano")
+    mes    = body.get("mes")
+    faixas = body.get("faixas", [])
+    if not ano or not mes or not isinstance(faixas, list) or not faixas:
+        raise HTTPException(status_code=400, detail="ano, mes e faixas são obrigatórios")
+    # ordena por contratos crescente
+    faixas = sorted(faixas, key=lambda f: f["contratos"])
+    chave = _chave_meta(ano, mes)
+    cfg = db.query(Configuracao).filter(Configuracao.chave == chave).first()
+    if cfg:
+        cfg.valor = _json.dumps(faixas)
+    else:
+        db.add(Configuracao(chave=chave, valor=_json.dumps(faixas),
+                            descricao=f"Meta mensal {mes:02d}/{ano} — faixas de bônus"))
+    # mantém meta_contratos compatível com a menor faixa
+    menor = min(f["contratos"] for f in faixas)
+    meta_cfg = db.query(Configuracao).filter(Configuracao.chave == "meta_contratos").first()
+    if meta_cfg:
+        meta_cfg.valor = str(menor)
+    db.commit()
+    return {"ano": ano, "mes": mes, "faixas": faixas}
 
 
 # ─── Bancos (lista gerenciável) ───────────────────────────────────────────────────
