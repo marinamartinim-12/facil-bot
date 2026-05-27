@@ -3937,7 +3937,11 @@
         ? `<span style="font-size:.68rem;color:#888;font-style:italic;margin-left:4px">✏️ editado</span>`
         : '';
 
-      // Detecta mídia: [AUDIO:...], [IMAGE:...], [DOC:...|nome]
+      // Detecta mídia: [AUDIO:...], [IMAGE:...], [DOC:...|nome], [AUDIO_INDISPONIVEL]
+      if (textoLimpo === '[AUDIO_INDISPONIVEL]') {
+        conteudoHtml = `<span style="font-size:.82rem;color:#94a3b8;display:flex;align-items:center;gap:5px">🎙️ <i>Áudio não pôde ser carregado</i></span>`;
+        return conteudoHtml ? buildBubble(conteudoHtml) : '';
+      }
       const audioMatch = textoLimpo.match(/^\[AUDIO:([a-f0-9]{32}\.(webm|ogg|mp3))\]$/);
       const imageMatch = textoLimpo.match(/^\[IMAGE:([a-f0-9]{32}\.(jpg|jpeg|png|webp|gif))\]/i);
       const docMatch   = textoLimpo.match(/^\[DOC:([a-f0-9]{32}\.\w{2,5})\|(.+)\]$/);

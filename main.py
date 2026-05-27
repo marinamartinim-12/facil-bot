@@ -711,25 +711,39 @@ async def _salvar_documento(url: str, nome_original: str) -> str | None:
 
 
 async def _salvar_audio_cliente(telefone: str, audio_url: str, db) -> str | None:
-    """Baixa o áudio do cliente, salva em /app/audios/ e retorna o conteúdo [AUDIO:filename]."""
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(audio_url)
-        if resp.status_code != 200:
-            print(f"⚠️ Não foi possível baixar áudio do cliente: {resp.status_code}")
-            return None
-        # Detecta extensão pelo content-type
-        ct = resp.headers.get("content-type", "audio/ogg")
-        ext = "ogg" if "ogg" in ct else ("mp3" if "mp3" in ct or "mpeg" in ct else "webm")
-        audio_id = uuid.uuid4().hex
-        filename = f"{audio_id}.{ext}"
-        os.makedirs("/app/audios", exist_ok=True)
-        with open(f"/app/audios/{filename}", "wb") as f:
-            f.write(resp.content)
-        return f"[AUDIO:{filename}]"
-    except Exception as e:
-        print(f"⚠️ Erro ao salvar áudio do cliente: {e}")
-        return None
+    """Baixa o áudio do cliente, salva em /app/audios/ e retorna o conteúdo [AUDIO:filename].
+    Tenta até 3 vezes com timeout generoso. Se falhar, retorna marcador de áudio indisponível."""
+    for tentativa in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.get(audio_url)
+            if resp.status_code != 200:
+                print(f"⚠️ Áudio cliente HTTP {resp.status_code} (tentativa {tentativa+1})")
+                if tentativa < 2:
+                    await asyncio.sleep(2)
+                    continue
+                return "[AUDIO_INDISPONIVEL]"
+            if len(resp.content) < 100:
+                print(f"⚠️ Áudio cliente vazio/muito pequeno ({len(resp.content)} bytes), tentativa {tentativa+1}")
+                if tentativa < 2:
+                    await asyncio.sleep(2)
+                    continue
+                return "[AUDIO_INDISPONIVEL]"
+            # Detecta extensão pelo content-type
+            ct = resp.headers.get("content-type", "audio/ogg")
+            ext = "ogg" if "ogg" in ct else ("mp3" if "mp3" in ct or "mpeg" in ct else "webm")
+            audio_id = uuid.uuid4().hex
+            filename = f"{audio_id}.{ext}"
+            os.makedirs("/app/audios", exist_ok=True)
+            with open(f"/app/audios/{filename}", "wb") as f:
+                f.write(resp.content)
+            print(f"🎙️ Áudio do cliente salvo: {filename} ({len(resp.content)} bytes)")
+            return f"[AUDIO:{filename}]"
+        except Exception as e:
+            print(f"⚠️ Erro ao salvar áudio do cliente (tentativa {tentativa+1}): {e}")
+            if tentativa < 2:
+                await asyncio.sleep(2)
+    return "[AUDIO_INDISPONIVEL]"
 
 
 @app.post("/webhook/zapi")
@@ -802,13 +816,14 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
             audio_url = _extrair_audio_url_zapi(body)
             if audio_url and lead_midia:
                 conteudo_audio = await _salvar_audio_cliente(telefone, audio_url, db)
-                if conteudo_audio:
-                    _salvar_msg_webhook(db, telefone, conteudo_audio, role="user")
-                    lead_midia.atualizado_em = datetime.utcnow()
-                    if lead_midia.oculto_funil:
-                        lead_midia.oculto_funil = False
-                    db.commit()
-                    return JSONResponse({"status": "audio_salvo"})
+                # Sempre salva no histórico — mesmo se falhou, operadora precisa saber que havia um áudio
+                msg_audio = conteudo_audio or "[AUDIO_INDISPONIVEL]"
+                _salvar_msg_webhook(db, telefone, msg_audio, role="user")
+                lead_midia.atualizado_em = datetime.utcnow()
+                if lead_midia.oculto_funil:
+                    lead_midia.oculto_funil = False
+                db.commit()
+                return JSONResponse({"status": "audio_salvo" if conteudo_audio else "audio_indisponivel"})
 
             # Verifica imagem do cliente
             img_info = _extrair_imagem_zapi(body)
@@ -1843,23 +1858,17 @@ async def enviar_audio_gravado(
     with open(audio_path, "wb") as f:
         f.write(audio_bytes)
 
-    # Envia pelo Z-API usando URL pública do próprio servidor
+    # Envia pelo Z-API enviando base64 diretamente (evita race condition de download de URL)
     if settings.ZAPI_INSTANCE and settings.ZAPI_TOKEN:
-        # Usa headers X-Forwarded-* para obter a URL pública correta (Railway termina SSL no load balancer)
-        proto = request.headers.get("x-forwarded-proto") or request.url.scheme
-        host = (request.headers.get("x-forwarded-host")
-                or request.headers.get("host")
-                or str(request.base_url.netloc))
-        base_url = f"{proto}://{host}"
-        audio_url = f"{base_url}/api/audio/{audio_filename}"
-        print(f"🎤 URL: {audio_url}")
         zapi_url = f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE}/token/{settings.ZAPI_TOKEN}/send-audio"
         headers_zapi = {"Client-Token": settings.ZAPI_CLIENT_TOKEN}
-        payload = {"phone": lead.telefone, "audio": audio_url}
+        # Monta data URI com o base64 original para envio direto
+        audio_data_uri = f"data:{mime};base64,{raw_b64}"
+        payload = {"phone": lead.telefone, "audio": audio_data_uri}
         zapi_ok = False
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.post(zapi_url, headers=headers_zapi, json=payload, timeout=30)
+                resp = await client.post(zapi_url, headers=headers_zapi, json=payload, timeout=60)
             print(f"🎤 Z-API resposta: {resp.status_code} — {resp.text[:300]}")
             zapi_ok = resp.status_code == 200
             if not zapi_ok:
