@@ -2156,6 +2156,102 @@ async def atribuir_lead(
     return _serial_lead(lead, db)
 
 
+@app.get("/api/dashboard-stats")
+async def dashboard_stats(
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Métricas completas para a aba Dashboard."""
+    agora = _agora_br()
+    inicio_mes_utc = datetime(agora.year, agora.month, 1, tzinfo=_TZ_BR).astimezone(timezone.utc).replace(tzinfo=None)
+
+    # ── Leads do mês por origem ────────────────────────────────────────────
+    leads_mes_q = db.query(Lead).filter(Lead.criado_em >= inicio_mes_utc)
+    total_mes = leads_mes_q.count()
+
+    origens_map = {
+        "whatsapp":   "WhatsApp / Bot",
+        "rede_social": "Rede Social",
+        "parceiro":   "Parceiro",
+        "indicacao":  "Indicação",
+        "ex_cliente": "Ex-cliente",
+    }
+    por_origem = {}
+    for chave, label in origens_map.items():
+        por_origem[label] = leads_mes_q.filter(Lead.origem == chave).count()
+    # Bot/sem origem: leads sem origem definida (chegaram pelo WhatsApp bot)
+    sem_origem = leads_mes_q.filter(Lead.origem == None).count()
+    por_origem["WhatsApp / Bot"] = por_origem.get("WhatsApp / Bot", 0) + sem_origem
+
+    # ── Conversões do mês ──────────────────────────────────────────────────
+    propostas_mes = db.query(Lead).filter(
+        Lead.criado_em >= inicio_mes_utc,
+        Lead.status.in_([StatusLeadEnum.proposta_enviada, StatusLeadEnum.proposta_aprovada, StatusLeadEnum.fechado])
+    ).count()
+    aprovadas_mes = db.query(Lead).filter(
+        Lead.criado_em >= inicio_mes_utc,
+        Lead.status.in_([StatusLeadEnum.proposta_aprovada, StatusLeadEnum.fechado])
+    ).count()
+    fechados_mes = db.query(Lead).filter(
+        Lead.atualizado_em >= inicio_mes_utc,
+        Lead.status == StatusLeadEnum.fechado
+    ).count()
+
+    conv_proposta  = round(propostas_mes / total_mes * 100, 1) if total_mes > 0 else 0
+    conv_aprovada  = round(aprovadas_mes / propostas_mes * 100, 1) if propostas_mes > 0 else 0
+
+    # ── Meta do mês ───────────────────────────────────────────────────────
+    meta_cfg = db.query(Configuracao).filter(Configuracao.chave == "meta_contratos").first()
+    meta = int(meta_cfg.valor) if meta_cfg else 20
+    pct_meta = round(fechados_mes / meta * 100, 1) if meta > 0 else 0
+
+    # ── Ranking do mês ────────────────────────────────────────────────────
+    funcionarias = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario, Usuario.ativo == True).all()
+    ranking = []
+    for f in funcionarias:
+        qtd = db.query(Lead).filter(
+            Lead.atribuido_para == f.id,
+            Lead.status == StatusLeadEnum.fechado,
+            Lead.atualizado_em >= inicio_mes_utc,
+        ).count()
+        ranking.append({"nome": f.nome, "contratos": qtd})
+    ranking.sort(key=lambda x: x["contratos"], reverse=True)
+
+    # ── Tarja financeira (admin) ───────────────────────────────────────────
+    tarja = None
+    if usuario.role == RoleEnum.admin:
+        leads_fechados_mes = db.query(Lead).filter(
+            Lead.atualizado_em >= inicio_mes_utc,
+            Lead.status == StatusLeadEnum.fechado,
+        ).all()
+        def _to_float(v):
+            if not v: return 0.0
+            try: return float(str(v).replace("R$","").replace(".","").replace(",",".").strip())
+            except: return 0.0
+        total_valor    = sum(_to_float(l.deal_valor) for l in leads_fechados_mes)
+        total_comissao = sum(_to_float(l.deal_comissao) for l in leads_fechados_mes)
+        tarja = {
+            "contratos": len(leads_fechados_mes),
+            "total_valor": f"R$ {total_valor:,.2f}".replace(",","X").replace(".",",").replace("X","."),
+            "total_comissao": f"R$ {total_comissao:,.2f}".replace(",","X").replace(".",",").replace("X","."),
+        }
+
+    return {
+        "mes": f"{agora.month:02d}/{agora.year}",
+        "total_mes": total_mes,
+        "por_origem": por_origem,
+        "propostas_mes": propostas_mes,
+        "aprovadas_mes": aprovadas_mes,
+        "fechados_mes": fechados_mes,
+        "conv_proposta": conv_proposta,
+        "conv_aprovada": conv_aprovada,
+        "meta": meta,
+        "pct_meta": pct_meta,
+        "ranking": ranking,
+        "tarja": tarja,
+    }
+
+
 @app.get("/api/stats")
 async def estatisticas(
     db: Session = Depends(get_db),

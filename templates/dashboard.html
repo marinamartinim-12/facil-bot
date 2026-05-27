@@ -144,6 +144,26 @@
     /* compatibilidade com relatórios que ainda usam stats-row */
     .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap: .75rem; margin-bottom: 1.25rem; }
 
+    /* ── DASHBOARD ── */
+    .dash-origem-chip { display:flex;align-items:center;gap:.4rem;padding:.35rem .75rem;border-radius:20px;background:#f1f5f9;border:1px solid #e2e8f0; }
+    .dash-origem-label { font-size:.75rem;font-weight:600;color:#475569; }
+    .dash-origem-num { font-size:.85rem;font-weight:900;color:#0d2b4e; }
+    .dash-conv-card { flex:1;min-width:130px;background:#f8fafc;border-radius:10px;padding:.65rem .85rem;border:1px solid #e2e8f0;text-align:center; }
+    .dash-conv-pct { font-size:1.6rem;font-weight:900;color:#0d2b4e;line-height:1; }
+    .dash-conv-label { font-size:.7rem;color:#94a3b8;margin-top:.2rem; }
+    .dash-meta-bar-bg { height:8px;border-radius:99px;background:#e2e8f0;margin:.5rem 0;overflow:hidden; }
+    .dash-meta-bar { height:100%;border-radius:99px;background:linear-gradient(90deg,#22c55e,#16a34a);transition:width .5s; }
+    .dash-ranking-row { display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid #f1f5f9; }
+    .dash-ranking-row:last-child { border-bottom:none; }
+    .dash-tarja { background:linear-gradient(135deg,#0d2b4e,#1e4a7a);border-radius:10px;padding:.85rem 1.1rem;display:flex;flex-wrap:wrap;gap:1.2rem;align-items:center; }
+    .dash-tarja-item { display:flex;flex-direction:column;gap:.1rem; }
+    .dash-tarja-label { font-size:.65rem;font-weight:700;text-transform:uppercase;color:#94a3b8; }
+    .dash-tarja-val { font-size:1.1rem;font-weight:900;color:#fff; }
+    /* funil stats compactas */
+    .funil-chip { display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .6rem;border-radius:20px;font-size:.75rem;font-weight:700;background:#f1f5f9;border:1px solid #e2e8f0;color:#334155; }
+    .funil-chip .fc-num { font-weight:900;color:#0d2b4e; }
+    .funil-metric { display:inline-flex;align-items:center;gap:.35rem;padding:.28rem .7rem;border-radius:20px;font-size:.75rem;font-weight:700;background:#f8fafc;border:1px solid #e2e8f0; }
+
     /* ── FILA ROTATIVA ── */
     #filaBarra {
       display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
@@ -165,6 +185,7 @@
       width: 175px; min-width: 175px; background: #fff;
       border-radius: var(--radius); box-shadow: var(--shadow);
       display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
+      align-self: flex-start;
     }
     .fw-header {
       background: #0d2b4e; padding: .5rem .85rem;
@@ -598,6 +619,9 @@
     </div>
     <nav>
       <div class="nav-section">Principal</div>
+      <button class="nav-item" onclick="showView('dashboard')" id="nav-dashboard">
+        <span class="nav-icon">🏠</span> Dashboard
+      </button>
       <button class="nav-item active" onclick="showView('funil')" id="nav-funil">
         <span class="nav-icon">📊</span> Funil de Leads
       </button>
@@ -639,7 +663,6 @@
     <div class="top-bar">
       <button class="btn-toggle" onclick="toggleSidebar()" title="Abrir/fechar menu">☰</button>
       <h2 id="pageTitle" style="margin-left:.5rem">Funil de Leads</h2>
-      <button id="btnToggleStats" onclick="toggleStats()" title="Mostrar/ocultar painel" style="display:none;margin-left:.5rem">▲ Ocultar painel</button>
       <div class="top-actions">
         <span style="font-size:.78rem;color:var(--muted)"><span class="dot-live"></span> <span id="lastUpdate">—</span></span>
         <button class="btn btn-outline btn-sm" onclick="refresh()" id="btnRefresh">↻ Atualizar</button>
@@ -648,27 +671,58 @@
     </div>
     <div class="content" id="mainContent">
 
+      <!-- ── DASHBOARD ── -->
+      <div id="viewDashboard" style="display:none">
+        <div style="display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap">
+          <!-- Widget fila rotativa -->
+          <div id="filaWidget" style="min-width:175px;width:175px">
+            <div class="fw-header">🔄 Fila de atendimento</div>
+            <div class="fw-body" id="filaWidgetBody"></div>
+            <div class="fw-footer">↺ repete automaticamente</div>
+          </div>
+          <!-- Métricas -->
+          <div style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:.75rem">
+            <!-- Tarja admin -->
+            <div id="dashTarjaAdmin" style="display:none"></div>
+            <!-- Leads por origem -->
+            <div class="form-card" style="padding:.85rem 1rem">
+              <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:.65rem">📥 Leads recebidos no mês — por origem</div>
+              <div id="dashOrigens" style="display:flex;flex-wrap:wrap;gap:.5rem"></div>
+            </div>
+            <!-- Conversão -->
+            <div class="form-card" style="padding:.85rem 1rem">
+              <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:.65rem">🔁 Conversão do mês</div>
+              <div id="dashConversao" style="display:flex;gap:.75rem;flex-wrap:wrap"></div>
+            </div>
+            <!-- Meta + Ranking -->
+            <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+              <div class="form-card" style="padding:.85rem 1rem;flex:1;min-width:180px">
+                <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:.65rem">🎯 Meta do mês</div>
+                <div id="dashMeta"></div>
+              </div>
+              <div class="form-card" style="padding:.85rem 1rem;flex:1;min-width:180px">
+                <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:.65rem">🏆 Ranking do mês</div>
+                <div id="dashRanking"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ── FUNIL ── -->
       <div id="viewFunil">
-        <div id="statsArea">
-          <div class="stats-row-1" id="statsRow1"></div>
-          <div class="stats-row-2" id="statsRow2"></div>
+        <!-- Stats focadas do funil -->
+        <div id="funilStats" style="margin-bottom:.6rem">
+          <div id="funilOrigens" style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.5rem"></div>
+          <div id="funilMetrics" style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.5rem"></div>
         </div>
-        <!-- Painel financeiro — somente admin -->
-        <div id="dashFinanceiroRow" style="display:none;gap:.65rem;margin-bottom:.6rem;flex-wrap:wrap"></div>
         <!-- Barra fila rotativa -->
         <div id="filaBarra" style="display:none">
           <span class="fila-titulo">Próximo lead:</span>
           <div id="filaChips"></div>
         </div>
-        <!-- Kanban + widget -->
+        <!-- Kanban -->
         <div id="funiKanbanWrapper">
-          <!-- Widget fila lateral -->
-          <div id="filaWidget" style="display:none">
-            <div class="fw-header">🔄 Fila de atendimento</div>
-            <div class="fw-body" id="filaWidgetBody"></div>
-            <div class="fw-footer">↺ repete automaticamente</div>
-          </div>
           <div class="kanban" id="kanbanBoard"></div>
         </div>
       </div>
@@ -1087,33 +1141,30 @@
     }
     _iniciarHeartbeat();   // Registra atividade a cada 60s
     carregarFila();        // Fila rotativa de atendimento
+    carregarDashboard();   // Métricas da aba Dashboard
     document.getElementById('mainContent').classList.add('funil-mode'); // view inicial é o funil
-    document.getElementById('btnToggleStats').style.display = '';
-    _aplicarEstadoStats();
     refresh();
     setInterval(refresh, 30000);
+    setInterval(carregarDashboard, 60000); // atualiza dashboard a cada 1min
     iniciarPollingInbox();  // Atualiza lista de conversas a cada 5s
   }
 
   document.getElementById('loginSenha').addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); });
 
   // ═══════ VIEWS ═══════
-  const views = ['funil','lista','atendimento','parceiros','usuarios','relatorios','configuracoes'];
+  const views = ['dashboard','funil','lista','atendimento','parceiros','usuarios','relatorios','configuracoes'];
   const adminViews = ['usuarios', 'relatorios', 'configuracoes'];
   function showView(v) {
-    // Bloqueia acesso a views restritas para não-admins
     if (adminViews.includes(v) && currentUser?.role !== 'admin') return;
     views.forEach(x => {
       document.getElementById('view'+cap(x)).style.display = x === v ? '' : 'none';
       const n = document.getElementById('nav-'+x);
       if (n) n.classList.toggle('active', x === v);
     });
-    const titles = {funil:'Funil de Leads', lista:'Lista de Leads', usuarios:'Usuários', relatorios:'Relatórios', atendimento:'Atendimentos', configuracoes:'Config. do Bot', parceiros:'Parceiros'};
+    const titles = {dashboard:'Dashboard', funil:'Funil de Leads', lista:'Lista de Leads', usuarios:'Usuários', relatorios:'Relatórios', atendimento:'Atendimentos', configuracoes:'Config. do Bot', parceiros:'Parceiros'};
     document.getElementById('pageTitle').textContent = titles[v] || v;
-    // Funil ocupa toda a área disponível com scroll horizontal próprio
     document.getElementById('mainContent').classList.toggle('funil-mode', v === 'funil');
-    // Botão de ocultar painel só aparece no funil
-    document.getElementById('btnToggleStats').style.display = v === 'funil' ? '' : 'none';
+    if (v === 'dashboard') carregarDashboard();
     if (v === 'usuarios') carregarUsuarios();
     if (v === 'relatorios') carregarRelatorios();
     if (v === 'lista') renderLista();
@@ -1150,7 +1201,7 @@
   async function refresh() {
     const btn = document.getElementById('btnRefresh');
     btn.classList.add('spinning');
-    await Promise.all([carregarStats(), carregarLeads(), carregarInbox(), carregarMetaMes()]);
+    await Promise.all([carregarStats(), carregarLeads(), carregarInbox(), carregarMetaMes(), carregarDashboard()]);
     btn.classList.remove('spinning');
     document.getElementById('lastUpdate').textContent = 'Atualizado ' + new Date().toLocaleTimeString('pt-BR');
   }
@@ -2925,6 +2976,121 @@
         alert('Erro ao zerar histórico.');
       }
     } catch { alert('Erro de conexão.'); }
+  }
+
+  // ═══════ DASHBOARD ═══════
+  let _dashData = null;
+
+  const _ORIGEM_ICON = {
+    'WhatsApp / Bot': '💬',
+    'Rede Social': '📱',
+    'Parceiro': '🤝',
+    'Indicação': '👥',
+    'Ex-cliente': '🔄',
+  };
+
+  async function carregarDashboard() {
+    try {
+      const r = await fetch('/api/dashboard-stats');
+      _dashData = await r.json();
+      renderDashboard();
+      renderFunilStats();
+    } catch {}
+  }
+
+  function renderDashboard() {
+    if (!_dashData) return;
+    const d = _dashData;
+
+    // ── Tarja admin ──
+    const tarja = document.getElementById('dashTarjaAdmin');
+    if (d.tarja) {
+      tarja.style.display = '';
+      tarja.innerHTML = `
+        <div class="dash-tarja">
+          <div class="dash-tarja-item"><span class="dash-tarja-label">Contratos fechados</span><span class="dash-tarja-val">${d.tarja.contratos}</span></div>
+          <div class="dash-tarja-item"><span class="dash-tarja-label">Total financiado</span><span class="dash-tarja-val">${d.tarja.total_valor}</span></div>
+          <div class="dash-tarja-item"><span class="dash-tarja-label">Comissão total</span><span class="dash-tarja-val">${d.tarja.total_comissao}</span></div>
+        </div>`;
+    } else {
+      tarja.style.display = 'none';
+    }
+
+    // ── Origens ──
+    const origensEl = document.getElementById('dashOrigens');
+    origensEl.innerHTML = Object.entries(d.por_origem)
+      .sort((a,b) => b[1] - a[1])
+      .map(([label, num]) => `
+        <div class="dash-origem-chip">
+          <span>${_ORIGEM_ICON[label] || '📌'}</span>
+          <span class="dash-origem-label">${esc(label)}</span>
+          <span class="dash-origem-num">${num}</span>
+        </div>`).join('');
+
+    // ── Conversão ──
+    document.getElementById('dashConversao').innerHTML = `
+      <div class="dash-conv-card">
+        <div class="dash-conv-pct">${d.conv_proposta}%</div>
+        <div class="dash-conv-label">Leads → Proposta</div>
+      </div>
+      <div class="dash-conv-card">
+        <div class="dash-conv-pct">${d.conv_aprovada}%</div>
+        <div class="dash-conv-label">Proposta → Aprovada</div>
+      </div>
+      <div class="dash-conv-card" style="background:#f0fdf4;border-color:#bbf7d0">
+        <div class="dash-conv-pct" style="color:#16a34a">${d.fechados_mes}</div>
+        <div class="dash-conv-label">Contratos fechados</div>
+      </div>`;
+
+    // ── Meta ──
+    const pct = Math.min(d.pct_meta, 100);
+    document.getElementById('dashMeta').innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-size:1.5rem;font-weight:900;color:#0d2b4e">${d.fechados_mes}</span>
+        <span style="font-size:.78rem;color:var(--muted)">de ${d.meta} contratos</span>
+      </div>
+      <div class="dash-meta-bar-bg"><div class="dash-meta-bar" style="width:${pct}%"></div></div>
+      <div style="font-size:.72rem;color:var(--muted)">${d.pct_meta}% da meta — ${d.mes}</div>`;
+
+    // ── Ranking ──
+    const medalhas = ['🥇','🥈','🥉'];
+    document.getElementById('dashRanking').innerHTML = d.ranking.length
+      ? d.ranking.map((f,i) => `
+          <div class="dash-ranking-row">
+            <span style="font-size:1rem">${medalhas[i] || `${i+1}.`}</span>
+            <span style="flex:1;font-size:.82rem;font-weight:600;color:#1e293b">${esc(f.nome)}</span>
+            <span style="font-size:.82rem;font-weight:800;color:#0d2b4e">${f.contratos} <span style="font-weight:400;color:var(--muted)">contratos</span></span>
+          </div>`).join('')
+      : '<p style="font-size:.8rem;color:var(--muted)">Nenhum contrato no mês.</p>';
+  }
+
+  function renderFunilStats() {
+    if (!_dashData) return;
+    const d = _dashData;
+
+    // Origens compactas
+    const origensEl = document.getElementById('funilOrigens');
+    origensEl.innerHTML = Object.entries(d.por_origem)
+      .filter(([,n]) => n > 0)
+      .sort((a,b) => b[1] - a[1])
+      .map(([label, num]) => `
+        <span class="funil-chip">${_ORIGEM_ICON[label] || '📌'} ${esc(label)} <span class="fc-num">${num}</span></span>`)
+      .join('');
+
+    // Métricas compactas
+    const medalhas = ['🥇','🥈','🥉'];
+    const rankStr = d.ranking.slice(0,3).map((f,i) => `${medalhas[i]} ${esc(f.nome.split(' ')[0])} <strong>${f.contratos}</strong>`).join(' &nbsp; ');
+    const pct = Math.min(d.pct_meta, 100);
+    document.getElementById('funilMetrics').innerHTML = `
+      <span class="funil-metric">🔁 Leads→Prop <strong>${d.conv_proposta}%</strong></span>
+      <span class="funil-metric">✅ Prop→Aprov <strong>${d.conv_aprovada}%</strong></span>
+      <span class="funil-metric" title="Meta do mês">🎯 Meta
+        <span style="display:inline-block;width:50px;height:7px;background:#e2e8f0;border-radius:99px;overflow:hidden;vertical-align:middle">
+          <span style="display:block;height:100%;width:${pct}%;background:#22c55e;border-radius:99px"></span>
+        </span>
+        <strong>${d.fechados_mes}/${d.meta}</strong>
+      </span>
+      ${rankStr ? `<span class="funil-metric">${rankStr}</span>` : ''}`;
   }
 
   // ═══════ FILA ROTATIVA ═══════
