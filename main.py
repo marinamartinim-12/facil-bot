@@ -493,13 +493,9 @@ async def heartbeat(request: Request, response: Response, db: Session = Depends(
             httponly=True, samesite="lax", max_age=60 * 60 * 24 * 7,
         )
 
-    agora = datetime.utcnow()
-    sessao.ultimo_ativo_em = agora
+    sessao.ultimo_ativo_em = datetime.utcnow()
     if realmente_ativo:
-        novo_ativo = (sessao.tempo_ativo_s or 0) + 60
-        # Garante que tempo ativo nunca ultrapasse a duração real da sessão
-        duracao_s = int((agora - sessao.login_em).total_seconds()) if sessao.login_em else novo_ativo
-        sessao.tempo_ativo_s = min(novo_ativo, duracao_s)
+        sessao.tempo_ativo_s = (sessao.tempo_ativo_s or 0) + 60
     db.commit()
     return {"status": "ok"}
 
@@ -2736,6 +2732,8 @@ def _sessoes_funcionarias(db: Session, limit: int = 1000) -> list:
     for s in sessoes:
         fim = s.logout_em or s.ultimo_ativo_em
         tempo_s = max(0, int((fim - s.login_em).total_seconds())) if fim and s.login_em else 0
+        # Garante que tempo ativo nunca ultrapasse o tempo logado (corrige dados inflados)
+        tempo_ativo_corrigido = min(s.tempo_ativo_s or 0, tempo_s)
         resultado.append({
             "id": s.id,
             "usuario": s.usuario.nome if s.usuario else "—",
@@ -2746,8 +2744,8 @@ def _sessoes_funcionarias(db: Session, limit: int = 1000) -> list:
             "ultimo_ativo_em": _fmt_br(s.ultimo_ativo_em) or "—",
             "logout_em": _fmt_br(s.logout_em),
             "tempo_logado": _duracao_str(tempo_s),
-            "tempo_ativo": _duracao_str(s.tempo_ativo_s or 0),
-            "tempo_ativo_s": s.tempo_ativo_s or 0,
+            "tempo_ativo": _duracao_str(tempo_ativo_corrigido),
+            "tempo_ativo_s": tempo_ativo_corrigido,
             "ativa": (
                 s.logout_em is None
                 and s.ultimo_ativo_em is not None
