@@ -3005,7 +3005,7 @@ def _fila_snapshot(db: Session):
         return {"ordem": [], "posicao": 0, "proxima": None}
     posicao = posicao % len(ordem)
 
-    # Contagem de leads de hoje por usuário
+    # Contagem de leads de hoje por usuário — apenas os que chegaram pela plataforma (origem NULL)
     hoje_br = _agora_br().date()
     inicio_hoje = datetime(hoje_br.year, hoje_br.month, hoje_br.day, tzinfo=timezone.utc) + timedelta(hours=3)
     fim_hoje = inicio_hoje + timedelta(days=1)
@@ -3015,6 +3015,7 @@ def _fila_snapshot(db: Session):
             Lead.atribuido_para.in_(ordem),
             Lead.criado_em >= inicio_hoje,
             Lead.criado_em < fim_hoje,
+            Lead.origem.is_(None),  # exclui leads inseridos manualmente
         )
         .all()
     )
