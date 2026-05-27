@@ -219,13 +219,14 @@
 
     /* ── USUÁRIOS ── */
     .users-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
-    .user-card { background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.1rem 1.25rem; display: flex; align-items: center; gap: .85rem; }
+    .user-card { background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
+    .uc-top { display: flex; align-items: center; gap: .85rem; }
     .uc-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--navy); color: var(--white); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1rem; flex-shrink: 0; }
     .uc-avatar.admin { background: var(--gold); color: var(--navy); }
     .uc-info { flex: 1; min-width: 0; }
     .uc-info strong { display: block; font-size: .9rem; }
     .uc-info span { font-size: .75rem; color: var(--muted); }
-    .uc-actions { display: flex; flex-direction: column; gap: .3rem; }
+    .uc-actions { display: flex; flex-wrap: wrap; gap: .35rem; border-top: 1px solid var(--border); padding-top: .6rem; }
     .badge-admin { background: #fef9c3; color: #854d0e; }
     .badge-funcionario { background: #e0f2fe; color: #075985; }
     .badge-inativo { background: #fee2e2; color: #991b1b; }
@@ -1719,13 +1720,15 @@
       const users = await r.json();
       document.getElementById('usersGrid').innerHTML = users.map(u => `
         <div class="user-card">
-          <div class="uc-avatar ${u.role === 'admin' ? 'admin' : ''}">${u.nome[0].toUpperCase()}</div>
-          <div class="uc-info">
-            <strong>${esc(u.nome)}</strong>
-            <span>${esc(u.email)}</span>
-            <div style="margin-top:.35rem;display:flex;gap:.3rem;flex-wrap:wrap">
-              <span class="badge badge-${u.role}">${u.role === 'admin' ? 'Admin' : 'Funcionário'}</span>
-              ${!u.ativo ? '<span class="badge badge-inativo">Inativo</span>' : ''}
+          <div class="uc-top">
+            <div class="uc-avatar ${u.role === 'admin' ? 'admin' : ''}">${u.nome[0].toUpperCase()}</div>
+            <div class="uc-info">
+              <strong>${esc(u.nome)}</strong>
+              <span>${esc(u.email)}</span>
+              <div style="margin-top:.35rem;display:flex;gap:.3rem;flex-wrap:wrap">
+                <span class="badge badge-${u.role}">${u.role === 'admin' ? 'Admin' : 'Funcionário'}</span>
+                ${!u.ativo ? '<span class="badge badge-inativo">Inativo</span>' : ''}
+              </div>
             </div>
           </div>
           <div class="uc-actions">
