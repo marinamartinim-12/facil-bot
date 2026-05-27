@@ -2589,24 +2589,184 @@ async def relatorio_sessoes_csv(
     db: Session = Depends(get_db),
     admin: Usuario = Depends(requer_admin),
 ):
-    """Exporta histórico de sessões como CSV (admin only)."""
+    """Exporta atividade das funcionárias como XLSX — uma aba por funcionária, agrupado por dia."""
     from fastapi.responses import StreamingResponse
-    import csv, io
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    from collections import defaultdict
+
     sessoes = _sessoes_funcionarias(db)
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["Funcionária", "Login em", "Último acesso", "Logout em",
-                     "Tempo logado", "Tempo ativo", "Localização", "IP"])
+
+    # ── Agrupa: funcionária → data → lista de sessões ──────────────────────
+    grupos: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
     for s in sessoes:
-        writer.writerow([
-            s["usuario"], s["login_em"], s["ultimo_ativo_em"],
-            s["logout_em"] or "—", s["tempo_logado"], s["tempo_ativo"],
-            s["localizacao"], s["ip"],
-        ])
-    output.seek(0)
-    headers = {"Content-Disposition": "attachment; filename=atividade_funcionarias.csv"}
-    return StreamingResponse(iter([output.getvalue()]),
-                             media_type="text/csv; charset=utf-8-sig", headers=headers)
+        login_raw = s["login_em"] or ""
+        # login_em vem como "DD/MM/YYYY HH:MM" — pega só a data
+        data_str = login_raw[:10] if len(login_raw) >= 10 else "Sem data"
+        grupos[s["usuario"]][data_str].append(s)
+
+    wb = Workbook()
+    wb.remove(wb.active)  # remove aba padrão
+
+    # Estilos
+    cor_cabecalho   = PatternFill("solid", fgColor="0D2B4E")   # navy
+    cor_dia         = PatternFill("solid", fgColor="E8F4FD")   # azul claro
+    cor_resumo      = PatternFill("solid", fgColor="FEF9C3")   # amarelo claro
+    fonte_cab       = Font(bold=True, color="FFFFFF", size=10)
+    fonte_dia       = Font(bold=True, color="1A5276", size=10)
+    fonte_resumo    = Font(bold=True, color="713F12", size=10)
+    fonte_normal    = Font(size=9)
+    alin_centro     = Alignment(horizontal="center", vertical="center")
+    borda_fina      = Border(
+        bottom=Side(style="thin", color="CCCCCC"),
+        top=Side(style="thin", color="CCCCCC"),
+    )
+
+    def _set_row(ws, row, values, fill=None, font=None, bold=False):
+        for col, val in enumerate(values, 1):
+            cell = ws.cell(row=row, column=col, value=val)
+            cell.alignment = alin_centro
+            cell.border = borda_fina
+            if fill:
+                cell.fill = fill
+            if font:
+                cell.font = font
+            elif bold:
+                cell.font = Font(bold=True, size=9)
+            else:
+                cell.font = fonte_normal
+
+    for nome_func in sorted(grupos.keys()):
+        dias = grupos[nome_func]
+        # Nome da aba — máx 31 chars, sem chars inválidos
+        aba = nome_func[:31].replace("/","").replace("\\","").replace("?","").replace("*","").replace("[","").replace("]","")
+        ws = wb.create_sheet(title=aba)
+
+        # Larguras das colunas
+        larguras = [12, 10, 10, 10, 14, 14, 26, 18]
+        cols_cabecalho = ["Data", "Sessões", "T. Ativo", "T. Logado", "Primeira Entrada", "Último Acesso", "Localização", "IP"]
+        for i, larg in enumerate(larguras, 1):
+            ws.column_dimensions[get_column_letter(i)].width = larg
+
+        linha = 1
+
+        # Título da aba
+        ws.merge_cells(f"A{linha}:H{linha}")
+        titulo = ws.cell(row=linha, column=1, value=f"Atividade — {nome_func}")
+        titulo.font = Font(bold=True, color="FFFFFF", size=12)
+        titulo.fill = cor_cabecalho
+        titulo.alignment = alin_centro
+        ws.row_dimensions[linha].height = 22
+        linha += 1
+
+        # Cabeçalho
+        _set_row(ws, linha, cols_cabecalho, fill=cor_cabecalho, font=fonte_cab)
+        ws.row_dimensions[linha].height = 18
+        linha += 1
+
+        for data_str in sorted(dias.keys(), reverse=True):
+            sessoes_dia = dias[data_str]
+
+            # Calcula resumo do dia
+            total_ativo_s = sum(s["tempo_ativo_s"] or 0 for s in sessoes_dia)
+            total_logado_s = 0
+            primeira_entrada = None
+            ultimo_acesso = None
+            localizacoes = set()
+            ips = set()
+            for s in sessoes_dia:
+                if s["login_em"] and s["login_em"] != "—":
+                    if not primeira_entrada or s["login_em"] < primeira_entrada:
+                        primeira_entrada = s["login_em"]
+                if s["ultimo_ativo_em"] and s["ultimo_ativo_em"] != "—":
+                    if not ultimo_acesso or s["ultimo_ativo_em"] > ultimo_acesso:
+                        ultimo_acesso = s["ultimo_ativo_em"]
+                if s["localizacao"] and s["localizacao"] != "—":
+                    localizacoes.add(s["localizacao"])
+                if s["ip"] and s["ip"] != "—":
+                    ips.add(s["ip"])
+
+            # Linha de resumo do dia
+            ativo_str = _duracao_str(total_ativo_s)
+            _set_row(ws, linha, [
+                data_str,
+                len(sessoes_dia),
+                ativo_str,
+                "—",
+                primeira_entrada or "—",
+                ultimo_acesso or "—",
+                ", ".join(sorted(localizacoes)) or "—",
+                ", ".join(sorted(ips)) or "—",
+            ], fill=cor_dia, font=fonte_dia)
+            ws.row_dimensions[linha].height = 16
+            linha += 1
+
+            # Sessões individuais do dia (indentadas)
+            for s in sorted(sessoes_dia, key=lambda x: x["login_em"] or ""):
+                _set_row(ws, linha, [
+                    "",                         # data (já na linha do dia)
+                    1,                          # sessões
+                    s["tempo_ativo"],
+                    s["tempo_logado"],
+                    s["login_em"] or "—",
+                    s["ultimo_ativo_em"] or "—",
+                    s["localizacao"] or "—",
+                    s["ip"] or "—",
+                ])
+                ws.row_dimensions[linha].height = 15
+                linha += 1
+
+        # Linha de total geral da funcionária
+        total_geral_s = sum(s["tempo_ativo_s"] or 0 for dias_list in dias.values() for s in dias_list)
+        total_sessoes = sum(len(v) for v in dias.values())
+        _set_row(ws, linha, [
+            "TOTAL GERAL",
+            total_sessoes,
+            _duracao_str(total_geral_s),
+            "—", "—", "—", "—", "—",
+        ], fill=cor_resumo, font=fonte_resumo)
+        ws.row_dimensions[linha].height = 18
+
+    # ── Aba resumo geral (primeira) ────────────────────────────────────────
+    ws_res = wb.create_sheet(title="Resumo Geral", index=0)
+    ws_res.column_dimensions["A"].width = 24
+    ws_res.column_dimensions["B"].width = 10
+    ws_res.column_dimensions["C"].width = 12
+    ws_res.column_dimensions["D"].width = 20
+    ws_res.column_dimensions["E"].width = 20
+
+    ws_res.merge_cells("A1:E1")
+    t = ws_res.cell(row=1, column=1, value="Resumo de Atividade das Funcionárias")
+    t.font = Font(bold=True, color="FFFFFF", size=12)
+    t.fill = cor_cabecalho
+    t.alignment = alin_centro
+    ws_res.row_dimensions[1].height = 22
+
+    _set_row(ws_res, 2, ["Funcionária", "Sessões", "Tempo Ativo", "Primeira Entrada", "Último Acesso"],
+             fill=cor_cabecalho, font=fonte_cab)
+    ws_res.row_dimensions[2].height = 18
+
+    linha_res = 3
+    for nome_func in sorted(grupos.keys()):
+        dias = grupos[nome_func]
+        total_s = sum(s["tempo_ativo_s"] or 0 for dl in dias.values() for s in dl)
+        total_sess = sum(len(v) for v in dias.values())
+        todas = [s for dl in dias.values() for s in dl]
+        p_entrada = min((s["login_em"] for s in todas if s["login_em"] and s["login_em"] != "—"), default="—")
+        u_acesso  = max((s["ultimo_ativo_em"] for s in todas if s["ultimo_ativo_em"] and s["ultimo_ativo_em"] != "—"), default="—")
+        _set_row(ws_res, linha_res, [nome_func, total_sess, _duracao_str(total_s), p_entrada, u_acesso])
+        ws_res.row_dimensions[linha_res].height = 15
+        linha_res += 1
+
+    # Salva em buffer
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    headers = {"Content-Disposition": "attachment; filename=atividade_funcionarias.xlsx"}
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
 
 
 # ─── Dashboard ────────────────────────────────────────────────────────────────────
