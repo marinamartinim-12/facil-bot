@@ -3005,16 +3005,17 @@ def _fila_snapshot(db: Session):
         return {"ordem": [], "posicao": 0, "proxima": None}
     posicao = posicao % len(ordem)
 
-    # Contagem de leads de hoje por usuário — apenas os que chegaram pela plataforma (origem NULL)
+    # Contagem de leads assumidos hoje por usuário — apenas os que chegaram pela plataforma (origem NULL)
+    # Usa assumido_em (quando a operadora pegou o lead) e datetimes naive UTC para compatibilidade com SQLite
     hoje_br = _agora_br().date()
-    inicio_hoje = datetime(hoje_br.year, hoje_br.month, hoje_br.day, tzinfo=timezone.utc) + timedelta(hours=3)
+    inicio_hoje = datetime(hoje_br.year, hoje_br.month, hoje_br.day) + timedelta(hours=3)  # meia-noite BR em UTC naive
     fim_hoje = inicio_hoje + timedelta(days=1)
     leads_hoje_raw = (
         db.query(Lead.atribuido_para, Lead.id)
         .filter(
             Lead.atribuido_para.in_(ordem),
-            Lead.criado_em >= inicio_hoje,
-            Lead.criado_em < fim_hoje,
+            Lead.assumido_em >= inicio_hoje,
+            Lead.assumido_em < fim_hoje,
             Lead.origem.is_(None),  # exclui leads inseridos manualmente
         )
         .all()
