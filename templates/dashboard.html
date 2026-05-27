@@ -201,15 +201,15 @@
 
     /* ── FILA ROTATIVA ── */
     #filaBarra {
-      display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
-      background: #0d2b4e; border-radius: 9px; padding: .5rem 1rem;
-      margin-bottom: .55rem; flex-shrink: 0;
+      display: flex; align-items: center; gap: .5rem;
+      background: #0d2b4e; border-radius: 9px; padding: .4rem .85rem;
+      margin-bottom: .55rem; flex-shrink: 0; overflow: hidden;
     }
     .fila-titulo { font-size: .7rem; font-weight: 700; color: #64748b; white-space: nowrap; margin-right: .2rem; }
     .fila-chip {
       display: flex; align-items: center; gap: .3rem;
-      padding: .28rem .7rem; border-radius: 20px;
-      font-size: .78rem; font-weight: 700;
+      padding: .22rem .6rem; border-radius: 20px;
+      font-size: .75rem; font-weight: 700; white-space: nowrap;
       background: #1e3f6b; color: #94a3b8;
       transition: background .2s;
     }
@@ -680,12 +680,10 @@
       <!-- ── DASHBOARD ── -->
       <div id="viewDashboard" style="display:none">
         <!-- Barra fila rotativa (linha) -->
-        <div id="dashFilaBarra" style="display:none;margin-bottom:.75rem">
-          <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;background:#0d2b4e;border-radius:9px;padding:.5rem 1rem;">
-            <span class="fila-titulo">🔄 Fila de atendimento:</span>
-            <div id="dashFilaChips" style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;flex:1"></div>
-            <span id="dashFilaLog" style="font-size:.65rem;color:#64748b;margin-left:.25rem"></span>
-          </div>
+        <div id="dashFilaBarra" style="display:none;margin-bottom:.65rem;background:#0d2b4e;border-radius:9px;padding:.4rem .85rem;display:none;align-items:center;gap:.4rem;overflow:hidden;">
+          <span class="fila-titulo">🔄</span>
+          <div id="dashFilaChips" style="display:flex;align-items:center;gap:.3rem;min-width:0;overflow:hidden;flex:1"></div>
+          <span id="dashFilaLog" style="font-size:.62rem;color:#64748b;white-space:nowrap;flex-shrink:0"></span>
         </div>
         <!-- Métricas -->
         <div style="display:flex;flex-direction:column;gap:.75rem">
@@ -726,7 +724,7 @@
         <div id="filaBarra" style="display:none">
           <span class="fila-titulo">Próximo lead:</span>
           <div id="filaChips"></div>
-          <button id="btnEditarFila" onclick="toggleFilaEditPanel()" title="Editar ordem" style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:.2rem .5rem;cursor:pointer;font-size:.72rem;color:#94a3b8;margin-left:.5rem;transition:background .15s;" onmouseover="this.style.background='rgba(255,255,255,.2)'" onmouseout="this.style.background='rgba(255,255,255,.1)'">✏️ Editar</button>
+          <button id="btnEditarFila" onclick="toggleFilaEditPanel()" title="Editar ordem" style="background:none;border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:.15rem .35rem;cursor:pointer;font-size:.78rem;color:#64748b;flex-shrink:0;line-height:1;transition:background .15s;" onmouseover="this.style.background='rgba(255,255,255,.12)'" onmouseout="this.style.background='none'">✏️</button>
           <!-- Painel de edição da ordem -->
           <div id="filaEditPanel">
             <div class="fep-title">Arraste ou use as setas para reordenar</div>
@@ -3022,11 +3020,38 @@
     const tarja = document.getElementById('dashTarjaAdmin');
     if (d.tarja) {
       tarja.style.display = '';
+      const pctMeta = Math.min(d.pct_meta, 100);
+      const corMeta = pctMeta >= 100 ? '#86efac' : pctMeta >= 60 ? '#fcd34d' : '#93c5fd';
       tarja.innerHTML = `
         <div class="dash-tarja">
-          <div class="dash-tarja-item"><span class="dash-tarja-label">Contratos fechados</span><span class="dash-tarja-val">${d.tarja.contratos}</span></div>
-          <div class="dash-tarja-item"><span class="dash-tarja-label">Total financiado</span><span class="dash-tarja-val">${d.tarja.total_valor}</span></div>
-          <div class="dash-tarja-item"><span class="dash-tarja-label">Comissão total</span><span class="dash-tarja-val">${d.tarja.total_comissao}</span></div>
+          <div class="dash-tarja-item">
+            <span class="dash-tarja-label">Leads no mês</span>
+            <span class="dash-tarja-val">${d.total_mes}</span>
+          </div>
+          <div class="dash-tarja-item">
+            <span class="dash-tarja-label">Propostas enviadas</span>
+            <span class="dash-tarja-val">${d.propostas_mes}</span>
+          </div>
+          <div class="dash-tarja-item">
+            <span class="dash-tarja-label">Aprovadas</span>
+            <span class="dash-tarja-val">${d.aprovadas_mes}</span>
+          </div>
+          <div class="dash-tarja-item">
+            <span class="dash-tarja-label">Contratos fechados</span>
+            <span class="dash-tarja-val">${d.tarja.contratos}</span>
+          </div>
+          <div class="dash-tarja-item" style="border-left:1px solid rgba(255,255,255,.12);padding-left:1.2rem;margin-left:.4rem">
+            <span class="dash-tarja-label">Meta ${d.mes}</span>
+            <span class="dash-tarja-val" style="color:${corMeta}">${pctMeta}%</span>
+          </div>
+          <div class="dash-tarja-item" style="border-left:1px solid rgba(255,255,255,.12);padding-left:1.2rem;margin-left:.4rem">
+            <span class="dash-tarja-label">Total financiado</span>
+            <span class="dash-tarja-val" style="color:#86efac">${d.tarja.total_valor}</span>
+          </div>
+          <div class="dash-tarja-item">
+            <span class="dash-tarja-label">Comissão total</span>
+            <span class="dash-tarja-val" style="color:#fcd34d">${d.tarja.total_comissao}</span>
+          </div>
         </div>`;
     } else {
       tarja.style.display = 'none';
@@ -3153,7 +3178,7 @@
     // ── Barra do Dashboard ──
     const dashBarra = document.getElementById('dashFilaBarra');
     if (dashBarra) {
-      dashBarra.style.display = '';
+      dashBarra.style.display = 'flex';
       _renderChips(document.getElementById('dashFilaChips'), ordem, posicao);
 
       // Log de alteração (só admin vê)
