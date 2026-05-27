@@ -2780,6 +2780,73 @@ async def relatorio_sessoes_csv(
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
 
 
+# ─── Fila rotativa de atendimento ────────────────────────────────────────────────
+
+def _get_fila_cfg(db: Session):
+    """Retorna (ordem: list[int], posicao: int) da configuração."""
+    import json
+    ordem_cfg = db.query(Configuracao).filter(Configuracao.chave == "fila_ordem").first()
+    pos_cfg   = db.query(Configuracao).filter(Configuracao.chave == "fila_posicao").first()
+    ordem = json.loads(ordem_cfg.valor) if ordem_cfg else []
+    posicao = int(pos_cfg.valor) if pos_cfg else 0
+    return ordem, posicao
+
+def _set_fila_cfg(db: Session, ordem: list, posicao: int):
+    import json
+    for chave, valor in [("fila_ordem", json.dumps(ordem)), ("fila_posicao", str(posicao))]:
+        cfg = db.query(Configuracao).filter(Configuracao.chave == chave).first()
+        if cfg:
+            cfg.valor = valor
+        else:
+            db.add(Configuracao(chave=chave, valor=valor, descricao="Fila rotativa de atendimento"))
+    db.commit()
+
+def _fila_snapshot(db: Session):
+    """Retorna a fila com dados dos usuários para exibição."""
+    ordem, posicao = _get_fila_cfg(db)
+    if not ordem:
+        return {"ordem": [], "posicao": 0, "proxima": None}
+    # Filtra apenas usuários ativos
+    usuarios = {u.id: u for u in db.query(Usuario).filter(
+        Usuario.id.in_(ordem), Usuario.ativo == True
+    ).all()}
+    # Remove ids inválidos da ordem
+    ordem = [uid for uid in ordem if uid in usuarios]
+    if not ordem:
+        return {"ordem": [], "posicao": 0, "proxima": None}
+    posicao = posicao % len(ordem)
+    return {
+        "ordem": [{"id": uid, "nome": usuarios[uid].nome} for uid in ordem],
+        "posicao": posicao,
+        "proxima": {"id": ordem[posicao], "nome": usuarios[ordem[posicao]].nome},
+    }
+
+@app.get("/api/fila")
+async def get_fila(db: Session = Depends(get_db), usuario: Usuario = Depends(obter_usuario_atual)):
+    return _fila_snapshot(db)
+
+@app.put("/api/fila/ordem")
+async def set_fila_ordem(request: Request, db: Session = Depends(get_db), usuario: Usuario = Depends(obter_usuario_atual)):
+    """Qualquer usuário autenticado pode reordenar a fila."""
+    body = await request.json()
+    ordem = body.get("ordem", [])
+    if not isinstance(ordem, list):
+        raise HTTPException(status_code=400, detail="ordem deve ser lista de IDs")
+    _, posicao = _get_fila_cfg(db)
+    _set_fila_cfg(db, ordem, posicao % len(ordem) if ordem else 0)
+    return _fila_snapshot(db)
+
+@app.post("/api/fila/avancar")
+async def avancar_fila(db: Session = Depends(get_db), usuario: Usuario = Depends(obter_usuario_atual)):
+    """Avança a fila para a próxima posição."""
+    ordem, posicao = _get_fila_cfg(db)
+    if not ordem:
+        return {"status": "fila vazia"}
+    nova_posicao = (posicao + 1) % len(ordem)
+    _set_fila_cfg(db, ordem, nova_posicao)
+    return _fila_snapshot(db)
+
+
 # ─── Dashboard ────────────────────────────────────────────────────────────────────
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -3429,6 +3496,28 @@ def _criar_config_padrao(db: Session):
         if not existe:
             db.add(Configuracao(chave=c["chave"], valor=c["valor"], descricao=c["descricao"]))
     db.commit()
+
+    # Inicializa fila rotativa se ainda não existir
+    fila_existe = db.query(Configuracao).filter(Configuracao.chave == "fila_ordem").first()
+    if not fila_existe:
+        import json as _json
+        # Busca funcionárias na ordem: Camila, Larissa, Luana
+        nomes_ordem = ["Camila", "Larissa", "Luana"]
+        ids_fila = []
+        for nome in nomes_ordem:
+            u = db.query(Usuario).filter(Usuario.nome.ilike(f"%{nome}%"), Usuario.ativo == True).first()
+            if u:
+                ids_fila.append(u.id)
+        # Completa com demais funcionárias ativas não incluídas
+        todos = db.query(Usuario).filter(Usuario.ativo == True, Usuario.role == RoleEnum.funcionario).all()
+        for u in todos:
+            if u.id not in ids_fila:
+                ids_fila.append(u.id)
+        if ids_fila:
+            db.add(Configuracao(chave="fila_ordem", valor=_json.dumps(ids_fila), descricao="Fila rotativa de atendimento"))
+            db.add(Configuracao(chave="fila_posicao", valor="0", descricao="Posição atual da fila rotativa"))
+            db.commit()
+            print(f"✅ Fila rotativa inicializada com {len(ids_fila)} funcionária(s)")
 
 
 def _salvar_msg_webhook(db: Session, telefone: str, texto: str, role: str = "user"):
