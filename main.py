@@ -493,9 +493,13 @@ async def heartbeat(request: Request, response: Response, db: Session = Depends(
             httponly=True, samesite="lax", max_age=60 * 60 * 24 * 7,
         )
 
-    sessao.ultimo_ativo_em = datetime.utcnow()
+    agora = datetime.utcnow()
+    sessao.ultimo_ativo_em = agora
     if realmente_ativo:
-        sessao.tempo_ativo_s = (sessao.tempo_ativo_s or 0) + 60
+        novo_ativo = (sessao.tempo_ativo_s or 0) + 60
+        # Garante que tempo ativo nunca ultrapasse a duração real da sessão
+        duracao_s = int((agora - sessao.login_em).total_seconds()) if sessao.login_em else novo_ativo
+        sessao.tempo_ativo_s = min(novo_ativo, duracao_s)
     db.commit()
     return {"status": "ok"}
 

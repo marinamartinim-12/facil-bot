@@ -1123,10 +1123,12 @@
 
   // ── Heartbeat: bate a cada 60s, informa se estava realmente ativo ──────────
   let _heartbeatTimer = null;
+  let _ultimoHeartbeatTs = 0;
   function _iniciarHeartbeat() {
     _pararHeartbeat();
     _registrarAtividade(); // login conta como atividade
     const _bater = () => {
+      _ultimoHeartbeatTs = Date.now();
       const ativo = _estaAtivo();
       fetch('/api/heartbeat', {
         method: 'POST',
@@ -1142,11 +1144,14 @@
   }
 
   // Quando a aba volta ao foco (alt+tab, volta do almoço, laptop acorda do sleep),
-  // o setInterval pode ter sido suspenso pelo browser — reinicia imediatamente
+  // o setInterval pode ter sido suspenso pelo browser — reinicia apenas se passaram >55s
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && currentUser) {
-      _registrarAtividade(); // considera que voltou = atividade
-      _iniciarHeartbeat();   // reinicia o intervalo e envia ping imediato
+      _registrarAtividade();
+      const passados = Date.now() - _ultimoHeartbeatTs;
+      if (passados > 55_000) {
+        _iniciarHeartbeat(); // reinicia só se o último bateu há mais de 55s
+      }
     }
   });
 
