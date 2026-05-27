@@ -215,7 +215,11 @@
     }
     .fila-chip.proxima { background: #22c55e; color: #fff; }
     .fila-chip.segunda { background: #1e4a7a; color: #cbd5e1; }
-    .fila-seta { color: #475569; font-size: .7rem; }
+    .fila-seta { color: #475569; font-size: .7rem; flex-shrink: 0; }
+    #filaChips, #dashFilaChips {
+      display: flex; align-items: center; gap: .3rem;
+      flex-wrap: nowrap; overflow: hidden; min-width: 0; flex: 1;
+    }
     #funiKanbanWrapper { flex: 1; display: flex; gap: .65rem; overflow: hidden; min-height: 0; }
 
     /* ── KANBAN ── */
