@@ -216,35 +216,6 @@
     .fila-chip.proxima { background: #22c55e; color: #fff; }
     .fila-chip.segunda { background: #1e4a7a; color: #cbd5e1; }
     .fila-seta { color: #475569; font-size: .7rem; }
-    #filaWidget {
-      width: 175px; min-width: 175px; background: #fff;
-      border-radius: var(--radius); box-shadow: var(--shadow);
-      display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
-      align-self: flex-start;
-    }
-    .fw-header {
-      background: #0d2b4e; padding: .5rem .85rem;
-      font-size: .68rem; font-weight: 700; color: #94a3b8;
-      text-transform: uppercase; letter-spacing: .08em;
-    }
-    .fw-body { flex: 1; padding: .4rem; overflow-y: auto; }
-    .fw-row {
-      display: flex; align-items: center; gap: .5rem;
-      padding: .4rem .45rem; border-radius: 7px; margin-bottom: .2rem;
-      cursor: default;
-    }
-    .fw-row.proxima { background: #f0fdf4; }
-    .fw-row.outros  { background: #f8fafc; }
-    .fw-num { font-size: .62rem; font-weight: 800; color: #94a3b8; width: 12px; text-align: center; flex-shrink: 0; }
-    .fw-av { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .7rem; font-weight: 800; flex-shrink: 0; }
-    .fw-av.p  { background: #22c55e; color: #fff; }
-    .fw-av.o  { background: #dbeafe; color: #1d4ed8; }
-    .fw-nome  { font-size: .78rem; font-weight: 600; color: #1e293b; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .fw-tag   { font-size: .6rem; font-weight: 700; color: #16a34a; background: #dcfce7; padding: 1px 5px; border-radius: 20px; white-space: nowrap; }
-    .fw-btns  { display: flex; flex-direction: column; gap: 1px; }
-    .fw-btn   { background: none; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; font-size: .65rem; padding: 1px 4px; color: #64748b; line-height: 1.3; }
-    .fw-btn:hover { background: #f1f5f9; }
-    .fw-footer { border-top: 1px solid var(--border); padding: .35rem .5rem; font-size: .65rem; color: #94a3b8; text-align: center; line-height:1.4; }
     #funiKanbanWrapper { flex: 1; display: flex; gap: .65rem; overflow: hidden; min-height: 0; }
 
     /* ── KANBAN ── */
@@ -708,37 +679,37 @@
 
       <!-- ── DASHBOARD ── -->
       <div id="viewDashboard" style="display:none">
-        <div style="display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap">
-          <!-- Widget fila rotativa -->
-          <div id="filaWidget" style="min-width:175px;width:175px">
-            <div class="fw-header">🔄 Fila de atendimento</div>
-            <div class="fw-body" id="filaWidgetBody"></div>
-            <div class="fw-footer">↺ repete automaticamente</div>
+        <!-- Barra fila rotativa (linha) -->
+        <div id="dashFilaBarra" style="display:none;margin-bottom:.75rem">
+          <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;background:#0d2b4e;border-radius:9px;padding:.5rem 1rem;">
+            <span class="fila-titulo">🔄 Fila de atendimento:</span>
+            <div id="dashFilaChips" style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;flex:1"></div>
+            <span id="dashFilaLog" style="font-size:.65rem;color:#64748b;margin-left:.25rem"></span>
           </div>
-          <!-- Métricas -->
-          <div style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:.75rem">
-            <!-- Tarja admin -->
-            <div id="dashTarjaAdmin" style="display:none"></div>
-            <!-- Leads por origem -->
-            <div class="form-card" style="padding:.85rem 1rem">
-              <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:.65rem">📥 Leads recebidos no mês — por origem</div>
-              <div id="dashOrigens" style="display:flex;flex-wrap:wrap;gap:.5rem"></div>
+        </div>
+        <!-- Métricas -->
+        <div style="display:flex;flex-direction:column;gap:.75rem">
+          <!-- Tarja admin -->
+          <div id="dashTarjaAdmin" style="display:none"></div>
+          <!-- Leads por origem -->
+          <div class="form-card" style="padding:.85rem 1rem">
+            <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:.65rem">📥 Leads recebidos no mês — por origem</div>
+            <div id="dashOrigens" style="display:flex;flex-wrap:wrap;gap:.5rem"></div>
+          </div>
+          <!-- Conversão -->
+          <div class="form-card" style="padding:.85rem 1rem">
+            <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:.65rem">🔁 Conversão do mês</div>
+            <div id="dashConversao" style="display:flex;gap:.75rem;flex-wrap:wrap"></div>
+          </div>
+          <!-- Meta + Ranking -->
+          <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+            <div class="form-card" style="padding:.85rem 1rem;flex:1;min-width:180px">
+              <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:.65rem">🎯 Meta do mês</div>
+              <div id="dashMeta"></div>
             </div>
-            <!-- Conversão -->
-            <div class="form-card" style="padding:.85rem 1rem">
-              <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:.65rem">🔁 Conversão do mês</div>
-              <div id="dashConversao" style="display:flex;gap:.75rem;flex-wrap:wrap"></div>
-            </div>
-            <!-- Meta + Ranking -->
-            <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-              <div class="form-card" style="padding:.85rem 1rem;flex:1;min-width:180px">
-                <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:.65rem">🎯 Meta do mês</div>
-                <div id="dashMeta"></div>
-              </div>
-              <div class="form-card" style="padding:.85rem 1rem;flex:1;min-width:180px">
-                <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:.65rem">🏆 Ranking do mês</div>
-                <div id="dashRanking"></div>
-              </div>
+            <div class="form-card" style="padding:.85rem 1rem;flex:1;min-width:180px">
+              <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:.65rem">🏆 Ranking do mês</div>
+              <div id="dashRanking"></div>
             </div>
           </div>
         </div>
@@ -3162,51 +3133,42 @@
     } catch {}
   }
 
-  function renderFila() {
-    if (!_filaData || !_filaData.ordem || !_filaData.ordem.length) return;
-    const { ordem, posicao } = _filaData;
-
-    // Mostra elementos
-    document.getElementById('filaBarra').style.display = '';
-    document.getElementById('filaWidget').style.display = '';
-
-    // ── Barra A ──
-    const chips = document.getElementById('filaChips');
-    chips.style.display = 'flex';
-    chips.style.alignItems = 'center';
-    chips.style.gap = '.3rem';
-    chips.style.flexWrap = 'wrap';
-    chips.innerHTML = ordem.map((u, i) => {
+  function _renderChips(container, ordem, posicao) {
+    container.innerHTML = ordem.map((u, i) => {
       const cls = i === posicao ? 'proxima' : i === (posicao + 1) % ordem.length ? 'segunda' : '';
       const prefix = i === posicao ? '▶ ' : '';
       const sep = i < ordem.length - 1 ? '<span class="fila-seta">→</span>' : '';
       return `<div class="fila-chip ${cls}">${prefix}${esc(u.nome)}</div>${sep}`;
     }).join('') + `<span class="fila-seta">→</span><span class="fila-chip" style="opacity:.4">${esc(ordem[posicao].nome)}…</span>`;
+  }
 
-    // ── Widget B ──
-    const body = document.getElementById('filaWidgetBody');
-    body.innerHTML = ordem.map((u, i) => {
-      const isProx = i === posicao;
-      return `
-        <div class="fw-row ${isProx ? 'proxima' : 'outros'}">
-          <span class="fw-num">${i + 1}</span>
-          <div class="fw-av ${isProx ? 'p' : 'o'}">${u.nome[0].toUpperCase()}</div>
-          <span class="fw-nome">${esc(u.nome)}</span>
-          ${isProx ? '<span class="fw-tag">agora</span>' : ''}
-        </div>`;
-    }).join('');
+  function renderFila() {
+    if (!_filaData || !_filaData.ordem || !_filaData.ordem.length) return;
+    const { ordem, posicao } = _filaData;
 
-    // ── Widget footer: log de alteração (só admin vê) ──
-    const footer = document.querySelector('.fw-footer');
-    if (footer) {
-      let txt = '↺ repete automaticamente';
-      if (currentUser && currentUser.perfil === 'admin' && _filaData.alterado_por) {
-        const dt = _filaData.alterado_em ? new Date(_filaData.alterado_em) : null;
-        const hora = dt ? dt.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : '';
-        const dia  = dt ? dt.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) : '';
-        txt += `<br><span style="color:#f97316;font-size:.6rem">✏️ ${esc(_filaData.alterado_por.split(' ')[0])} — ${dia} ${hora}</span>`;
+    // ── Barra do funil ──
+    document.getElementById('filaBarra').style.display = '';
+    _renderChips(document.getElementById('filaChips'), ordem, posicao);
+
+    // ── Barra do Dashboard ──
+    const dashBarra = document.getElementById('dashFilaBarra');
+    if (dashBarra) {
+      dashBarra.style.display = '';
+      _renderChips(document.getElementById('dashFilaChips'), ordem, posicao);
+
+      // Log de alteração (só admin vê)
+      const logEl = document.getElementById('dashFilaLog');
+      if (logEl) {
+        if (currentUser && currentUser.perfil === 'admin' && _filaData.alterado_por) {
+          const dt = _filaData.alterado_em ? new Date(_filaData.alterado_em) : null;
+          const hora = dt ? dt.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : '';
+          const dia  = dt ? dt.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) : '';
+          logEl.innerHTML = `✏️ ${esc(_filaData.alterado_por.split(' ')[0])} — ${dia} ${hora}`;
+          logEl.style.color = '#f97316';
+        } else {
+          logEl.innerHTML = '';
+        }
       }
-      footer.innerHTML = txt;
     }
   }
 
