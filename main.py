@@ -3004,12 +3004,33 @@ def _fila_snapshot(db: Session):
     if not ordem:
         return {"ordem": [], "posicao": 0, "proxima": None}
     posicao = posicao % len(ordem)
+
+    # Contagem de leads de hoje por usuário
+    hoje_br = _agora_br().date()
+    inicio_hoje = datetime(hoje_br.year, hoje_br.month, hoje_br.day, tzinfo=timezone.utc) + timedelta(hours=3)
+    fim_hoje = inicio_hoje + timedelta(days=1)
+    leads_hoje_raw = (
+        db.query(Lead.atribuido_para, Lead.id)
+        .filter(
+            Lead.atribuido_para.in_(ordem),
+            Lead.criado_em >= inicio_hoje,
+            Lead.criado_em < fim_hoje,
+        )
+        .all()
+    )
+    leads_hoje: dict[int, int] = {}
+    for uid, _ in leads_hoje_raw:
+        leads_hoje[uid] = leads_hoje.get(uid, 0) + 1
+
     alt_por_cfg = db.query(Configuracao).filter(Configuracao.chave == "fila_alterado_por").first()
     alt_em_cfg  = db.query(Configuracao).filter(Configuracao.chave == "fila_alterado_em").first()
     return {
-        "ordem": [{"id": uid, "nome": usuarios[uid].nome} for uid in ordem],
+        "ordem": [
+            {"id": uid, "nome": usuarios[uid].nome, "leads_hoje": leads_hoje.get(uid, 0)}
+            for uid in ordem
+        ],
         "posicao": posicao,
-        "proxima": {"id": ordem[posicao], "nome": usuarios[ordem[posicao]].nome},
+        "proxima": {"id": ordem[posicao], "nome": usuarios[ordem[posicao]].nome, "leads_hoje": leads_hoje.get(ordem[posicao], 0)},
         "alterado_por": alt_por_cfg.valor if alt_por_cfg else None,
         "alterado_em":  alt_em_cfg.valor  if alt_em_cfg  else None,
     }
