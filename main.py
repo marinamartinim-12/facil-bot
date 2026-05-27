@@ -461,9 +461,10 @@ async def logout(request: Request, response: Response, db: Session = Depends(get
 
 
 @app.post("/api/heartbeat")
-async def heartbeat(request: Request, db: Session = Depends(get_db),
+async def heartbeat(request: Request, response: Response, db: Session = Depends(get_db),
                     usuario: Usuario = Depends(obter_usuario_atual)):
-    """Atualiza último momento ativo. Se ativo=true, incrementa tempo_ativo_s."""
+    """Atualiza último momento ativo. Se ativo=true, incrementa tempo_ativo_s.
+    Se a sessão não existir (ex: histórico zerado), cria uma nova automaticamente."""
     body = {}
     try:
         body = await request.json()
@@ -471,17 +472,31 @@ async def heartbeat(request: Request, db: Session = Depends(get_db),
         pass
     realmente_ativo = body.get("ativo", False)
 
+    sessao = None
     sid = request.cookies.get("sessao_id")
     if sid:
         try:
             sessao = db.query(SessaoUsuario).filter(SessaoUsuario.id == int(sid)).first()
-            if sessao:
-                sessao.ultimo_ativo_em = datetime.utcnow()
-                if realmente_ativo:
-                    sessao.tempo_ativo_s = (sessao.tempo_ativo_s or 0) + 60
-                db.commit()
         except Exception:
             pass
+
+    # Sessão não encontrada (deletada ou cookie antigo) — recria
+    if not sessao:
+        ip  = _ip_da_requisicao(request)
+        geo = await _geo_por_ip(ip)
+        sessao = SessaoUsuario(usuario_id=usuario.id, ip=ip, localizacao=geo)
+        db.add(sessao)
+        db.commit()
+        db.refresh(sessao)
+        response.set_cookie(
+            key="sessao_id", value=str(sessao.id),
+            httponly=True, samesite="lax", max_age=60 * 60 * 24 * 7,
+        )
+
+    sessao.ultimo_ativo_em = datetime.utcnow()
+    if realmente_ativo:
+        sessao.tempo_ativo_s = (sessao.tempo_ativo_s or 0) + 60
+    db.commit()
     return {"status": "ok"}
 
 
