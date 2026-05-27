@@ -1160,7 +1160,8 @@
     _iniciarHeartbeat();   // Registra atividade a cada 60s
     carregarFila();        // Fila rotativa de atendimento
     carregarDashboard();   // Métricas da aba Dashboard
-    document.getElementById('mainContent').classList.add('funil-mode'); // view inicial é o funil
+    const ultimaView = localStorage.getItem('ultimaView') || 'funil';
+    showView(ultimaView);
     refresh();
     setInterval(refresh, 30000);
     setInterval(carregarDashboard, 60000); // atualiza dashboard a cada 1min
@@ -1174,6 +1175,7 @@
   const adminViews = ['usuarios', 'relatorios', 'configuracoes'];
   function showView(v) {
     if (adminViews.includes(v) && currentUser?.role !== 'admin') return;
+    localStorage.setItem('ultimaView', v);
     views.forEach(x => {
       document.getElementById('view'+cap(x)).style.display = x === v ? '' : 'none';
       const n = document.getElementById('nav-'+x);
