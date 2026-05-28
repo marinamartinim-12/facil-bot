@@ -192,11 +192,17 @@ def _pagina_requerimento(pdf, d):
     endereco = " ".join(partes).strip()
 
     # Parágrafo 1 — identificação
-    cel = _v(d, "req_celular")
+    cel   = _v(d, "req_celular")
+    email = _v(d, "req_email")
+    contato = ""
+    if cel:
+        contato += f", CELULAR {cel}"
+    if email:
+        contato += f", E-MAIL {email}"
     p1 = (
         f"Eu {_v(d,'req_nome').upper()}, CPF {_v(d,'req_cpf')}, "
         f"RG {_v(d,'req_rg')}, residente na {endereco}"
-        + (f", CELULAR {cel}." if cel else ".")
+        + (contato + "." if contato else ".")
     )
     pdf.para(p1)
 

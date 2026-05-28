@@ -1731,7 +1731,7 @@
 
     // Limpa todos os campos do formulário antes de preencher
     ['fc_req_nome','fc_req_cpf','fc_req_rg','fc_req_rua','fc_req_numero',
-     'fc_req_bairro','fc_req_cep','fc_req_cidade','fc_req_celular',
+     'fc_req_bairro','fc_req_cep','fc_req_cidade','fc_req_celular','fc_req_email',
      'fc_vei_modelo','fc_vei_placa','fc_vei_ano','fc_vei_cor','fc_vei_renavam','fc_vei_chassi',
      'fc_fin_valor','fc_fin_banco','fc_fin_parcelas','fc_fin_parcela','fc_fin_vencimento',
      'fc_prop_nome','fc_prop_cpf','fc_prop_telefone',
@@ -1758,6 +1758,7 @@
     set('fc_req_bairro',   dc.req_bairro);
     set('fc_req_cep',      dc.req_cep);
     set('fc_req_cidade',   dc.req_cidade);
+    set('fc_req_email',    dc.req_email);
     set('fc_vei_placa',    dc.vei_placa);
     set('fc_vei_ano',      dc.vei_ano);
     set('fc_vei_cor',      dc.vei_cor);
@@ -1796,7 +1797,7 @@
       req_rg:                g('fc_req_rg'),     req_rua:      g('fc_req_rua'),
       req_numero:            g('fc_req_numero'), req_bairro:   g('fc_req_bairro'),
       req_cep:               g('fc_req_cep'),    req_cidade:   g('fc_req_cidade'),
-      req_celular:           g('fc_req_celular'),
+      req_celular:           g('fc_req_celular'),req_email:    g('fc_req_email'),
       vei_modelo:            g('fc_vei_modelo'), vei_placa:    g('fc_vei_placa'),
       vei_ano:               g('fc_vei_ano'),    vei_cor:      g('fc_vei_cor'),
       vei_renavam:           g('fc_vei_renavam'),vei_chassi:   g('fc_vei_chassi'),
@@ -4077,6 +4078,9 @@
         ${row('RG',        'req_rg',    'RG')}
         ${row('CEP',       'req_cep',   '00000-000')}
       </div>
+      <div style="margin-bottom:.5rem">
+        ${row('E-mail',    'req_email', 'email@exemplo.com')}
+      </div>
       <div style="display:grid;grid-template-columns:2fr 1fr;gap:.4rem;margin-bottom:.5rem">
         ${row('Rua / Av.', 'req_rua',   'Nome da rua')}
         ${row('Número',    'req_numero','Nº')}
@@ -4113,7 +4117,7 @@
     const g = key => document.getElementById('dc_' + key)?.value?.trim() || '';
     const dc = {
       req_rg: g('req_rg'), req_rua: g('req_rua'), req_numero: g('req_numero'),
-      req_bairro: g('req_bairro'), req_cep: g('req_cep'), req_cidade: g('req_cidade'),
+      req_bairro: g('req_bairro'), req_cep: g('req_cep'), req_cidade: g('req_cidade'), req_email: g('req_email'),
       vei_placa: g('vei_placa'), vei_ano: g('vei_ano'), vei_cor: g('vei_cor'),
       vei_renavam: g('vei_renavam'), vei_chassi: g('vei_chassi'),
     };
@@ -4497,6 +4501,7 @@
             <div class="fc-group"><label class="fc-label">Cidade / UF</label><input id="fc_req_cidade" class="fc-input" placeholder="Cidade/UF"></div>
             <div class="fc-group"><label class="fc-label">Celular *</label><input id="fc_req_celular" class="fc-input" placeholder="(00) 00000-0000"></div>
           </div>
+          <div class="fc-group"><label class="fc-label">E-mail</label><input id="fc_req_email" class="fc-input" type="email" placeholder="email@exemplo.com"></div>
 
           <!-- Proprietário / Vendedor -->
           <div class="fc-secao">🤝 Proprietário / Vendedor</div>
