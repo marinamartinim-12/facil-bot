@@ -215,6 +215,7 @@
     }
     .fila-chip.proxima { background: #22c55e; color: #fff; }
     .fila-chip.segunda { background: #1e4a7a; color: #cbd5e1; }
+    .fila-chip.menos-leads { background: #166534; color: #bbf7d0; border: 1px solid #22c55e; }
     .fila-seta { color: #475569; font-size: .7rem; flex-shrink: 0; }
     .fila-badge {
       display: inline-flex; align-items: center; justify-content: center;
@@ -224,6 +225,7 @@
     }
     .fila-chip.proxima .fila-badge { background: rgba(0,0,0,.2); color: #fff; }
     .fila-chip.segunda .fila-badge { background: rgba(0,0,0,.25); color: #cbd5e1; }
+    .fila-chip.menos-leads .fila-badge { background: rgba(0,0,0,.25); color: #bbf7d0; }
     #filaChips, #dashFilaChips {
       display: flex; align-items: center; gap: .3rem;
       flex-wrap: nowrap; overflow: hidden; min-width: 0; flex: 1;
@@ -3205,12 +3207,16 @@
   }
 
   function _renderChips(container, ordem, posicao) {
+    const minLeads = Math.min(...ordem.map(u => u.leads_hoje ?? 0));
     container.innerHTML = ordem.map((u, i) => {
-      const cls = i === posicao ? 'proxima' : i === (posicao + 1) % ordem.length ? 'segunda' : '';
-      const prefix = i === posicao ? '▶ ' : '';
+      const isProxima = i === posicao;
+      const isSegunda = i === (posicao + 1) % ordem.length;
+      const isMenosLeads = !isProxima && (u.leads_hoje ?? 0) === minLeads;
+      const cls = isProxima ? 'proxima' : isSegunda ? 'segunda' : isMenosLeads ? 'menos-leads' : '';
+      const prefix = isProxima ? '▶ ' : '';
       const sep = i < ordem.length - 1 ? '<span class="fila-seta">→</span>' : '';
       const badge = `<span class="fila-badge">${u.leads_hoje ?? 0}</span>`;
-      return `<div class="fila-chip ${cls}">${badge}${prefix}${esc(u.nome)}</div>${sep}`;
+      return `<div class="fila-chip ${cls}" title="${isMenosLeads ? 'Menos leads hoje' : ''}">${badge}${prefix}${esc(u.nome)}</div>${sep}`;
     }).join('') + `<span class="fila-seta">→</span><span class="fila-chip" style="opacity:.4">${esc(ordem[posicao].nome)}…</span>`;
   }
 
