@@ -1758,7 +1758,7 @@
     set('fc_req_bairro',   dc.req_bairro);
     set('fc_req_cep',      dc.req_cep);
     set('fc_req_cidade',   dc.req_cidade);
-    set('fc_req_email',    dc.req_email);
+    set('fc_req_email',    dc.req_email || lead.email);
     set('fc_vei_placa',    dc.vei_placa);
     set('fc_vei_ano',      dc.vei_ano);
     set('fc_vei_cor',      dc.vei_cor);
@@ -4142,6 +4142,7 @@
     const inputNasc   = editando ? `<input id="ei_nasc"  value="${escHtml(lead.data_nascimento&&lead.data_nascimento!=='—'?lead.data_nascimento:'')}" style="${inpStyle}" placeholder="DD/MM/AAAA">` : `<span>${escHtml(lead.data_nascimento||'—')}</span>`;
     const inputCarro  = editando ? `<input id="ei_carro" value="${escHtml(lead.carro_interesse&&lead.carro_interesse!=='—'?lead.carro_interesse:'')}" style="${inpStyle}" placeholder="Ex: Honda Civic 2020">` : `<span>${escHtml(lead.carro_interesse||'—')}</span>`;
     const inputCidade = editando ? `<input id="ei_cidade" value="${escHtml(lead.cidade||'')}" style="${inpStyle}" placeholder="Ex: Belo Horizonte/MG">` : `<span>${escHtml(lead.cidade||'—')}</span>`;
+    const inputEmail  = editando ? `<input id="ei_email" type="email" value="${escHtml(lead.email||'')}" style="${inpStyle}" placeholder="email@exemplo.com">` : `<span>${escHtml(lead.email||'—')}</span>`;
     const inputProf   = editando ? `<input id="ei_prof" value="${escHtml(lead.profissao||'')}" style="${inpStyle}" placeholder="Ex: Motorista, Servidor público…">` : `<span>${escHtml(lead.profissao||'—')}</span>`;
     const rendaOpts   = ['','Até R$2.000','R$2.000 a R$5.000','R$5.000 a R$10.000','Acima de R$10.000'];
     const inputRenda  = editando
@@ -4178,6 +4179,7 @@
       <div class="data-item full"><label>Veículo de interesse</label>${inputCarro}</div>
       <div class="data-item"><label>Modalidade</label>${inputMod}</div>
       <div class="data-item"><label>Cidade</label>${inputCidade}</div>
+      <div class="data-item full"><label>E-mail</label>${inputEmail}</div>
       <div class="data-item"><label>Profissão</label>${inputProf}</div>
       <div class="data-item full"><label>Faixa de renda</label>${inputRenda}</div>
       <div class="data-item full"><label>CNH</label>${inputCnh}</div>
@@ -4234,6 +4236,7 @@
       carro_interesse:  document.getElementById('ei_carro')?.value.trim()  || null,
       modalidade:       document.getElementById('ei_mod')?.value           || null,
       cidade:           document.getElementById('ei_cidade')?.value.trim() || null,
+      email:            document.getElementById('ei_email')?.value.trim()  || null,
       profissao:        document.getElementById('ei_prof')?.value.trim()   || null,
       renda:            document.getElementById('ei_renda')?.value         || null,
       tem_cnh:          document.getElementById('ei_cnh')?.value === 'true' ? true : document.getElementById('ei_cnh')?.value === 'false' ? false : null,

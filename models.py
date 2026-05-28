@@ -115,6 +115,7 @@ class Lead(Base):
     cidade     = Column(String(100), nullable=True)        # coletado pelo bot
     renda      = Column(String(30),  nullable=True)        # faixa de renda (preenchido pela atendente)
     profissao  = Column(String(100), nullable=True)        # profissão (preenchido pela atendente)
+    email      = Column(String(150), nullable=True)
     tem_cnh    = Column(Boolean, nullable=True)            # True=tem CNH | False=não tem | None=não informado
     oculto_funil = Column(Boolean, default=False)   # True = oculto do kanban por inatividade
     observacoes = Column(Text, nullable=True)
