@@ -5239,10 +5239,9 @@
     document.getElementById('fc_conta_pg').value = leadData?.deal_conta_pg || '';
     document.getElementById('fc_erro').style.display = 'none';
 
-    // Carrega lista de bancos e operadoras
-    // Prioridade: deal_operadora já salvo > responsavel.nome (quem assumiu o lead)
-    const preselect = leadData?.deal_operadora || leadData?.responsavel?.nome || '';
+    // Prioridade: quem assumiu o lead (por ID, mais confiável) > deal_operadora salvo anteriormente
     const preselectId = leadData?.responsavel?.id || null;
+    const preselect   = leadData?.responsavel?.nome || leadData?.deal_operadora || '';
     await Promise.all([_fcCarregarBancos(), _fcCarregarOperadoras(preselect, preselectId)]);
 
     document.getElementById('modalFecharContrato').classList.add('open');
