@@ -5188,7 +5188,7 @@
     } catch(e) { alert('Erro ao adicionar banco: ' + e.message); }
   }
 
-  async function _fcCarregarOperadoras(preselect) {
+  async function _fcCarregarOperadoras(preselect, preselectId) {
     const sel = document.getElementById('fc_operadora');
     if (!sel) return;
     try {
@@ -5199,12 +5199,18 @@
       users.filter(u => u.ativo).forEach(u => {
         const opt = document.createElement('option');
         opt.value = u.nome;
+        opt.dataset.id = u.id;
         opt.textContent = u.nome + (u.role === 'admin' ? ' (Admin)' : '');
-        if (preselect && u.nome === preselect) opt.selected = true;
         sel.appendChild(opt);
       });
-      // Se nenhum pré-selecionado e tem só 1 opção + admin, seleciona o primeiro funcionário
-      if (!preselect && users.length) sel.value = '';
+      // Pré-seleciona: por ID primeiro (mais confiável), depois por nome
+      if (preselectId) {
+        const byId = [...sel.options].find(o => parseInt(o.dataset.id) === parseInt(preselectId));
+        if (byId) { byId.selected = true; return; }
+      }
+      if (preselect) {
+        sel.value = preselect; // tenta por nome exato
+      }
     } catch {}
   }
 
@@ -5234,8 +5240,10 @@
     document.getElementById('fc_erro').style.display = 'none';
 
     // Carrega lista de bancos e operadoras
+    // Prioridade: deal_operadora já salvo > responsavel.nome (quem assumiu o lead)
     const preselect = leadData?.deal_operadora || leadData?.responsavel?.nome || '';
-    await Promise.all([_fcCarregarBancos(), _fcCarregarOperadoras(preselect)]);
+    const preselectId = leadData?.responsavel?.id || null;
+    await Promise.all([_fcCarregarBancos(), _fcCarregarOperadoras(preselect, preselectId)]);
 
     document.getElementById('modalFecharContrato').classList.add('open');
   }
