@@ -5188,61 +5188,72 @@
     } catch(e) { alert('Erro ao adicionar banco: ' + e.message); }
   }
 
-  async function _fcCarregarOperadoras(preselect, preselectId) {
+  async function _fcCarregarOperadoras(preselectId, preselectNome) {
     const sel = document.getElementById('fc_operadora');
     if (!sel) return;
     try {
-      const r = await fetch('/api/usuarios');
+      // /api/usuarios/opcoes é acessível a qualquer usuária logada (não requer admin)
+      const r = await fetch('/api/usuarios/opcoes');
       if (!r.ok) return;
       const users = await r.json();
       sel.innerHTML = '<option value="">Selecionar…</option>';
-      users.filter(u => u.ativo).forEach(u => {
+      users.forEach(u => {
         const opt = document.createElement('option');
-        opt.value = u.nome;
-        opt.dataset.id = u.id;
-        opt.textContent = u.nome + (u.role === 'admin' ? ' (Admin)' : '');
+        opt.value = String(u.id);   // value = id numérico (string) para seleção confiável
+        opt.dataset.nome = u.nome;
+        opt.textContent = u.nome;
         sel.appendChild(opt);
       });
-      // Pré-seleciona: por ID primeiro (mais confiável), depois por nome
+      // Pré-seleciona por ID (mais confiável)
       if (preselectId) {
-        const byId = [...sel.options].find(o => parseInt(o.dataset.id) === parseInt(preselectId));
+        const sid = String(preselectId);
+        const byId = [...sel.options].find(o => o.value === sid);
         if (byId) { byId.selected = true; return; }
       }
-      if (preselect) {
-        sel.value = preselect; // tenta por nome exato
+      // Fallback: por nome exato
+      if (preselectNome) {
+        const byNome = [...sel.options].find(o => o.dataset.nome === preselectNome);
+        if (byNome) { byNome.selected = true; }
       }
     } catch {}
   }
 
   async function abrirModalFecharContrato(leadId, leadData) {
     _fcLeadId = leadId;
+
+    // Busca dados frescos do lead para garantir responsavel atualizado
+    let ld = leadData || {};
+    try {
+      const r = await fetch(`/api/leads/${leadId}/conversa`);
+      if (r.ok) { const c = await r.json(); ld = c.lead || ld; }
+    } catch {}
+
     document.getElementById('fcSubtitle').textContent =
-      leadData?.nome && leadData.nome !== '—' ? `Cliente: ${leadData.nome}` : 'Preencha os dados do negócio';
+      ld?.nome && ld.nome !== '—' ? `Cliente: ${ld.nome}` : 'Preencha os dados do negócio';
 
     // Pré-preenche veículo
-    const veiculo = leadData?.deal_veiculo || leadData?.carro_interesse || '';
+    const veiculo = ld?.deal_veiculo || ld?.carro_interesse || '';
     document.getElementById('fc_veiculo').value = veiculo !== '—' ? veiculo : '';
 
     // Pré-preenche data com hoje (ou data já salva)
-    if (leadData?.deal_data && leadData.deal_data !== '—') {
-      // Converte DD/MM/YYYY → YYYY-MM-DD para o input date
-      const p = leadData.deal_data.split('/');
+    if (ld?.deal_data && ld.deal_data !== '—') {
+      const p = ld.deal_data.split('/');
       document.getElementById('fc_data').value = p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : '';
     } else {
       document.getElementById('fc_data').value = new Date().toISOString().split('T')[0];
     }
 
-    document.getElementById('fc_valor').value    = leadData?.deal_valor    || '';
-    document.getElementById('fc_comissao').value = leadData?.deal_comissao || '';
-    document.getElementById('fc_retorno').value  = leadData?.deal_retorno  || '';
-    document.getElementById('fc_banco').value    = leadData?.deal_banco    || '';
-    document.getElementById('fc_conta_pg').value = leadData?.deal_conta_pg || '';
+    document.getElementById('fc_valor').value    = ld?.deal_valor    || '';
+    document.getElementById('fc_comissao').value = ld?.deal_comissao || '';
+    document.getElementById('fc_retorno').value  = ld?.deal_retorno  || '';
+    document.getElementById('fc_banco').value    = ld?.deal_banco    || '';
+    document.getElementById('fc_conta_pg').value = ld?.deal_conta_pg || '';
     document.getElementById('fc_erro').style.display = 'none';
 
-    // Prioridade: quem assumiu o lead (por ID, mais confiável) > deal_operadora salvo anteriormente
-    const preselectId = leadData?.responsavel?.id || null;
-    const preselect   = leadData?.responsavel?.nome || leadData?.deal_operadora || '';
-    await Promise.all([_fcCarregarBancos(), _fcCarregarOperadoras(preselect, preselectId)]);
+    // Prioridade: quem assumiu o lead (por ID) > deal_operadora salvo
+    const preselectId   = ld?.responsavel?.id   || null;
+    const preselectNome = ld?.responsavel?.nome || ld?.deal_operadora || '';
+    await Promise.all([_fcCarregarBancos(), _fcCarregarOperadoras(preselectId, preselectNome)]);
 
     document.getElementById('modalFecharContrato').classList.add('open');
   }
@@ -5283,7 +5294,7 @@
           deal_comissao: document.getElementById('fc_comissao').value.trim(),
           deal_banco:      document.getElementById('fc_banco').value,
           deal_conta_pg:   document.getElementById('fc_conta_pg').value,
-          deal_operadora:  document.getElementById('fc_operadora').value,
+          deal_operadora:  (() => { const sel = document.getElementById('fc_operadora'); return sel.options[sel.selectedIndex]?.dataset?.nome || ''; })(),
         })
       });
       if (r.ok) {
