@@ -1738,7 +1738,7 @@
      'fc_pag_nome','fc_pag_cpf','fc_pag_banco','fc_pag_agencia','fc_pag_conta','fc_pag_pix','fc_pag_valor'
     ].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
-    const set = (id, val) => { const el = document.getElementById(id); if (el && val && val !== '—') el.value = val; };
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = (val && val !== '—') ? val : ''; };
 
     // ── Dados do requerente (cliente) ──────────────────────────────────────
     set('fc_req_nome',    lead.nome);
