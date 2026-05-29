@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, ForeignKey, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, ForeignKey, Boolean, LargeBinary
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -302,6 +302,21 @@ class Agendamento(Base):
 
     lead   = relationship("Lead")
     criador = relationship("Usuario")
+
+
+class MidiaArquivo(Base):
+    """Arquivos de mídia (imagem, documento, áudio) recebidos/enviados no WhatsApp,
+    guardados no próprio banco para não se perderem quando o disco do container é reciclado."""
+    __tablename__ = "midia_arquivos"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    filename      = Column(String(64), unique=True, index=True, nullable=False)  # uuidhex.ext
+    tipo          = Column(String(20), nullable=False)   # imagem | documento | audio
+    nome_original = Column(String(200), nullable=True)
+    mime          = Column(String(120), nullable=True)
+    dados         = Column(LargeBinary, nullable=False)
+    tamanho       = Column(Integer, default=0)
+    criado_em     = Column(DateTime, default=datetime.utcnow)
 
 
 def criar_tabelas():

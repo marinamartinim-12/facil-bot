@@ -34,7 +34,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, AtividadePing, Agendamento, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, AtividadePing, Agendamento, MidiaArquivo, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
@@ -659,8 +659,32 @@ def _extrair_documento_zapi(body: dict) -> dict | None:
     return None
 
 
-async def _salvar_imagem(url: str) -> str | None:
-    """Baixa imagem com retries, salva em /app/imagens/ e retorna marcador [IMAGE:filename].
+def _guardar_blob(db, filename: str, tipo: str, dados: bytes,
+                  nome_original: str = None, mime: str = None, subdir: str = None):
+    """Guarda os bytes do arquivo NO BANCO (durável) e também em disco (cache local).
+    O banco é a fonte de verdade — o disco é reciclado pelo Railway a cada deploy."""
+    # 1) Banco — persistente
+    try:
+        if not db.query(MidiaArquivo).filter(MidiaArquivo.filename == filename).first():
+            db.add(MidiaArquivo(
+                filename=filename, tipo=tipo, nome_original=(nome_original or "")[:200],
+                mime=(mime or "")[:120], dados=dados, tamanho=len(dados),
+            ))
+            db.flush()  # garante INSERT; o commit ocorre no fluxo do webhook
+    except Exception as e:
+        print(f"⚠️ Erro ao guardar mídia no banco ({filename}): {e}")
+    # 2) Disco — cache rápido enquanto o container vive
+    if subdir:
+        try:
+            os.makedirs(f"/app/{subdir}", exist_ok=True)
+            with open(f"/app/{subdir}/{filename}", "wb") as f:
+                f.write(dados)
+        except Exception as e:
+            print(f"⚠️ Erro ao gravar mídia em disco ({filename}): {e}")
+
+
+async def _salvar_imagem(url: str, db=None) -> str | None:
+    """Baixa imagem com retries, guarda no banco (+disco) e retorna marcador [IMAGE:filename].
     Retorna None em caso de falha (caller deve salvar placeholder)."""
     for tentativa in range(3):
         try:
@@ -680,11 +704,13 @@ async def _salvar_imagem(url: str) -> str | None:
                 ext = "gif"
             else:
                 ext = "jpg"
-            img_id = uuid.uuid4().hex
-            filename = f"{img_id}.{ext}"
-            os.makedirs("/app/imagens", exist_ok=True)
-            with open(f"/app/imagens/{filename}", "wb") as f:
-                f.write(resp.content)
+            filename = f"{uuid.uuid4().hex}.{ext}"
+            if db is not None:
+                _guardar_blob(db, filename, "imagem", resp.content, mime=ct, subdir="imagens")
+            else:
+                os.makedirs("/app/imagens", exist_ok=True)
+                with open(f"/app/imagens/{filename}", "wb") as f:
+                    f.write(resp.content)
             return f"[IMAGE:{filename}]"
         except Exception as e:
             print(f"⚠️ Erro ao salvar imagem (tentativa {tentativa+1}): {e}")
@@ -693,8 +719,8 @@ async def _salvar_imagem(url: str) -> str | None:
     return None
 
 
-async def _salvar_documento(url: str, nome_original: str) -> str | None:
-    """Baixa documento/PDF com retries, salva em /app/documentos/ e retorna marcador [DOC:filename|nome].
+async def _salvar_documento(url: str, nome_original: str, db=None) -> str | None:
+    """Baixa documento/PDF com retries, guarda no banco (+disco) e retorna marcador [DOC:filename|nome].
     Retorna None em caso de falha (caller deve salvar placeholder)."""
     nome_display = re.sub(r"[|]", "_", nome_original)[:100] if nome_original else "documento"
     for tentativa in range(3):
@@ -714,11 +740,14 @@ async def _salvar_documento(url: str, nome_original: str) -> str | None:
                 ext = nome_original.rsplit(".", 1)[-1][:5]
             else:
                 ext = "bin"
-            doc_id = uuid.uuid4().hex
-            filename = f"{doc_id}.{ext}"
-            os.makedirs("/app/documentos", exist_ok=True)
-            with open(f"/app/documentos/{filename}", "wb") as f:
-                f.write(resp.content)
+            filename = f"{uuid.uuid4().hex}.{ext}"
+            if db is not None:
+                _guardar_blob(db, filename, "documento", resp.content,
+                              nome_original=nome_display, mime=ct, subdir="documentos")
+            else:
+                os.makedirs("/app/documentos", exist_ok=True)
+                with open(f"/app/documentos/{filename}", "wb") as f:
+                    f.write(resp.content)
             return f"[DOC:{filename}|{nome_display}]"
         except Exception as e:
             print(f"⚠️ Erro ao salvar documento (tentativa {tentativa+1}): {e}")
@@ -751,9 +780,7 @@ async def _salvar_audio_cliente(telefone: str, audio_url: str, db) -> str | None
             ext = "ogg" if "ogg" in ct else ("mp3" if "mp3" in ct or "mpeg" in ct else "webm")
             audio_id = uuid.uuid4().hex
             filename = f"{audio_id}.{ext}"
-            os.makedirs("/app/audios", exist_ok=True)
-            with open(f"/app/audios/{filename}", "wb") as f:
-                f.write(resp.content)
+            _guardar_blob(db, filename, "audio", resp.content, mime=ct, subdir="audios")
             print(f"🎙️ Áudio do cliente salvo: {filename} ({len(resp.content)} bytes)")
             return f"[AUDIO:{filename}]"
         except Exception as e:
@@ -813,13 +840,13 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
                 if lead:
                     img_info = _extrair_imagem_zapi(body)
                     if img_info:
-                        conteudo = await _salvar_imagem(img_info["url"])
+                        conteudo = await _salvar_imagem(img_info["url"], db)
                         if conteudo:
                             _salvar_msg_webhook(db, telefone, conteudo, role="assistant")
                     else:
                         doc_info = _extrair_documento_zapi(body)
                         if doc_info:
-                            conteudo = await _salvar_documento(doc_info["url"], doc_info["nome"])
+                            conteudo = await _salvar_documento(doc_info["url"], doc_info["nome"], db)
                             if conteudo:
                                 _salvar_msg_webhook(db, telefone, conteudo, role="assistant")
             return JSONResponse({"status": "fromme_saved"})
@@ -845,7 +872,7 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
             # Verifica imagem do cliente
             img_info = _extrair_imagem_zapi(body)
             if img_info and lead_midia:
-                conteudo_img = await _salvar_imagem(img_info["url"])
+                conteudo_img = await _salvar_imagem(img_info["url"], db)
                 # Sempre salva — placeholder se download falhou
                 if conteudo_img:
                     if img_info.get("caption"):
@@ -863,7 +890,7 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
             # Verifica documento/PDF do cliente
             doc_info = _extrair_documento_zapi(body)
             if doc_info and lead_midia:
-                conteudo_doc = await _salvar_documento(doc_info["url"], doc_info["nome"])
+                conteudo_doc = await _salvar_documento(doc_info["url"], doc_info["nome"], db)
                 # Sempre salva — placeholder se download falhou
                 if not conteudo_doc:
                     nome_safe = re.sub(r"[|]", "_", doc_info.get("nome", "documento"))[:100]
@@ -1912,45 +1939,65 @@ async def enviar_audio_gravado(
     return {"status": "enviado"}
 
 
+def _buscar_midia(db, filename: str):
+    """Retorna (bytes, mime, nome_original) da mídia — banco primeiro, disco como fallback."""
+    reg = db.query(MidiaArquivo).filter(MidiaArquivo.filename == filename).first()
+    if reg and reg.dados:
+        return reg.dados, (reg.mime or None), (reg.nome_original or None)
+    # Fallback: arquivos antigos ainda em disco (até o container reciclar)
+    for sub in ("imagens", "documentos", "audios"):
+        p = f"/app/{sub}/{filename}"
+        if os.path.exists(p):
+            try:
+                with open(p, "rb") as f:
+                    return f.read(), None, None
+            except Exception:
+                pass
+    return None, None, None
+
+
 @app.get("/api/audio/{filename}")
-async def servir_audio(filename: str):
+async def servir_audio(filename: str, db: Session = Depends(get_db)):
     """Serve arquivos de áudio para o Z-API baixar e para reprodução no painel."""
     if not re.match(r'^[a-f0-9]{32}\.(webm|ogg|mp3)$', filename):
         raise HTTPException(status_code=404)
-    path = f"/app/audios/{filename}"
-    if not os.path.exists(path):
+    dados, mime, _ = _buscar_midia(db, filename)
+    if dados is None:
         raise HTTPException(status_code=404)
     ext = filename.rsplit(".", 1)[-1]
-    media_type = "audio/ogg" if ext == "ogg" else "audio/webm"
-    return FileResponse(path, media_type=media_type)
+    media_type = mime or ("audio/ogg" if ext == "ogg" else "audio/webm")
+    return Response(content=dados, media_type=media_type)
 
 
 @app.get("/api/imagem/{filename}")
-async def servir_imagem(filename: str):
+async def servir_imagem(filename: str, db: Session = Depends(get_db)):
     """Serve arquivos de imagem salvos do WhatsApp."""
     if not re.match(r'^[a-f0-9]{32}\.(jpg|jpeg|png|webp|gif)$', filename):
         raise HTTPException(status_code=404)
-    path = f"/app/imagens/{filename}"
-    if not os.path.exists(path):
+    dados, mime, _ = _buscar_midia(db, filename)
+    if dados is None:
         raise HTTPException(status_code=404)
     ext = filename.rsplit(".", 1)[-1].lower()
     tipos = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
              "webp": "image/webp", "gif": "image/gif"}
-    return FileResponse(path, media_type=tipos.get(ext, "image/jpeg"))
+    return Response(content=dados, media_type=mime or tipos.get(ext, "image/jpeg"))
 
 
 @app.get("/api/documento/{filename}")
-async def servir_documento(filename: str):
+async def servir_documento(filename: str, db: Session = Depends(get_db)):
     """Serve documentos/PDFs salvos do WhatsApp com header de download."""
     if not re.match(r'^[a-f0-9]{32}\.\w{2,5}$', filename):
         raise HTTPException(status_code=404)
-    path = f"/app/documentos/{filename}"
-    if not os.path.exists(path):
+    dados, mime, nome = _buscar_midia(db, filename)
+    if dados is None:
         raise HTTPException(status_code=404)
     ext = filename.rsplit(".", 1)[-1].lower()
-    media_type = "application/pdf" if ext == "pdf" else "application/octet-stream"
-    return FileResponse(path, media_type=media_type,
-                        headers={"Content-Disposition": f"attachment; filename={filename}"})
+    media_type = mime or ("application/pdf" if ext == "pdf" else "application/octet-stream")
+    # Nome de download amigável (preserva acentos via RFC 5987)
+    nome_dl = nome or filename
+    from urllib.parse import quote
+    disp = f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(nome_dl)}"
+    return Response(content=dados, media_type=media_type, headers={"Content-Disposition": disp})
 
 
 @app.get("/api/inbox")
