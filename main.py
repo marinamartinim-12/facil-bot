@@ -658,57 +658,71 @@ def _extrair_documento_zapi(body: dict) -> dict | None:
 
 
 async def _salvar_imagem(url: str) -> str | None:
-    """Baixa imagem, salva em /app/imagens/ e retorna marcador [IMAGE:filename]."""
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url)
-        if resp.status_code != 200:
-            return None
-        ct = resp.headers.get("content-type", "image/jpeg")
-        if "png" in ct:
-            ext = "png"
-        elif "webp" in ct:
-            ext = "webp"
-        elif "gif" in ct:
-            ext = "gif"
-        else:
-            ext = "jpg"
-        img_id = uuid.uuid4().hex
-        filename = f"{img_id}.{ext}"
-        os.makedirs("/app/imagens", exist_ok=True)
-        with open(f"/app/imagens/{filename}", "wb") as f:
-            f.write(resp.content)
-        return f"[IMAGE:{filename}]"
-    except Exception as e:
-        print(f"⚠️ Erro ao salvar imagem: {e}")
-        return None
+    """Baixa imagem com retries, salva em /app/imagens/ e retorna marcador [IMAGE:filename].
+    Retorna None em caso de falha (caller deve salvar placeholder)."""
+    for tentativa in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.get(url)
+            if resp.status_code != 200 or len(resp.content) < 50:
+                if tentativa < 2:
+                    await asyncio.sleep(2)
+                    continue
+                return None
+            ct = resp.headers.get("content-type", "image/jpeg")
+            if "png" in ct:
+                ext = "png"
+            elif "webp" in ct:
+                ext = "webp"
+            elif "gif" in ct:
+                ext = "gif"
+            else:
+                ext = "jpg"
+            img_id = uuid.uuid4().hex
+            filename = f"{img_id}.{ext}"
+            os.makedirs("/app/imagens", exist_ok=True)
+            with open(f"/app/imagens/{filename}", "wb") as f:
+                f.write(resp.content)
+            return f"[IMAGE:{filename}]"
+        except Exception as e:
+            print(f"⚠️ Erro ao salvar imagem (tentativa {tentativa+1}): {e}")
+            if tentativa < 2:
+                await asyncio.sleep(2)
+    return None
 
 
 async def _salvar_documento(url: str, nome_original: str) -> str | None:
-    """Baixa documento/PDF, salva em /app/documentos/ e retorna marcador [DOC:filename|nome]."""
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url)
-        if resp.status_code != 200:
-            return None
-        ct = resp.headers.get("content-type", "")
-        nome_lower = nome_original.lower()
-        if "pdf" in ct or nome_lower.endswith(".pdf"):
-            ext = "pdf"
-        elif "." in nome_original:
-            ext = nome_original.rsplit(".", 1)[-1][:5]
-        else:
-            ext = "bin"
-        doc_id = uuid.uuid4().hex
-        filename = f"{doc_id}.{ext}"
-        nome_display = re.sub(r"[|]", "_", nome_original)[:100] if nome_original else f"documento.{ext}"
-        os.makedirs("/app/documentos", exist_ok=True)
-        with open(f"/app/documentos/{filename}", "wb") as f:
-            f.write(resp.content)
-        return f"[DOC:{filename}|{nome_display}]"
-    except Exception as e:
-        print(f"⚠️ Erro ao salvar documento: {e}")
-        return None
+    """Baixa documento/PDF com retries, salva em /app/documentos/ e retorna marcador [DOC:filename|nome].
+    Retorna None em caso de falha (caller deve salvar placeholder)."""
+    nome_display = re.sub(r"[|]", "_", nome_original)[:100] if nome_original else "documento"
+    for tentativa in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.get(url)
+            if resp.status_code != 200 or len(resp.content) < 10:
+                if tentativa < 2:
+                    await asyncio.sleep(2)
+                    continue
+                return None
+            ct = resp.headers.get("content-type", "")
+            nome_lower = nome_original.lower()
+            if "pdf" in ct or nome_lower.endswith(".pdf"):
+                ext = "pdf"
+            elif "." in nome_original:
+                ext = nome_original.rsplit(".", 1)[-1][:5]
+            else:
+                ext = "bin"
+            doc_id = uuid.uuid4().hex
+            filename = f"{doc_id}.{ext}"
+            os.makedirs("/app/documentos", exist_ok=True)
+            with open(f"/app/documentos/{filename}", "wb") as f:
+                f.write(resp.content)
+            return f"[DOC:{filename}|{nome_display}]"
+        except Exception as e:
+            print(f"⚠️ Erro ao salvar documento (tentativa {tentativa+1}): {e}")
+            if tentativa < 2:
+                await asyncio.sleep(2)
+    return None
 
 
 async def _salvar_audio_cliente(telefone: str, audio_url: str, db) -> str | None:
@@ -830,28 +844,34 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
             img_info = _extrair_imagem_zapi(body)
             if img_info and lead_midia:
                 conteudo_img = await _salvar_imagem(img_info["url"])
+                # Sempre salva — placeholder se download falhou
                 if conteudo_img:
-                    # Se tem legenda, salva junto
                     if img_info.get("caption"):
                         conteudo_img += f"\n{img_info['caption']}"
-                    _salvar_msg_webhook(db, telefone, conteudo_img, role="user")
-                    lead_midia.atualizado_em = datetime.utcnow()
-                    if lead_midia.oculto_funil:
-                        lead_midia.oculto_funil = False
-                    db.commit()
-                    return JSONResponse({"status": "imagem_salva"})
+                else:
+                    legenda = img_info.get("caption", "")
+                    conteudo_img = f"[IMAGEM_INDISPONIVEL]{(':' + legenda) if legenda else ''}"
+                _salvar_msg_webhook(db, telefone, conteudo_img, role="user")
+                lead_midia.atualizado_em = datetime.utcnow()
+                if lead_midia.oculto_funil:
+                    lead_midia.oculto_funil = False
+                db.commit()
+                return JSONResponse({"status": "imagem_salva" if "[IMAGE:" in conteudo_img else "imagem_indisponivel"})
 
             # Verifica documento/PDF do cliente
             doc_info = _extrair_documento_zapi(body)
             if doc_info and lead_midia:
                 conteudo_doc = await _salvar_documento(doc_info["url"], doc_info["nome"])
-                if conteudo_doc:
-                    _salvar_msg_webhook(db, telefone, conteudo_doc, role="user")
-                    lead_midia.atualizado_em = datetime.utcnow()
-                    if lead_midia.oculto_funil:
-                        lead_midia.oculto_funil = False
-                    db.commit()
-                    return JSONResponse({"status": "documento_salvo"})
+                # Sempre salva — placeholder se download falhou
+                if not conteudo_doc:
+                    nome_safe = re.sub(r"[|]", "_", doc_info.get("nome", "documento"))[:100]
+                    conteudo_doc = f"[DOC_INDISPONIVEL:{nome_safe}]"
+                _salvar_msg_webhook(db, telefone, conteudo_doc, role="user")
+                lead_midia.atualizado_em = datetime.utcnow()
+                if lead_midia.oculto_funil:
+                    lead_midia.oculto_funil = False
+                db.commit()
+                return JSONResponse({"status": "documento_salvo" if "[DOC:" in conteudo_doc else "documento_indisponivel"})
 
             return JSONResponse({"status": "ignored"})
 

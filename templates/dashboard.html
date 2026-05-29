@@ -3958,10 +3958,27 @@
         ? `<span style="font-size:.68rem;color:#888;font-style:italic;margin-left:4px">✏️ editado</span>`
         : '';
 
-      // Detecta mídia: [AUDIO:...], [IMAGE:...], [DOC:...|nome], [AUDIO_INDISPONIVEL]
+      // Detecta mídia: [AUDIO:...], [IMAGE:...], [DOC:...|nome], [AUDIO_INDISPONIVEL], [IMAGEM_INDISPONIVEL], [DOC_INDISPONIVEL:nome]
       if (textoLimpo === '[AUDIO_INDISPONIVEL]') {
         conteudoHtml = `<span style="font-size:.82rem;color:#94a3b8;display:flex;align-items:center;gap:5px">🎙️ <i>Áudio não pôde ser carregado</i></span>`;
         return conteudoHtml ? buildBubble(conteudoHtml) : '';
+      }
+      const imgIndisp = textoLimpo.match(/^\[IMAGEM_INDISPONIVEL\](?::(.*))?$/);
+      if (imgIndisp) {
+        const leg = imgIndisp[1] ? `<div style="font-size:.82rem;margin-top:3px">${escHtml(imgIndisp[1])}</div>` : '';
+        conteudoHtml = `<span style="font-size:.82rem;color:#94a3b8;display:flex;align-items:center;gap:5px">🖼️ <i>Imagem não pôde ser carregada</i></span>${leg}`;
+        return buildBubble(conteudoHtml);
+      }
+      const docIndisp = textoLimpo.match(/^\[DOC_INDISPONIVEL:(.+)\]$/);
+      if (docIndisp) {
+        conteudoHtml = `<div style="display:flex;align-items:center;gap:8px;padding:2px 0">
+          <span style="font-size:1.6rem;line-height:1">📄</span>
+          <div>
+            <div style="font-size:.85rem;font-weight:500;word-break:break-all">${escHtml(docIndisp[1])}</div>
+            <span style="font-size:.75rem;color:#94a3b8"><i>Arquivo não pôde ser baixado</i></span>
+          </div>
+        </div>`;
+        return buildBubble(conteudoHtml);
       }
       const audioMatch = textoLimpo.match(/^\[AUDIO:([a-f0-9]{32}\.(webm|ogg|mp3))\]$/);
       const imageMatch = textoLimpo.match(/^\[IMAGE:([a-f0-9]{32}\.(jpg|jpeg|png|webp|gif))\]/i);
