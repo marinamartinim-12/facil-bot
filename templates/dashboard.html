@@ -749,6 +749,13 @@
             </div>
           </div>
         </div>
+        <!-- Busca funil -->
+        <div style="margin-bottom:.45rem">
+          <input id="funilBusca" type="search" placeholder="🔍 Buscar no funil (nome ou telefone)…"
+            oninput="renderKanban()"
+            style="width:100%;max-width:380px;padding:.45rem .85rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;outline:none;background:#fff;transition:border .15s;"
+            onfocus="this.style.borderColor='var(--navy)'" onblur="this.style.borderColor='var(--border)'">
+        </div>
         <!-- Kanban -->
         <div id="funiKanbanWrapper">
           <div class="kanban" id="kanbanBoard"></div>
@@ -1400,8 +1407,15 @@
 
   function renderKanban() {
     const board = document.getElementById('kanbanBoard');
+    const termo = (document.getElementById('funilBusca')?.value || '').toLowerCase().trim();
     board.innerHTML = colunas.map(col => {
-      const cards = allLeads.filter(l => l.status === col.key && !l.oculto_funil);
+      const cards = allLeads.filter(l => {
+        if (l.status !== col.key || l.oculto_funil) return false;
+        if (!termo) return true;
+        const nome = (l.nome && l.nome !== '—' ? l.nome : '').toLowerCase();
+        const tel  = (l.telefone || '').toLowerCase();
+        return nome.includes(termo) || tel.includes(termo);
+      });
       return `
         <div class="kanban-col"
           ondragover="colDragOver(event, '${col.key}')"
