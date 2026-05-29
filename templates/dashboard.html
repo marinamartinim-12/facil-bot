@@ -1040,6 +1040,17 @@
               <button onclick="carregarRelatorioPonto()" class="btn btn-sm" style="background:var(--navy);color:#fff;padding:.35rem .9rem">🔄 Atualizar</button>
             </div>
           </div>
+          <!-- Exportar período -->
+          <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem;padding:.6rem .8rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px">
+            <span style="font-size:.78rem;font-weight:700;color:var(--muted)">📥 Baixar Excel do período:</span>
+            <label style="font-size:.78rem;color:#475569">De
+              <input id="pontoExpInicio" type="date" style="border:1px solid var(--border);border-radius:7px;padding:.25rem .5rem;font-size:.8rem;outline:none">
+            </label>
+            <label style="font-size:.78rem;color:#475569">até
+              <input id="pontoExpFim" type="date" style="border:1px solid var(--border);border-radius:7px;padding:.25rem .5rem;font-size:.8rem;outline:none">
+            </label>
+            <button onclick="baixarRelatorioPontoExcel()" class="btn btn-sm btn-outline" style="padding:.3rem .9rem">⬇️ Baixar</button>
+          </div>
           <div id="relPontoBody" style="display:flex;flex-direction:column;gap:.7rem">
             <div style="text-align:center;padding:1.5rem;color:var(--muted)">Carregando…</div>
           </div>
@@ -2658,6 +2669,23 @@
     } catch (e) {
       body.innerHTML = '<div style="text-align:center;padding:1.5rem;color:#991b1b">Erro ao carregar relatório de ponto.</div>';
     }
+    // Pré-preenche o intervalo de exportação (últimos 30 dias) se ainda vazio
+    const expFim = document.getElementById('pontoExpFim');
+    const expIni = document.getElementById('pontoExpInicio');
+    if (expFim && !expFim.value) {
+      const hoje = _pontoRelData.dataIso ? new Date(_pontoRelData.dataIso + 'T12:00:00') : new Date();
+      const ini = new Date(hoje); ini.setDate(ini.getDate() - 29);
+      const fmt = d => d.toISOString().slice(0, 10);
+      expFim.value = fmt(hoje);
+      if (expIni && !expIni.value) expIni.value = fmt(ini);
+    }
+  }
+
+  function baixarRelatorioPontoExcel() {
+    const ini = document.getElementById('pontoExpInicio').value;
+    const fim = document.getElementById('pontoExpFim').value;
+    if (!ini || !fim) { alert('Selecione as datas de início e fim.'); return; }
+    window.location.href = `/api/relatorio/ponto/xlsx?inicio=${ini}&fim=${fim}`;
   }
 
   // ─── Correção de ponto (admin) ──────────────────────────────────────────

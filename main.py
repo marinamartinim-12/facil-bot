@@ -3243,6 +3243,144 @@ async def relatorio_sessoes_csv(
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
 
 
+@app.get("/api/relatorio/ponto/xlsx")
+async def relatorio_ponto_xlsx(
+    inicio: str = None, fim: str = None,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Exporta ponto × tempo ativo das funcionárias num intervalo de datas como XLSX.
+    Abas: Resumo (totais do período por funcionária) + Detalhado (uma linha por dia)."""
+    from fastapi.responses import StreamingResponse
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    # ── Intervalo de datas (BR) ────────────────────────────────────────────
+    hoje = _agora_br().date()
+    try:
+        d_fim = datetime.strptime(fim, "%Y-%m-%d").date() if fim else hoje
+        d_ini = datetime.strptime(inicio, "%Y-%m-%d").date() if inicio else (d_fim - timedelta(days=29))
+    except ValueError:
+        raise HTTPException(400, "Datas inválidas (use YYYY-MM-DD)")
+    if d_ini > d_fim:
+        d_ini, d_fim = d_fim, d_ini
+    if (d_fim - d_ini).days > 366:
+        raise HTTPException(400, "Intervalo máximo de 366 dias")
+
+    agora_utc = datetime.utcnow()
+    funcionarias = (db.query(Usuario)
+                    .filter(Usuario.role == RoleEnum.funcionario)
+                    .order_by(Usuario.nome).all())
+
+    # ── Coleta linhas detalhadas + acumula totais por funcionária ───────────
+    detalhe = []            # uma linha por (funcionária, dia com registro)
+    totais = {}             # usuario_id -> {nome, dias, jornada_s, ativo_s, ocioso_s}
+    dia = d_ini
+    while dia <= d_fim:
+        for u in funcionarias:
+            pontos = _pontos_do_dia(db, u.id, dia)
+            if not pontos:
+                continue
+            intervalos = _jornadas_de_pontos(pontos, agora_utc)
+            jornada_s = sum(int((f - i).total_seconds()) for i, f, _ in intervalos)
+            ativo_s = min(_tempo_ativo_intervalos(db, u.id, intervalos), jornada_s)
+            ocioso_s = max(0, jornada_s - ativo_s)
+            # Primeiro horário de cada tipo no dia
+            horas = {}
+            for p in pontos:
+                horas.setdefault(p.tipo, _fmt_br(p.timestamp, "%H:%M"))
+            detalhe.append({
+                "nome": u.nome,
+                "data": dia.strftime("%d/%m/%Y"),
+                "entrada": horas.get("entrada", "—"),
+                "saida_almoco": horas.get("saida_almoco", "—"),
+                "volta_almoco": horas.get("volta_almoco", "—"),
+                "saida": horas.get("saida", "—"),
+                "jornada_s": jornada_s,
+                "ativo_s": ativo_s,
+                "ocioso_s": ocioso_s,
+                "perc": round(ativo_s / jornada_s * 100) if jornada_s else 0,
+            })
+            t = totais.setdefault(u.id, {"nome": u.nome, "dias": 0, "jornada_s": 0, "ativo_s": 0, "ocioso_s": 0})
+            t["dias"] += 1
+            t["jornada_s"] += jornada_s
+            t["ativo_s"] += ativo_s
+            t["ocioso_s"] += ocioso_s
+        dia += timedelta(days=1)
+
+    # ── Estilos ─────────────────────────────────────────────────────────────
+    cor_cab   = PatternFill("solid", fgColor="0D2B4E")
+    cor_resumo= PatternFill("solid", fgColor="FEF9C3")
+    fonte_cab = Font(bold=True, color="FFFFFF", size=10)
+    fonte_res = Font(bold=True, color="713F12", size=10)
+    fonte_norm= Font(size=9)
+    centro    = Alignment(horizontal="center", vertical="center")
+    borda     = Border(bottom=Side(style="thin", color="CCCCCC"), top=Side(style="thin", color="CCCCCC"))
+
+    def _set(ws, row, vals, fill=None, font=None):
+        for col, val in enumerate(vals, 1):
+            c = ws.cell(row=row, column=col, value=val)
+            c.alignment = centro
+            c.border = borda
+            if fill: c.fill = fill
+            c.font = font or fonte_norm
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    periodo_label = f"{d_ini.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')}"
+
+    # ── Aba Resumo ───────────────────────────────────────────────────────────
+    ws = wb.create_sheet(title="Resumo")
+    for i, larg in enumerate([24, 10, 14, 14, 14, 12], 1):
+        ws.column_dimensions[get_column_letter(i)].width = larg
+    ws.merge_cells("A1:F1")
+    t = ws.cell(row=1, column=1, value=f"Ponto × Tempo Ativo — {periodo_label}")
+    t.font = Font(bold=True, color="FFFFFF", size=12); t.fill = cor_cab; t.alignment = centro
+    ws.row_dimensions[1].height = 22
+    _set(ws, 2, ["Funcionária", "Dias", "Jornada", "Tempo Ativo", "Ocioso", "% Ativo"], fill=cor_cab, font=fonte_cab)
+    linha = 3
+    for u in funcionarias:
+        if u.id not in totais:
+            continue
+        t = totais[u.id]
+        perc = round(t["ativo_s"] / t["jornada_s"] * 100) if t["jornada_s"] else 0
+        _set(ws, linha, [t["nome"], t["dias"], _duracao_str(t["jornada_s"]),
+                         _duracao_str(t["ativo_s"]), _duracao_str(t["ocioso_s"]), f"{perc}%"])
+        linha += 1
+    if linha == 3:
+        ws.merge_cells(f"A3:F3")
+        ws.cell(row=3, column=1, value="Nenhum ponto registrado no período.").alignment = centro
+
+    # ── Aba Detalhado ──────────────────────────────────────────────────────────
+    wsd = wb.create_sheet(title="Detalhado")
+    for i, larg in enumerate([20, 12, 10, 11, 11, 10, 12, 12, 12, 10], 1):
+        wsd.column_dimensions[get_column_letter(i)].width = larg
+    wsd.merge_cells("A1:J1")
+    t = wsd.cell(row=1, column=1, value=f"Detalhamento diário — {periodo_label}")
+    t.font = Font(bold=True, color="FFFFFF", size=12); t.fill = cor_cab; t.alignment = centro
+    wsd.row_dimensions[1].height = 22
+    _set(wsd, 2, ["Funcionária", "Data", "Entrada", "S. Almoço", "V. Almoço", "Saída",
+                  "Jornada", "T. Ativo", "Ocioso", "% Ativo"], fill=cor_cab, font=fonte_cab)
+    linha = 3
+    for r in detalhe:
+        _set(wsd, linha, [r["nome"], r["data"], r["entrada"], r["saida_almoco"],
+                          r["volta_almoco"], r["saida"], _duracao_str(r["jornada_s"]),
+                          _duracao_str(r["ativo_s"]), _duracao_str(r["ocioso_s"]), f"{r['perc']}%"])
+        linha += 1
+    if linha == 3:
+        wsd.merge_cells("A3:J3")
+        wsd.cell(row=3, column=1, value="Nenhum ponto registrado no período.").alignment = centro
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"ponto_{d_ini.strftime('%Y%m%d')}_{d_fim.strftime('%Y%m%d')}.xlsx"
+    headers = {"Content-Disposition": f"attachment; filename={fname}"}
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
+
+
 # ─── Fila rotativa de atendimento ────────────────────────────────────────────────
 
 def _get_fila_cfg(db: Session):
