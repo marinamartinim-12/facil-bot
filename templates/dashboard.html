@@ -1006,12 +1006,16 @@
         <!-- ── SESSÕES / LOGINS ── -->
         <div class="rel-card">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
-            <h3 style="margin:0">🔐 Atividade das Funcionárias</h3>
+            <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+              <h3 style="margin:0">🔐 Atividade das Funcionárias</h3>
+              <div id="sessaoOnlineBar" style="display:flex;gap:.35rem;flex-wrap:wrap"></div>
+            </div>
             <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
               <select id="filtroPeriodoSessao" onchange="renderTabelaSessoes()"
                 style="border:1px solid var(--border);border-radius:8px;padding:.35rem .7rem;font-size:.82rem;outline:none">
+                <option value="hoje" selected>Hoje</option>
                 <option value="semana">Esta semana</option>
-                <option value="mes" selected>Este mês</option>
+                <option value="mes">Este mês</option>
                 <option value="tudo">Tudo</option>
               </select>
               <button onclick="carregarSessoes()" class="btn btn-sm" style="background:var(--navy);color:#fff;padding:.35rem .9rem">🔄 Atualizar</button>
@@ -2567,6 +2571,7 @@
     } catch {}
     await carregarRelatorioParceiros();
     await carregarSessoes();
+    _iniciarAutoRefreshSessoes(); // atualiza silenciosamente a cada 60s
     await carregarRelatorioContratosMes();
     await carregarRelatorioPerfil();
   }
@@ -2882,6 +2887,23 @@
 
   let _todasSessoes = [];
   let _sessaoAberta = null; // nome da funcionária com accordion aberto
+  let _sessaoAutoRefresh = null;
+
+  function _iniciarAutoRefreshSessoes() {
+    if (_sessaoAutoRefresh) return; // já rodando
+    _sessaoAutoRefresh = setInterval(() => {
+      // Só atualiza silenciosamente se a aba relatório está visível
+      const rel = document.getElementById('viewRelatorio');
+      if (rel && rel.style.display !== 'none') {
+        fetch('/api/relatorio/sessoes').then(r => r.ok ? r.json() : null).then(data => {
+          if (data) { _todasSessoes = data; renderTabelaSessoes(); }
+        }).catch(()=>{});
+      }
+    }, 60_000); // a cada 60s
+  }
+  function _pararAutoRefreshSessoes() {
+    if (_sessaoAutoRefresh) { clearInterval(_sessaoAutoRefresh); _sessaoAutoRefresh = null; }
+  }
 
   async function carregarSessoes() {
     const acc = document.getElementById('sessaoAccordion');
@@ -2894,12 +2916,22 @@
     } catch {}
   }
 
+  function _parseSessaoDate(str) {
+    // str vem como "DD/MM/YYYY HH:MM" (horário de Brasília já formatado pelo servidor)
+    if (!str || str === '—') return null;
+    const [d,m,yh] = str.split('/');
+    const [y,h] = (yh||'').split(' ');
+    return new Date(`${y}-${m}-${d}T${h||'00:00'}:00`); // interpretado como horário local (browser BR)
+  }
+
   function _filtrarPeriodo(sessoes) {
-    const periodo = document.getElementById('filtroPeriodoSessao')?.value || 'mes';
+    const periodo = document.getElementById('filtroPeriodoSessao')?.value || 'hoje';
     if (periodo === 'tudo') return sessoes;
     const agora = new Date();
     const inicio = new Date(agora);
-    if (periodo === 'mes') {
+    if (periodo === 'hoje') {
+      inicio.setHours(0,0,0,0);
+    } else if (periodo === 'mes') {
       inicio.setDate(1); inicio.setHours(0,0,0,0);
     } else { // semana
       const dia = inicio.getDay(); // 0=dom
@@ -2907,11 +2939,8 @@
       inicio.setHours(0,0,0,0);
     }
     return sessoes.filter(s => {
-      if (!s.login_em || s.login_em === '—') return false;
-      const [d,m,yh] = s.login_em.split('/');
-      const [y,h] = (yh||'').split(' ');
-      const dt = new Date(`${y}-${m}-${d}T${h||'00:00'}:00`);
-      return dt >= inicio;
+      const dt = _parseSessaoDate(s.login_em);
+      return dt && dt >= inicio;
     });
   }
 
@@ -2920,8 +2949,22 @@
     if (!acc) return;
     const lista = _filtrarPeriodo(_todasSessoes);
 
+    // ── Barra "quem está online agora" (usa TODAS as sessões, não só o período filtrado) ──
+    const onlineBar = document.getElementById('sessaoOnlineBar');
+    if (onlineBar) {
+      const online = _todasSessoes.filter(s => s.ativa);
+      const nomes = [...new Set(online.map(s => s.usuario))];
+      if (nomes.length > 0) {
+        onlineBar.innerHTML = nomes.map(n =>
+          `<span style="background:#dcfce7;color:#166534;font-size:.72rem;font-weight:700;padding:2px 10px;border-radius:20px;white-space:nowrap">● ${esc(n)}</span>`
+        ).join('');
+      } else {
+        onlineBar.innerHTML = `<span style="font-size:.75rem;color:var(--muted);font-style:italic">nenhuma online agora</span>`;
+      }
+    }
+
     if (lista.length === 0) {
-      acc.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--muted)">Nenhum registro no período.</div>';
+      acc.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--muted)">Nenhum acesso no período.</div>';
       return;
     }
 

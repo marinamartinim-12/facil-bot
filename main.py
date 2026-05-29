@@ -2779,7 +2779,7 @@ def _sessoes_funcionarias(db: Session, limit: int = 1000) -> list:
             "ativa": (
                 s.logout_em is None
                 and s.ultimo_ativo_em is not None
-                and (datetime.utcnow() - s.ultimo_ativo_em).total_seconds() < 300
+                and (datetime.utcnow() - s.ultimo_ativo_em).total_seconds() < 600  # 10 min = tolera 1 heartbeat perdido
             ),
         })
     return resultado
