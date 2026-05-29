@@ -286,6 +286,24 @@ class AtividadePing(Base):
     timestamp  = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class Agendamento(Base):
+    """Tarefa/agendamento de uma ação a fazer com o cliente, dentro de um lead."""
+    __tablename__ = "agendamentos"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    lead_id     = Column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
+    criado_por  = Column(Integer, ForeignKey("usuarios.id"), nullable=False, index=True)
+    titulo      = Column(String(200), nullable=False)        # ação a fazer
+    descricao   = Column(Text, nullable=True)                # detalhes opcionais
+    quando      = Column(DateTime, nullable=False, index=True)  # data/hora (UTC naive)
+    concluido   = Column(Boolean, default=False, index=True)
+    concluido_em = Column(DateTime, nullable=True)
+    criado_em   = Column(DateTime, default=datetime.utcnow)
+
+    lead   = relationship("Lead")
+    criador = relationship("Usuario")
+
+
 def criar_tabelas():
     Base.metadata.create_all(bind=engine)
 

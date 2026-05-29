@@ -652,6 +652,10 @@
         <span class="nav-icon">💬</span> Atendimentos
         <span id="badgeInbox" style="display:none;margin-left:auto;background:var(--red);color:#fff;border-radius:99px;padding:.1rem .45rem;font-size:.68rem;font-weight:700"></span>
       </button>
+      <button class="nav-item" onclick="showView('agenda')" id="nav-agenda">
+        <span class="nav-icon">⏰</span> Agenda
+        <span id="badgeAgenda" style="display:none;margin-left:auto;background:var(--red);color:#fff;border-radius:99px;padding:.1rem .45rem;font-size:.68rem;font-weight:700"></span>
+      </button>
       <div class="nav-section">Negócios</div>
       <button class="nav-item" onclick="showView('parceiros')" id="nav-parceiros">
         <span class="nav-icon">🤝</span> Parceiros
@@ -685,6 +689,12 @@
       <h2 id="pageTitle" style="margin-left:.5rem">Funil de Leads</h2>
       <div class="top-actions">
         <span style="font-size:.78rem;color:var(--muted)"><span class="dot-live"></span> <span id="lastUpdate">—</span></span>
+        <div style="position:relative;display:inline-block">
+          <button class="btn btn-sm" id="btnSino" onclick="toggleSinoAgenda()" title="Agendamentos vencidos" style="gap:.2rem;background:#fff;border:1px solid var(--border);position:relative">
+            🔔<span id="sinoBadge" style="display:none;position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;font-size:.62rem;font-weight:800;min-width:16px;height:16px;line-height:16px;border-radius:99px;padding:0 3px">0</span>
+          </button>
+          <div id="sinoDropdown" style="display:none;position:absolute;right:0;top:calc(100% + 6px);width:320px;max-height:420px;overflow-y:auto;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.18);z-index:200;padding:.5rem"></div>
+        </div>
         <button class="btn btn-sm" id="btnPonto" onclick="abrirModalPonto()" style="gap:.3rem;background:#0d2b4e;color:#fff">🕐 Ponto</button>
         <button class="btn btn-outline btn-sm" onclick="refresh()" id="btnRefresh">↻ Atualizar</button>
         <button class="btn btn-primary btn-sm" onclick="abrirNovoLead()" style="gap:.3rem">＋ Novo Lead</button>
@@ -890,6 +900,17 @@
       </div>
 
       <!-- ── PARCEIROS ── -->
+      <!-- ── AGENDA (agendamentos) ── -->
+      <div id="viewAgenda" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem">
+          <p style="font-size:.85rem;color:var(--muted);margin:0">Suas ações agendadas com clientes.</p>
+          <button class="btn btn-sm btn-outline" onclick="carregarAgenda()">🔄 Atualizar</button>
+        </div>
+        <div id="agendaConteudo" style="display:flex;flex-direction:column;gap:1.2rem">
+          <div style="text-align:center;padding:2rem;color:var(--muted)">Carregando…</div>
+        </div>
+      </div>
+
       <div id="viewParceiros" style="display:none">
         <!-- Carteira por operadora -->
         <div id="carteiraResumo" style="display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1rem"></div>
@@ -1100,6 +1121,21 @@
             <span id="obsMsg" style="font-size:.75rem"></span>
           </div>
         </div>
+        <!-- Agendamentos / lembretes -->
+        <div class="modal-section">
+          <h4 style="margin-bottom:.6rem">⏰ Agendamentos</h4>
+          <div id="listaAgendamentos" style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.6rem"></div>
+          <div style="display:flex;flex-direction:column;gap:.4rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.6rem">
+            <input id="agTitulo" type="text" placeholder="Ação a fazer (ex: Ligar p/ enviar proposta)"
+              style="border:1px solid var(--border);border-radius:7px;padding:.45rem .6rem;font-size:.83rem;outline:none">
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+              <input id="agQuando" type="datetime-local"
+                style="flex:1;min-width:160px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.82rem;outline:none">
+              <button class="btn btn-primary btn-sm" onclick="criarAgendamento()" style="white-space:nowrap">＋ Agendar</button>
+            </div>
+            <span id="agMsg" style="font-size:.75rem"></span>
+          </div>
+        </div>
         <!-- Contratos -->
         <div class="modal-section">
           <h4 style="margin-bottom:.6rem">📄 Contratos</h4>
@@ -1248,12 +1284,14 @@
     setInterval(refresh, 30000);
     setInterval(carregarDashboard, 60000); // atualiza dashboard a cada 1min
     iniciarPollingInbox();  // Atualiza lista de conversas a cada 5s
+    _checarAlertasAgendamento();                 // alertas de agendamento (sino/pop-up)
+    setInterval(_checarAlertasAgendamento, 60000); // a cada 1min
   }
 
   document.getElementById('loginSenha').addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); });
 
   // ═══════ VIEWS ═══════
-  const views = ['dashboard','funil','lista','atendimento','parceiros','usuarios','relatorios','configuracoes'];
+  const views = ['dashboard','funil','lista','atendimento','agenda','parceiros','usuarios','relatorios','configuracoes'];
   const adminViews = ['usuarios', 'relatorios', 'configuracoes'];
   function showView(v) {
     if (adminViews.includes(v) && currentUser?.role !== 'admin') return;
@@ -1263,7 +1301,7 @@
       const n = document.getElementById('nav-'+x);
       if (n) n.classList.toggle('active', x === v);
     });
-    const titles = {dashboard:'Dashboard', funil:'Funil de Leads', lista:'Lista de Leads', usuarios:'Usuários', relatorios:'Relatórios', atendimento:'Atendimentos', configuracoes:'Config. do Bot', parceiros:'Parceiros'};
+    const titles = {dashboard:'Dashboard', funil:'Funil de Leads', lista:'Lista de Leads', usuarios:'Usuários', relatorios:'Relatórios', atendimento:'Atendimentos', agenda:'Agenda', configuracoes:'Config. do Bot', parceiros:'Parceiros'};
     document.getElementById('pageTitle').textContent = titles[v] || v;
     document.getElementById('mainContent').classList.toggle('funil-mode', v === 'funil');
     if (v === 'dashboard') carregarDashboard();
@@ -1271,6 +1309,7 @@
     if (v === 'relatorios') carregarRelatorios();
     if (v === 'lista') renderLista();
     if (v === 'atendimento') carregarInbox();
+    if (v === 'agenda') carregarAgenda();
     if (v === 'configuracoes') carregarConfiguracoes();
     if (v === 'parceiros') carregarParceiros();
   }
@@ -1696,6 +1735,12 @@
       // Contratos
       carregarContratos(leadId);
 
+      // Agendamentos
+      document.getElementById('agTitulo').value = '';
+      document.getElementById('agQuando').value = '';
+      document.getElementById('agMsg').textContent = '';
+      carregarAgendamentos(leadId);
+
       // Chat
       if (!conv.mensagens.length) {
         document.getElementById('modalChat').innerHTML = '<div class="loading-msg">Nenhuma mensagem registrada.</div>';
@@ -1802,6 +1847,252 @@
       el.innerHTML = '<span style="font-size:.78rem;color:var(--red)">Erro ao carregar.</span>';
     }
   }
+
+  // ─── Agendamentos do lead ─────────────────────────────────────────────────
+  async function carregarAgendamentos(leadId) {
+    const el = document.getElementById('listaAgendamentos');
+    el.innerHTML = '<span style="font-size:.78rem;color:var(--muted)">Carregando…</span>';
+    try {
+      const r = await fetch(`/api/leads/${leadId}/agendamentos`);
+      if (!r.ok) throw new Error();
+      const lista = await r.json();
+      if (!lista.length) {
+        el.innerHTML = '<span style="font-size:.78rem;color:var(--muted);font-style:italic">Nenhum agendamento.</span>';
+        return;
+      }
+      el.innerHTML = lista.map(a => {
+        const cor = a.concluido ? '#94a3b8' : (a.vencido ? '#dc2626' : '#0d2b4e');
+        const bg  = a.concluido ? '#f1f5f9' : (a.vencido ? '#fef2f2' : '#fff');
+        return `
+        <div style="border:1px solid #e2e8f0;border-left:3px solid ${cor};border-radius:8px;background:${bg};padding:.5rem .65rem">
+          <div style="display:flex;align-items:flex-start;gap:.5rem">
+            <div style="flex:1">
+              <div style="font-size:.84rem;font-weight:700;color:${cor};${a.concluido?'text-decoration:line-through':''}">${esc(a.titulo)}</div>
+              <div style="font-size:.74rem;color:#64748b;margin-top:.15rem">
+                🕐 ${esc(a.quando)} ${a.vencido && !a.concluido ? '<span style="color:#dc2626;font-weight:700">• atrasado</span>' : ''}
+              </div>
+              ${a.descricao ? `<div style="font-size:.76rem;color:#475569;margin-top:.2rem">${esc(a.descricao)}</div>` : ''}
+              <div style="font-size:.68rem;color:#94a3b8;margin-top:.2rem">por ${esc(a.criado_por_nome)}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:.25rem">
+              <button onclick="concluirAgendamento(${a.id},${!a.concluido})" title="${a.concluido?'Reabrir':'Concluir'}"
+                class="btn btn-sm btn-outline" style="padding:.15rem .4rem;font-size:.72rem">${a.concluido?'↩':'✓'}</button>
+              <button onclick="removerAgendamento(${a.id})" title="Remover"
+                class="btn btn-sm" style="padding:.15rem .4rem;font-size:.72rem;background:#fee2e2;color:#991b1b">✕</button>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+    } catch {
+      el.innerHTML = '<span style="font-size:.78rem;color:var(--red)">Erro ao carregar.</span>';
+    }
+  }
+
+  async function criarAgendamento() {
+    if (!modalLeadId) return;
+    const titulo = document.getElementById('agTitulo').value.trim();
+    const quando = document.getElementById('agQuando').value;
+    const msg = document.getElementById('agMsg');
+    if (!titulo) { msg.style.color = '#dc2626'; msg.textContent = 'Descreva a ação.'; return; }
+    if (!quando) { msg.style.color = '#dc2626'; msg.textContent = 'Escolha data e hora.'; return; }
+    try {
+      const r = await fetch(`/api/leads/${modalLeadId}/agendamentos`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titulo, quando }),
+      });
+      const d = await r.json();
+      if (!r.ok) { msg.style.color = '#dc2626'; msg.textContent = d.detail || 'Erro.'; return; }
+      document.getElementById('agTitulo').value = '';
+      document.getElementById('agQuando').value = '';
+      msg.style.color = '#16a34a'; msg.textContent = 'Agendado ✓';
+      carregarAgendamentos(modalLeadId);
+    } catch {
+      msg.style.color = '#dc2626'; msg.textContent = 'Erro de conexão.';
+    }
+  }
+
+  async function concluirAgendamento(id, concluido) {
+    try {
+      await fetch(`/api/agendamentos/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ concluido }),
+      });
+      if (modalLeadId) carregarAgendamentos(modalLeadId);
+      _checarAlertasAgendamento();
+    } catch {}
+  }
+
+  async function removerAgendamento(id) {
+    if (!confirm('Remover este agendamento?')) return;
+    try {
+      await fetch(`/api/agendamentos/${id}`, { method: 'DELETE' });
+      if (modalLeadId) carregarAgendamentos(modalLeadId);
+      _checarAlertasAgendamento();
+    } catch {}
+  }
+
+  // ─── Agenda geral (view) ──────────────────────────────────────────────────
+  function _agItemHtml(a, corBorda) {
+    return `
+      <div style="border:1px solid #e2e8f0;border-left:3px solid ${corBorda};border-radius:9px;background:#fff;padding:.6rem .8rem;display:flex;align-items:flex-start;gap:.6rem">
+        <div style="flex:1;cursor:pointer" onclick="verLead(${a.lead_id})" title="Abrir lead">
+          <div style="font-size:.88rem;font-weight:700;color:#1e293b">${esc(a.titulo)}</div>
+          <div style="font-size:.76rem;color:#64748b;margin-top:.15rem">🕐 ${esc(a.quando)} · 👤 ${esc(a.lead_nome)}</div>
+          ${a.descricao ? `<div style="font-size:.77rem;color:#475569;margin-top:.2rem">${esc(a.descricao)}</div>` : ''}
+        </div>
+        <button onclick="concluirAgendamentoAgenda(${a.id})" class="btn btn-sm btn-outline" style="padding:.2rem .5rem;font-size:.74rem;white-space:nowrap">✓ Concluir</button>
+      </div>`;
+  }
+
+  async function carregarAgenda() {
+    const el = document.getElementById('agendaConteudo');
+    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted)">Carregando…</div>';
+    try {
+      const r = await fetch('/api/agendamentos/meus');
+      const d = await r.json();
+      const bloco = (titulo, cor, itens, vazio) => `
+        <div>
+          <h3 style="font-size:.95rem;margin:0 0 .55rem;color:${cor}">${titulo} <span style="font-size:.8rem;color:var(--muted)">(${itens.length})</span></h3>
+          <div style="display:flex;flex-direction:column;gap:.5rem">
+            ${itens.length ? itens.map(a => _agItemHtml(a, cor)).join('')
+              : `<div style="font-size:.8rem;color:var(--muted);font-style:italic;padding:.3rem">${vazio}</div>`}
+          </div>
+        </div>`;
+      el.innerHTML =
+        bloco('🔴 Atrasados', '#dc2626', d.atrasados, 'Nada atrasado.') +
+        bloco('📅 Hoje', '#d97706', d.hoje, 'Nada para hoje.') +
+        bloco('🔜 Próximos', '#0d2b4e', d.proximos, 'Nenhum agendamento futuro.') +
+        (d.concluidos.length ? `<details style="margin-top:.3rem"><summary style="cursor:pointer;font-size:.85rem;color:var(--muted);font-weight:600">✅ Concluídos recentes (${d.concluidos.length})</summary>
+          <div style="display:flex;flex-direction:column;gap:.5rem;margin-top:.55rem;opacity:.7">
+            ${d.concluidos.map(a => _agItemHtml(a, '#94a3b8')).join('')}
+          </div></details>` : '');
+    } catch {
+      el.innerHTML = '<div style="text-align:center;padding:2rem;color:#991b1b">Erro ao carregar agenda.</div>';
+    }
+  }
+
+  async function concluirAgendamentoAgenda(id) {
+    try {
+      await fetch(`/api/agendamentos/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ concluido: true }),
+      });
+      carregarAgenda();
+      _checarAlertasAgendamento();
+    } catch {}
+  }
+
+  // ─── Sino + alertas (pop-up individual) ──────────────────────────────────
+  let _alertasAg = [];
+  let _alertasVistos = new Set();
+  let _sinoAberto = false;
+  let _primeiraChecagemAlertas = true;
+
+  function toggleSinoAgenda() {
+    _sinoAberto = !_sinoAberto;
+    const dd = document.getElementById('sinoDropdown');
+    if (!_sinoAberto) { dd.style.display = 'none'; return; }
+    _renderSinoDropdown();
+    dd.style.display = 'block';
+  }
+
+  function _renderSinoDropdown() {
+    const dd = document.getElementById('sinoDropdown');
+    if (!_alertasAg.length) {
+      dd.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.84rem">Nenhum agendamento vencido 🎉</div>';
+      return;
+    }
+    dd.innerHTML = `<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);padding:.3rem .5rem .5rem">Vencidos / atrasados</div>` +
+      _alertasAg.map(a => `
+        <div style="border-bottom:1px solid #f1f5f9;padding:.5rem;display:flex;gap:.5rem;align-items:flex-start">
+          <div style="flex:1;cursor:pointer" onclick="verLead(${a.lead_id});toggleSinoAgenda()">
+            <div style="font-size:.83rem;font-weight:700;color:#1e293b">${esc(a.titulo)}</div>
+            <div style="font-size:.73rem;color:#dc2626;margin-top:.1rem">🕐 ${esc(a.quando)} · 👤 ${esc(a.lead_nome)}</div>
+          </div>
+          <button onclick="concluirAgendamentoAgenda(${a.id})" class="btn btn-sm btn-outline" style="padding:.15rem .45rem;font-size:.72rem">✓</button>
+        </div>`).join('');
+  }
+
+  function _atualizarBadgeSino() {
+    const n = _alertasAg.length;
+    const badge = document.getElementById('sinoBadge');
+    const badgeNav = document.getElementById('badgeAgenda');
+    if (badge) { badge.style.display = n ? 'block' : 'none'; badge.textContent = n > 99 ? '99+' : n; }
+    if (badgeNav) { badgeNav.style.display = n ? 'block' : 'none'; badgeNav.textContent = n > 99 ? '99+' : n; }
+  }
+
+  async function _checarAlertasAgendamento() {
+    try {
+      const r = await fetch('/api/agendamentos/alertas');
+      if (!r.ok) return;
+      const lista = await r.json();
+      // Detecta novos (não vistos) para pop-up
+      const novos = lista.filter(a => !_alertasVistos.has(a.id));
+      _alertasAg = lista;
+      _atualizarBadgeSino();
+      if (_sinoAberto) _renderSinoDropdown();
+      // Na primeira checagem (logo após login) não dispara pop-up dos já vencidos — só marca o sino
+      if (_primeiraChecagemAlertas) {
+        lista.forEach(a => _alertasVistos.add(a.id));
+        _primeiraChecagemAlertas = false;
+      } else if (novos.length) {
+        novos.forEach(a => _alertasVistos.add(a.id));
+        _mostrarPopupAgendamento(novos);
+      }
+    } catch {}
+  }
+
+  function _mostrarPopupAgendamento(itens) {
+    let cont = document.getElementById('agPopupContainer');
+    if (!cont) {
+      cont = document.createElement('div');
+      cont.id = 'agPopupContainer';
+      cont.style.cssText = 'position:fixed;bottom:18px;right:18px;z-index:9999;display:flex;flex-direction:column;gap:.5rem;max-width:340px';
+      document.body.appendChild(cont);
+    }
+    itens.forEach(a => {
+      const card = document.createElement('div');
+      card.style.cssText = 'background:#fff;border:1px solid #fca5a5;border-left:4px solid #dc2626;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:.7rem .85rem;animation:none';
+      card.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:.5rem">
+          <span style="font-size:1.1rem">⏰</span>
+          <div style="flex:1">
+            <div style="font-size:.8rem;font-weight:800;color:#dc2626">Agendamento vencido</div>
+            <div style="font-size:.85rem;font-weight:700;color:#1e293b;margin-top:.15rem">${esc(a.titulo)}</div>
+            <div style="font-size:.74rem;color:#64748b;margin-top:.1rem">🕐 ${esc(a.quando)} · 👤 ${esc(a.lead_nome)}</div>
+            <div style="display:flex;gap:.4rem;margin-top:.5rem">
+              <button class="btn btn-sm btn-outline" style="padding:.15rem .5rem;font-size:.73rem" onclick="verLead(${a.lead_id});this.closest('div[style]').parentElement.remove()">Abrir lead</button>
+              <button class="btn btn-sm" style="padding:.15rem .5rem;font-size:.73rem;background:#16a34a;color:#fff" onclick="concluirAgendamentoAgenda(${a.id});this.closest('div[style]').parentElement.remove()">✓ Concluir</button>
+            </div>
+          </div>
+          <button onclick="this.closest('div[style]').parentElement.remove()" style="background:none;border:none;font-size:1rem;cursor:pointer;color:#94a3b8;line-height:1">×</button>
+        </div>`;
+      cont.appendChild(card);
+      try { _tocarBipAgendamento(); } catch {}
+    });
+  }
+
+  function _tocarBipAgendamento() {
+    // bip curto via WebAudio (sem arquivo externo)
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = 'sine'; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
+    o.start(); o.stop(ctx.currentTime + 0.42);
+    setTimeout(() => ctx.close(), 600);
+  }
+
+  // Fecha o dropdown do sino ao clicar fora
+  document.addEventListener('click', e => {
+    if (!_sinoAberto) return;
+    const wrap = document.getElementById('btnSino')?.parentElement;
+    if (wrap && !wrap.contains(e.target)) { _sinoAberto = false; document.getElementById('sinoDropdown').style.display = 'none'; }
+  });
 
   function gerarContrato() {
     if (!modalLeadId) return;

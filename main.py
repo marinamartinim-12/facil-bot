@@ -34,7 +34,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, AtividadePing, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, AtividadePing, Agendamento, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
@@ -2688,6 +2688,157 @@ def _duracao_str(segundos: int) -> str:
         return f"{m}min"
     h, rm = divmod(m, 60)
     return f"{h}h {rm}min" if rm else f"{h}h"
+
+
+# ─── Agendamentos / lembretes dentro de cada lead ─────────────────────────────────
+
+def _dt_local_para_utc_naive(s: str) -> datetime:
+    """Converte 'YYYY-MM-DDTHH:MM' (horário BR) para datetime UTC naive."""
+    s = (s or "").strip().replace(" ", "T")
+    fmt = "%Y-%m-%dT%H:%M:%S" if s.count(":") == 2 else "%Y-%m-%dT%H:%M"
+    dt_br = datetime.strptime(s, fmt).replace(tzinfo=_TZ_BR)
+    return dt_br.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _serial_agendamento(a: Agendamento, lead: Lead | None = None) -> dict:
+    lead = lead or a.lead
+    return {
+        "id": a.id,
+        "lead_id": a.lead_id,
+        "lead_nome": (lead.nome if lead and lead.nome and lead.nome != "—" else (lead.telefone if lead else "")),
+        "titulo": a.titulo,
+        "descricao": a.descricao or "",
+        "quando": _fmt_br(a.quando, "%d/%m/%Y %H:%M"),
+        "quando_iso": _fmt_br(a.quando, "%Y-%m-%dT%H:%M"),
+        "concluido": bool(a.concluido),
+        "criado_por": a.criado_por,
+        "criado_por_nome": (a.criador.nome if a.criador else ""),
+        "vencido": (not a.concluido) and a.quando <= datetime.utcnow(),
+    }
+
+
+def _pode_ver_agendamentos_alerta(a: Agendamento, lead: Lead, usuario: Usuario) -> bool:
+    """Notificação (sino/popup) só p/ criador do agendamento ou responsável pelo lead."""
+    return a.criado_por == usuario.id or (lead and lead.atribuido_para == usuario.id)
+
+
+@app.get("/api/leads/{lead_id}/agendamentos")
+async def listar_agendamentos(lead_id: int, db: Session = Depends(get_db),
+                              usuario: Usuario = Depends(obter_usuario_atual)):
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead não encontrado")
+    ags = (db.query(Agendamento)
+           .filter(Agendamento.lead_id == lead_id)
+           .order_by(Agendamento.concluido, Agendamento.quando).all())
+    return [_serial_agendamento(a, lead) for a in ags]
+
+
+@app.post("/api/leads/{lead_id}/agendamentos")
+async def criar_agendamento(lead_id: int, request: Request, db: Session = Depends(get_db),
+                            usuario: Usuario = Depends(obter_usuario_atual)):
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead não encontrado")
+    body = await request.json()
+    titulo = (body.get("titulo") or "").strip()
+    quando = (body.get("quando") or "").strip()
+    if not titulo:
+        raise HTTPException(400, "Descreva a ação a fazer")
+    if not quando:
+        raise HTTPException(400, "Informe data e hora")
+    try:
+        quando_utc = _dt_local_para_utc_naive(quando)
+    except ValueError:
+        raise HTTPException(400, "Data/hora inválida")
+    ag = Agendamento(
+        lead_id=lead_id, criado_por=usuario.id, titulo=titulo[:200],
+        descricao=(body.get("descricao") or "").strip() or None, quando=quando_utc,
+    )
+    db.add(ag)
+    db.commit()
+    db.refresh(ag)
+    return _serial_agendamento(ag, lead)
+
+
+@app.patch("/api/agendamentos/{ag_id}")
+async def editar_agendamento(ag_id: int, request: Request, db: Session = Depends(get_db),
+                             usuario: Usuario = Depends(obter_usuario_atual)):
+    ag = db.query(Agendamento).filter(Agendamento.id == ag_id).first()
+    if not ag:
+        raise HTTPException(404, "Agendamento não encontrado")
+    body = await request.json()
+    if "titulo" in body:
+        t = (body.get("titulo") or "").strip()
+        if not t:
+            raise HTTPException(400, "Descreva a ação a fazer")
+        ag.titulo = t[:200]
+    if "descricao" in body:
+        ag.descricao = (body.get("descricao") or "").strip() or None
+    if body.get("quando"):
+        try:
+            ag.quando = _dt_local_para_utc_naive(body["quando"])
+        except ValueError:
+            raise HTTPException(400, "Data/hora inválida")
+    if "concluido" in body:
+        ag.concluido = bool(body["concluido"])
+        ag.concluido_em = datetime.utcnow() if ag.concluido else None
+    db.commit()
+    db.refresh(ag)
+    return _serial_agendamento(ag)
+
+
+@app.delete("/api/agendamentos/{ag_id}")
+async def remover_agendamento(ag_id: int, db: Session = Depends(get_db),
+                              usuario: Usuario = Depends(obter_usuario_atual)):
+    ag = db.query(Agendamento).filter(Agendamento.id == ag_id).first()
+    if not ag:
+        raise HTTPException(404, "Agendamento não encontrado")
+    db.delete(ag)
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.get("/api/agendamentos/meus")
+async def meus_agendamentos(db: Session = Depends(get_db),
+                            usuario: Usuario = Depends(obter_usuario_atual)):
+    """Agenda geral. Admin vê tudo; funcionária vê o que criou OU de leads que assumiu."""
+    q = (db.query(Agendamento, Lead)
+         .join(Lead, Agendamento.lead_id == Lead.id))
+    if usuario.role != RoleEnum.admin:
+        q = q.filter((Agendamento.criado_por == usuario.id) | (Lead.atribuido_para == usuario.id))
+    pares = q.order_by(Agendamento.quando).all()
+
+    agora = datetime.utcnow()
+    hoje_br = _agora_br().date()
+    atrasados, hoje, proximos, concluidos = [], [], [], []
+    for a, lead in pares:
+        item = _serial_agendamento(a, lead)
+        if a.concluido:
+            concluidos.append(item)
+        elif a.quando <= agora:
+            atrasados.append(item)
+        elif _fmt_br(a.quando, "%Y-%m-%d") == hoje_br.strftime("%Y-%m-%d"):
+            hoje.append(item)
+        else:
+            proximos.append(item)
+    # concluídos: mais recentes primeiro, limitado
+    concluidos = list(reversed(concluidos))[:30]
+    return {"atrasados": atrasados, "hoje": hoje, "proximos": proximos, "concluidos": concluidos}
+
+
+@app.get("/api/agendamentos/alertas")
+async def alertas_agendamentos(db: Session = Depends(get_db),
+                               usuario: Usuario = Depends(obter_usuario_atual)):
+    """Itens vencidos (não concluídos) p/ o sino/pop-up — só criador ou responsável."""
+    agora = datetime.utcnow()
+    q = (db.query(Agendamento, Lead)
+         .join(Lead, Agendamento.lead_id == Lead.id)
+         .filter(Agendamento.concluido == False,
+                 Agendamento.quando <= agora)
+         .filter((Agendamento.criado_por == usuario.id) | (Lead.atribuido_para == usuario.id))
+         .order_by(Agendamento.quando))
+    return [_serial_agendamento(a, lead) for a, lead in q.all()]
 
 
 # ─── Ponto: marcação e relatório ─────────────────────────────────────────────────
