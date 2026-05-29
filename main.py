@@ -2706,6 +2706,12 @@ def _intervalo_dia_utc(data_br):
     return inicio, inicio + timedelta(days=1)
 
 
+def _br_para_utc_naive(data_str: str, hora_str: str) -> datetime:
+    """Converte data (YYYY-MM-DD) + hora (HH:MM) no fuso BR para datetime UTC naive (como o banco guarda)."""
+    dt_br = datetime.strptime(f"{data_str} {hora_str}", "%Y-%m-%d %H:%M").replace(tzinfo=_TZ_BR)
+    return dt_br.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 def _pontos_do_dia(db, usuario_id, data_br):
     ini, fim = _intervalo_dia_utc(data_br)
     return (db.query(RegistroPonto)
@@ -2847,8 +2853,9 @@ async def ponto_relatorio(data: str = None, db: Session = Depends(get_db),
         ocioso_s = max(0, jornada_s - ativo_s)
         resultado.append({
             "usuario": u.nome,
+            "usuario_id": u.id,
             "registros": [
-                {"tipo": p.tipo, "label": _PONTO_LABELS[p.tipo], "hora": _fmt_br(p.timestamp, "%H:%M")}
+                {"id": p.id, "tipo": p.tipo, "label": _PONTO_LABELS[p.tipo], "hora": _fmt_br(p.timestamp, "%H:%M")}
                 for p in pontos
             ],
             "jornada": _duracao_str(jornada_s),
@@ -2859,7 +2866,79 @@ async def ponto_relatorio(data: str = None, db: Session = Depends(get_db),
             "perc_ativo": round(ativo_s / jornada_s * 100) if jornada_s else 0,
             "em_andamento": any(a for _, _, a in intervalos),
         })
-    return {"data": d.strftime("%d/%m/%Y"), "funcionarias": resultado}
+    return {
+        "data": d.strftime("%d/%m/%Y"),
+        "data_iso": d.strftime("%Y-%m-%d"),
+        "funcionarias": resultado,
+        "funcionarias_todas": [{"id": u.id, "nome": u.nome} for u in funcionarias],
+    }
+
+
+# ─── Ponto: correções pelo admin (criar / editar / remover) ───────────────────
+
+_PONTO_TIPOS_VALIDOS = set(_PONTO_LABELS.keys())
+
+
+@app.post("/api/ponto/admin")
+async def admin_criar_ponto(request: Request, db: Session = Depends(get_db),
+                            admin: Usuario = Depends(requer_admin)):
+    """Admin registra/corrige um ponto em nome de uma funcionária."""
+    body = await request.json()
+    try:
+        usuario_id = int(body.get("usuario_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Funcionária inválida")
+    tipo = (body.get("tipo") or "").strip()
+    data = (body.get("data") or "").strip()
+    hora = (body.get("hora") or "").strip()
+    if tipo not in _PONTO_TIPOS_VALIDOS:
+        raise HTTPException(400, "Tipo de ponto inválido")
+    if not db.query(Usuario).filter(Usuario.id == usuario_id).first():
+        raise HTTPException(404, "Funcionária não encontrada")
+    try:
+        ts = _br_para_utc_naive(data, hora)
+    except ValueError:
+        raise HTTPException(400, "Data ou hora inválida")
+    reg = RegistroPonto(usuario_id=usuario_id, tipo=tipo, timestamp=ts, ip="admin")
+    db.add(reg)
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.patch("/api/ponto/{ponto_id}")
+async def admin_editar_ponto(ponto_id: int, request: Request, db: Session = Depends(get_db),
+                             admin: Usuario = Depends(requer_admin)):
+    """Admin corrige o horário e/ou o tipo de um ponto existente."""
+    reg = db.query(RegistroPonto).filter(RegistroPonto.id == ponto_id).first()
+    if not reg:
+        raise HTTPException(404, "Registro não encontrado")
+    body = await request.json()
+    tipo = (body.get("tipo") or "").strip()
+    if tipo:
+        if tipo not in _PONTO_TIPOS_VALIDOS:
+            raise HTTPException(400, "Tipo de ponto inválido")
+        reg.tipo = tipo
+    data = (body.get("data") or "").strip()
+    hora = (body.get("hora") or "").strip()
+    if data and hora:
+        try:
+            reg.timestamp = _br_para_utc_naive(data, hora)
+        except ValueError:
+            raise HTTPException(400, "Data ou hora inválida")
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.delete("/api/ponto/{ponto_id}")
+async def admin_remover_ponto(ponto_id: int, db: Session = Depends(get_db),
+                              admin: Usuario = Depends(requer_admin)):
+    """Admin remove um ponto registrado por engano."""
+    reg = db.query(RegistroPonto).filter(RegistroPonto.id == ponto_id).first()
+    if not reg:
+        raise HTTPException(404, "Registro não encontrado")
+    db.delete(reg)
+    db.commit()
+    return {"status": "ok"}
 
 
 @app.get("/api/relatorios")

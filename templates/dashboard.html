@@ -2610,15 +2610,20 @@
         const [dd, mm, yy] = d.data.split('/');
         dataInput.value = `${yy}-${mm}-${dd}`;
       }
+      _pontoRelData = { dataIso: d.data_iso, funcionarias: d.funcionarias_todas || [] };
+      const btnAdd = `<div style="text-align:right"><button class="btn btn-sm btn-outline" onclick="abrirAdicionarPonto()" style="padding:.3rem .8rem">➕ Adicionar ponto</button></div>`;
       if (!d.funcionarias || !d.funcionarias.length) {
-        body.innerHTML = `<div style="text-align:center;padding:1.5rem;color:var(--muted)">Nenhum ponto registrado em ${esc(d.data || '')}.</div>`;
+        body.innerHTML = btnAdd + `<div style="text-align:center;padding:1.5rem;color:var(--muted)">Nenhum ponto registrado em ${esc(d.data || '')}.</div>`;
         return;
       }
-      body.innerHTML = d.funcionarias.map(f => {
+      body.innerHTML = btnAdd + d.funcionarias.map(f => {
         const corPct = f.perc_ativo >= 75 ? '#16a34a' : f.perc_ativo >= 50 ? '#d97706' : '#dc2626';
         const regs = f.registros.map(r =>
-          `<span style="white-space:nowrap;font-size:.78rem;color:#475569">${_PONTO_ICONES[r.tipo] || '•'} ${esc(r.hora)}</span>`
-        ).join('<span style="color:#cbd5e1">·</span>');
+          `<span style="display:inline-flex;align-items:center;gap:.25rem;white-space:nowrap;font-size:.78rem;color:#475569;background:#f1f5f9;border-radius:6px;padding:.1rem .35rem">
+            <span style="cursor:pointer" title="Editar" onclick="abrirEditarPonto(${r.id},'${r.tipo}','${esc(r.hora)}')">${_PONTO_ICONES[r.tipo] || '•'} ${esc(r.hora)} ✏️</span>
+            <span style="cursor:pointer;color:#b91c1c" title="Remover" onclick="removerPonto(${r.id})">✕</span>
+          </span>`
+        ).join(' ');
         return `
         <div style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.6rem .9rem;background:#f8fafc;flex-wrap:wrap">
@@ -2652,6 +2657,92 @@
       }).join('');
     } catch (e) {
       body.innerHTML = '<div style="text-align:center;padding:1.5rem;color:#991b1b">Erro ao carregar relatório de ponto.</div>';
+    }
+  }
+
+  // ─── Correção de ponto (admin) ──────────────────────────────────────────
+  let _pontoRelData = { dataIso: '', funcionarias: [] };
+  let _epPontoId = null; // null = adicionar, número = editar
+
+  function _epMsg(texto, ok) {
+    const m = document.getElementById('epMsg');
+    if (!texto) { m.style.display = 'none'; return; }
+    m.style.display = 'block';
+    m.textContent = texto;
+    m.style.background = ok ? '#dcfce7' : '#fee2e2';
+    m.style.color      = ok ? '#166534' : '#991b1b';
+  }
+
+  function abrirAdicionarPonto() {
+    _epPontoId = null;
+    document.getElementById('epTitulo').textContent = 'Adicionar ponto';
+    document.getElementById('epFuncWrap').style.display = 'block';
+    const sel = document.getElementById('epFuncionaria');
+    sel.innerHTML = (_pontoRelData.funcionarias || [])
+      .map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('');
+    document.getElementById('epTipo').value = 'entrada';
+    document.getElementById('epData').value = _pontoRelData.dataIso || '';
+    document.getElementById('epHora').value = '';
+    _epMsg('', true);
+    document.getElementById('modalEditarPonto').classList.add('open');
+  }
+
+  function abrirEditarPonto(id, tipo, hora) {
+    _epPontoId = id;
+    document.getElementById('epTitulo').textContent = 'Corrigir ponto';
+    document.getElementById('epFuncWrap').style.display = 'none';
+    document.getElementById('epTipo').value = tipo;
+    document.getElementById('epData').value = _pontoRelData.dataIso || '';
+    document.getElementById('epHora').value = hora || '';
+    _epMsg('', true);
+    document.getElementById('modalEditarPonto').classList.add('open');
+  }
+
+  function fecharEditarPonto() {
+    document.getElementById('modalEditarPonto').classList.remove('open');
+  }
+
+  async function salvarEditarPonto() {
+    const tipo = document.getElementById('epTipo').value;
+    const data = document.getElementById('epData').value;
+    const hora = document.getElementById('epHora').value;
+    if (!data || !hora) { _epMsg('Preencha data e hora.', false); return; }
+    const btn = document.getElementById('epSalvar');
+    btn.disabled = true;
+    try {
+      let r;
+      if (_epPontoId === null) {
+        const usuario_id = document.getElementById('epFuncionaria').value;
+        if (!usuario_id) { _epMsg('Selecione a funcionária.', false); btn.disabled = false; return; }
+        r = await fetch('/api/ponto/admin', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usuario_id, tipo, data, hora }),
+        });
+      } else {
+        r = await fetch(`/api/ponto/${_epPontoId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tipo, data, hora }),
+        });
+      }
+      const d = await r.json();
+      if (!r.ok) { _epMsg(d.detail || 'Não foi possível salvar.', false); btn.disabled = false; return; }
+      fecharEditarPonto();
+      await carregarRelatorioPonto();
+    } catch (e) {
+      _epMsg('Erro de conexão.', false);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function removerPonto(id) {
+    if (!confirm('Remover este registro de ponto? Esta ação não pode ser desfeita.')) return;
+    try {
+      const r = await fetch(`/api/ponto/${id}`, { method: 'DELETE' });
+      if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Não foi possível remover.'); return; }
+      await carregarRelatorioPonto();
+    } catch (e) {
+      alert('Erro de conexão.');
     }
   }
 
@@ -5113,6 +5204,44 @@
       </div>
       <button class="btn btn-sm btn-outline" onclick="togglePontoHistorico()" id="btnPontoHist" style="width:100%">📋 Ver histórico</button>
       <div id="pontoHistorico" style="display:none;flex-direction:column;gap:.5rem"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: Editar/Adicionar Ponto (admin) ── -->
+<div class="overlay" id="modalEditarPonto" onclick="if(event.target===this)fecharEditarPonto()">
+  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:400px;display:flex;flex-direction:column;overflow:hidden">
+    <div class="modal-hd">
+      <span style="font-size:1.15rem">🕐</span>
+      <h3 id="epTitulo">Corrigir ponto</h3>
+      <button class="modal-close" onclick="fecharEditarPonto()">×</button>
+    </div>
+    <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:.9rem">
+      <div id="epMsg" style="display:none;padding:.55rem .9rem;border-radius:8px;font-size:.85rem;font-weight:600"></div>
+      <div id="epFuncWrap">
+        <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Funcionária</label>
+        <select id="epFuncionaria" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none"></select>
+      </div>
+      <div>
+        <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Tipo</label>
+        <select id="epTipo" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none">
+          <option value="entrada">🟢 Início da jornada</option>
+          <option value="saida_almoco">🍽️ Saída p/ almoço</option>
+          <option value="volta_almoco">🔵 Volta do almoço</option>
+          <option value="saida">🔴 Fim da jornada</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:.6rem">
+        <div style="flex:1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Data</label>
+          <input type="date" id="epData" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none">
+        </div>
+        <div style="flex:1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Hora</label>
+          <input type="time" id="epHora" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none">
+        </div>
+      </div>
+      <button class="btn" id="epSalvar" onclick="salvarEditarPonto()" style="background:var(--navy);color:#fff;font-weight:700;justify-content:center">Salvar</button>
     </div>
   </div>
 </div>
