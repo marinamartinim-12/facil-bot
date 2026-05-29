@@ -34,7 +34,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, AtividadePing, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
@@ -497,6 +497,8 @@ async def heartbeat(request: Request, response: Response, db: Session = Depends(
     sessao.ultimo_ativo_em = datetime.utcnow()
     if realmente_ativo:
         sessao.tempo_ativo_s = (sessao.tempo_ativo_s or 0) + 60
+        # Registra ping com horário para cruzar com a jornada de ponto (admin only)
+        db.add(AtividadePing(usuario_id=usuario.id, timestamp=datetime.utcnow()))
     db.commit()
     return {"status": "ok"}
 
@@ -2686,6 +2688,178 @@ def _duracao_str(segundos: int) -> str:
         return f"{m}min"
     h, rm = divmod(m, 60)
     return f"{h}h {rm}min" if rm else f"{h}h"
+
+
+# ─── Ponto: marcação e relatório ─────────────────────────────────────────────────
+
+_PONTO_LABELS = {
+    "entrada":      "Início da jornada",
+    "saida_almoco": "Saída p/ almoço",
+    "volta_almoco": "Volta do almoço",
+    "saida":        "Fim da jornada",
+}
+
+
+def _intervalo_dia_utc(data_br):
+    """Retorna (inicio_utc, fim_utc) naive para uma data no fuso BR (BR 00:00 = UTC 03:00)."""
+    inicio = datetime(data_br.year, data_br.month, data_br.day) + timedelta(hours=3)
+    return inicio, inicio + timedelta(days=1)
+
+
+def _pontos_do_dia(db, usuario_id, data_br):
+    ini, fim = _intervalo_dia_utc(data_br)
+    return (db.query(RegistroPonto)
+            .filter(RegistroPonto.usuario_id == usuario_id,
+                    RegistroPonto.timestamp >= ini,
+                    RegistroPonto.timestamp < fim)
+            .order_by(RegistroPonto.timestamp).all())
+
+
+def _proximas_acoes_ponto(pontos):
+    ultimo = pontos[-1].tipo if pontos else None
+    return {
+        None:           ["entrada"],
+        "entrada":      ["saida_almoco", "saida"],
+        "saida_almoco": ["volta_almoco"],
+        "volta_almoco": ["saida"],
+        "saida":        ["entrada"],
+    }.get(ultimo, ["entrada"])
+
+
+def _jornadas_de_pontos(pontos, agora_utc):
+    """Pareia pontos em intervalos de trabalho [(inicio, fim, aberto), ...].
+    START = entrada|volta_almoco ; STOP = saida_almoco|saida."""
+    STARTS = {"entrada", "volta_almoco"}
+    STOPS  = {"saida_almoco", "saida"}
+    intervalos = []
+    abertura = None
+    for p in pontos:
+        if p.tipo in STARTS:
+            if abertura is None:
+                abertura = p.timestamp
+        elif p.tipo in STOPS:
+            if abertura is not None:
+                intervalos.append((abertura, p.timestamp, False))
+                abertura = None
+    if abertura is not None:
+        intervalos.append((abertura, agora_utc, True))
+    return intervalos
+
+
+def _tempo_ativo_intervalos(db, usuario_id, intervalos):
+    """Conta pings de atividade dentro dos intervalos. Cada ping = 60s."""
+    total = 0
+    for ini, fim, _ in intervalos:
+        n = (db.query(AtividadePing)
+             .filter(AtividadePing.usuario_id == usuario_id,
+                     AtividadePing.timestamp >= ini,
+                     AtividadePing.timestamp < fim).count())
+        total += n * 60
+    return total
+
+
+@app.post("/api/ponto")
+async def bater_ponto(request: Request, db: Session = Depends(get_db),
+                      usuario: Usuario = Depends(obter_usuario_atual)):
+    body = await request.json()
+    tipo = (body.get("tipo") or "").strip()
+    if tipo not in _PONTO_LABELS:
+        raise HTTPException(400, "Tipo de ponto inválido")
+    hoje = _agora_br().date()
+    pontos = _pontos_do_dia(db, usuario.id, hoje)
+    validos = _proximas_acoes_ponto(pontos)
+    if tipo not in validos:
+        raise HTTPException(400, "Ação não permitida agora.")
+    reg = RegistroPonto(usuario_id=usuario.id, tipo=tipo, ip=_ip_da_requisicao(request))
+    db.add(reg)
+    db.commit()
+    db.refresh(reg)
+    return {"status": "ok", "tipo": tipo, "label": _PONTO_LABELS[tipo],
+            "hora": _fmt_br(reg.timestamp, "%H:%M")}
+
+
+@app.get("/api/ponto/hoje")
+async def ponto_hoje(db: Session = Depends(get_db),
+                     usuario: Usuario = Depends(obter_usuario_atual)):
+    """Espelho do ponto do dia + próximas ações para a própria usuária."""
+    hoje = _agora_br().date()
+    pontos = _pontos_do_dia(db, usuario.id, hoje)
+    return {
+        "data": hoje.strftime("%d/%m/%Y"),
+        "registros": [
+            {"tipo": p.tipo, "label": _PONTO_LABELS[p.tipo], "hora": _fmt_br(p.timestamp, "%H:%M")}
+            for p in pontos
+        ],
+        "proximas_acoes": [
+            {"tipo": t, "label": _PONTO_LABELS[t]} for t in _proximas_acoes_ponto(pontos)
+        ],
+    }
+
+
+@app.get("/api/ponto/espelho")
+async def ponto_espelho(dias: int = 30, db: Session = Depends(get_db),
+                        usuario: Usuario = Depends(obter_usuario_atual)):
+    """Histórico do espelho de ponto da própria usuária (últimos N dias com registro)."""
+    hoje = _agora_br().date()
+    agora_utc = datetime.utcnow()
+    resultado = []
+    for i in range(max(1, min(dias, 90))):
+        dia = hoje - timedelta(days=i)
+        pontos = _pontos_do_dia(db, usuario.id, dia)
+        if not pontos:
+            continue
+        intervalos = _jornadas_de_pontos(pontos, agora_utc)
+        total_jornada = sum(int((f - ini).total_seconds()) for ini, f, _ in intervalos)
+        resultado.append({
+            "data": dia.strftime("%d/%m/%Y"),
+            "registros": [
+                {"tipo": p.tipo, "label": _PONTO_LABELS[p.tipo], "hora": _fmt_br(p.timestamp, "%H:%M")}
+                for p in pontos
+            ],
+            "total_jornada": _duracao_str(total_jornada),
+        })
+    return resultado
+
+
+@app.get("/api/ponto/relatorio")
+async def ponto_relatorio(data: str = None, db: Session = Depends(get_db),
+                          admin: Usuario = Depends(requer_admin)):
+    """Relatório admin: jornada registrada × tempo ativo × ociosidade por funcionária num dia."""
+    if data:
+        try:
+            d = datetime.strptime(data, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(400, "Data inválida (use YYYY-MM-DD)")
+    else:
+        d = _agora_br().date()
+    agora_utc = datetime.utcnow()
+    funcionarias = (db.query(Usuario)
+                    .filter(Usuario.role == RoleEnum.funcionario)
+                    .order_by(Usuario.nome).all())
+    resultado = []
+    for u in funcionarias:
+        pontos = _pontos_do_dia(db, u.id, d)
+        if not pontos:
+            continue
+        intervalos = _jornadas_de_pontos(pontos, agora_utc)
+        jornada_s = sum(int((f - ini).total_seconds()) for ini, f, _ in intervalos)
+        ativo_s = min(_tempo_ativo_intervalos(db, u.id, intervalos), jornada_s)
+        ocioso_s = max(0, jornada_s - ativo_s)
+        resultado.append({
+            "usuario": u.nome,
+            "registros": [
+                {"tipo": p.tipo, "label": _PONTO_LABELS[p.tipo], "hora": _fmt_br(p.timestamp, "%H:%M")}
+                for p in pontos
+            ],
+            "jornada": _duracao_str(jornada_s),
+            "jornada_s": jornada_s,
+            "ativo": _duracao_str(ativo_s),
+            "ativo_s": ativo_s,
+            "ocioso": _duracao_str(ocioso_s),
+            "perc_ativo": round(ativo_s / jornada_s * 100) if jornada_s else 0,
+            "em_andamento": any(a for _, _, a in intervalos),
+        })
+    return {"data": d.strftime("%d/%m/%Y"), "funcionarias": resultado}
 
 
 @app.get("/api/relatorios")

@@ -263,6 +263,29 @@ class AusenciaFuncionaria(Base):
     usuario = relationship("Usuario")
 
 
+class RegistroPonto(Base):
+    """Marcação de ponto da funcionária (entrada, almoço, volta, saída)."""
+    __tablename__ = "registros_ponto"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    usuario_id  = Column(Integer, ForeignKey("usuarios.id"), nullable=False, index=True)
+    tipo        = Column(String(20), nullable=False)   # entrada | saida_almoco | volta_almoco | saida
+    timestamp   = Column(DateTime, default=datetime.utcnow, index=True)
+    ip          = Column(String(50), nullable=True)
+
+    usuario = relationship("Usuario")
+
+
+class AtividadePing(Base):
+    """Registro com horário de cada minuto realmente ativo no painel (admin only).
+    Permite calcular o tempo ativo dentro de cada janela de ponto."""
+    __tablename__ = "atividade_pings"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False, index=True)
+    timestamp  = Column(DateTime, default=datetime.utcnow, index=True)
+
+
 def criar_tabelas():
     Base.metadata.create_all(bind=engine)
 
