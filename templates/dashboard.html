@@ -750,12 +750,16 @@
             </div>
           </div>
         </div>
-        <!-- Busca funil -->
-        <div style="margin-bottom:.45rem">
+        <!-- Busca + filtro funil -->
+        <div style="margin-bottom:.45rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
           <input id="funilBusca" type="search" placeholder="🔍 Buscar no funil (nome ou telefone)…"
             oninput="renderKanban()"
-            style="width:100%;max-width:380px;padding:.45rem .85rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;outline:none;background:#fff;transition:border .15s;"
+            style="flex:1;min-width:220px;max-width:380px;padding:.45rem .85rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;outline:none;background:#fff;transition:border .15s;"
             onfocus="this.style.borderColor='var(--navy)'" onblur="this.style.borderColor='var(--border)'">
+          <select id="funilAtendente" onchange="renderKanban()"
+            style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;outline:none;background:#fff;cursor:pointer">
+            <option value="">👤 Todos os atendentes</option>
+          </select>
         </div>
         <!-- Kanban -->
         <div id="funiKanbanWrapper">
@@ -1436,12 +1440,41 @@
 
   let dragLeadId = null;
 
+  function _popularFiltroAtendente() {
+    const sel = document.getElementById('funilAtendente');
+    if (!sel) return;
+    const atual = sel.value;
+    // Coleta atendentes únicos presentes nos leads (visíveis no funil)
+    const mapa = new Map();
+    let temSem = false;
+    allLeads.forEach(l => {
+      if (l.oculto_funil) return;
+      if (l.responsavel?.id != null) mapa.set(l.responsavel.id, l.responsavel.nome);
+      else temSem = true;
+    });
+    const ordenados = [...mapa.entries()].sort((a, b) => (a[1] || '').localeCompare(b[1] || ''));
+    let html = '<option value="">👤 Todos os atendentes</option>';
+    html += ordenados.map(([id, nome]) => `<option value="${id}">${esc(nome || 'Atendente ' + id)}</option>`).join('');
+    if (temSem) html += '<option value="__sem__">— Sem atendente —</option>';
+    sel.innerHTML = html;
+    // Preserva seleção se ainda existir
+    if (atual && (atual === '__sem__' || mapa.has(Number(atual)))) sel.value = atual;
+  }
+
   function renderKanban() {
     const board = document.getElementById('kanbanBoard');
     const termo = (document.getElementById('funilBusca')?.value || '').toLowerCase().trim();
+    _popularFiltroAtendente();
+    const atendente = document.getElementById('funilAtendente')?.value || '';
     board.innerHTML = colunas.map(col => {
       const cards = allLeads.filter(l => {
         if (l.status !== col.key || l.oculto_funil) return false;
+        // Filtro por atendente
+        if (atendente === '__sem__') {
+          if (l.responsavel?.id != null) return false;
+        } else if (atendente) {
+          if (String(l.responsavel?.id) !== atendente) return false;
+        }
         if (!termo) return true;
         const nome = (l.nome && l.nome !== '—' ? l.nome : '').toLowerCase();
         const tel  = (l.telefone || '').toLowerCase();
