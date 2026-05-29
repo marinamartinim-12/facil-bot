@@ -298,6 +298,7 @@ class Agendamento(Base):
     quando      = Column(DateTime, nullable=False, index=True)  # data/hora (UTC naive)
     concluido   = Column(Boolean, default=False, index=True)
     concluido_em = Column(DateTime, nullable=True)
+    resultado   = Column(Text, nullable=True)                # o que foi feito/aconteceu ao concluir
     criado_em   = Column(DateTime, default=datetime.utcnow)
 
     lead   = relationship("Lead")

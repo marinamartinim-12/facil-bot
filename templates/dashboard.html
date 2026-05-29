@@ -1872,10 +1872,11 @@
                 🕐 ${esc(a.quando)} ${a.vencido && !a.concluido ? '<span style="color:#dc2626;font-weight:700">• atrasado</span>' : ''}
               </div>
               ${a.descricao ? `<div style="font-size:.76rem;color:#475569;margin-top:.2rem">${esc(a.descricao)}</div>` : ''}
+              ${a.concluido && a.resultado ? `<div style="font-size:.76rem;color:#166534;background:#f0fdf4;border-radius:6px;padding:.3rem .45rem;margin-top:.3rem">📝 ${esc(a.resultado)}</div>` : ''}
               <div style="font-size:.68rem;color:#94a3b8;margin-top:.2rem">por ${esc(a.criado_por_nome)}</div>
             </div>
             <div style="display:flex;flex-direction:column;gap:.25rem">
-              <button onclick="concluirAgendamento(${a.id},${!a.concluido})" title="${a.concluido?'Reabrir':'Concluir'}"
+              <button onclick="${a.concluido ? `concluirAgendamento(${a.id},false)` : `abrirConcluirAg(${a.id},'lead','${esc(a.titulo)}')`}" title="${a.concluido?'Reabrir':'Concluir'}"
                 class="btn btn-sm btn-outline" style="padding:.15rem .4rem;font-size:.72rem">${a.concluido?'↩':'✓'}</button>
               <button onclick="removerAgendamento(${a.id})" title="Remover"
                 class="btn btn-sm" style="padding:.15rem .4rem;font-size:.72rem;background:#fee2e2;color:#991b1b">✕</button>
@@ -1939,8 +1940,9 @@
           <div style="font-size:.88rem;font-weight:700;color:#1e293b">${esc(a.titulo)}</div>
           <div style="font-size:.76rem;color:#64748b;margin-top:.15rem">🕐 ${esc(a.quando)} · 👤 ${esc(a.lead_nome)}</div>
           ${a.descricao ? `<div style="font-size:.77rem;color:#475569;margin-top:.2rem">${esc(a.descricao)}</div>` : ''}
+          ${a.concluido && a.resultado ? `<div style="font-size:.76rem;color:#166534;background:#f0fdf4;border-radius:6px;padding:.3rem .45rem;margin-top:.3rem">📝 ${esc(a.resultado)}</div>` : ''}
         </div>
-        <button onclick="concluirAgendamentoAgenda(${a.id})" class="btn btn-sm btn-outline" style="padding:.2rem .5rem;font-size:.74rem;white-space:nowrap">✓ Concluir</button>
+        ${a.concluido ? '' : `<button onclick="abrirConcluirAg(${a.id},'agenda','${esc(a.titulo)}')" class="btn btn-sm btn-outline" style="padding:.2rem .5rem;font-size:.74rem;white-space:nowrap">✓ Concluir</button>`}
       </div>`;
   }
 
@@ -1972,13 +1974,62 @@
   }
 
   async function concluirAgendamentoAgenda(id) {
+    abrirConcluirAg(id, 'agenda');
+  }
+
+  // ─── Concluir com registro do que foi feito ───────────────────────────────
+  let _concluirAgId = null;
+  let _concluirAgOrigem = 'lead';
+
+  function abrirConcluirAg(id, origem, titulo) {
+    _concluirAgId = id;
+    _concluirAgOrigem = origem || 'lead';
+    document.getElementById('concluirAgTexto').value = '';
+    document.getElementById('concluirAgTitulo').textContent = titulo || '';
+    document.getElementById('modalConcluirAg').classList.add('open');
+    setTimeout(() => document.getElementById('concluirAgTexto').focus(), 50);
+  }
+
+  function fecharConcluirAg() {
+    document.getElementById('modalConcluirAg').classList.remove('open');
+    _concluirAgId = null;
+  }
+
+  async function confirmarConcluirAg() {
+    if (_concluirAgId == null) return;
+    const id = _concluirAgId;
+    const resultado = document.getElementById('concluirAgTexto').value.trim();
+    const btn = document.getElementById('btnConfirmarConcluirAg');
+    btn.disabled = true;
     try {
       await fetch(`/api/agendamentos/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ concluido: true }),
+        body: JSON.stringify({ concluido: true, resultado }),
       });
-      carregarAgenda();
+      fecharConcluirAg();
+      if (_concluirAgOrigem === 'agenda') carregarAgenda();
+      if (modalLeadId) {
+        carregarAgendamentos(modalLeadId);
+        // Atualiza observações do lead se o relato foi registrado
+        if (resultado) recarregarObsLead(modalLeadId);
+      }
       _checarAlertasAgendamento();
+    } catch {} finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function recarregarObsLead(leadId) {
+    try {
+      const r = await fetch(`/api/leads/${leadId}/conversa`);
+      if (!r.ok) return;
+      const conv = await r.json();
+      const lead = conv.lead || (allLeads.find(l => l.id === leadId));
+      if (lead && lead.observacoes) {
+        renderObs(lead.observacoes);
+        const l = allLeads.find(x => x.id === leadId);
+        if (l) l.observacoes = lead.observacoes;
+      }
     } catch {}
   }
 
@@ -5556,6 +5607,30 @@
       </div>
       <button class="btn btn-sm btn-outline" onclick="togglePontoHistorico()" id="btnPontoHist" style="width:100%">📋 Ver histórico</button>
       <div id="pontoHistorico" style="display:none;flex-direction:column;gap:.5rem"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: Concluir agendamento (registrar o que foi feito) ── -->
+<div class="overlay" id="modalConcluirAg" onclick="if(event.target===this)fecharConcluirAg()">
+  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:440px;display:flex;flex-direction:column;overflow:hidden">
+    <div class="modal-hd">
+      <span style="font-size:1.15rem">✅</span>
+      <h3>Concluir agendamento</h3>
+      <button class="modal-close" onclick="fecharConcluirAg()">×</button>
+    </div>
+    <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:.8rem">
+      <div id="concluirAgTitulo" style="font-size:.9rem;font-weight:700;color:#0d2b4e"></div>
+      <div>
+        <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">O que foi feito / o que aconteceu?</label>
+        <textarea id="concluirAgTexto" rows="4" placeholder="Ex: Liguei, cliente pediu pra retornar amanhã. Enviei a proposta por WhatsApp."
+          style="width:100%;border:1px solid var(--border);border-radius:8px;padding:.6rem;font-size:.88rem;outline:none;resize:vertical"></textarea>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:.25rem">Isso vira uma observação no lead. (opcional)</div>
+      </div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-sm btn-outline" onclick="fecharConcluirAg()">Cancelar</button>
+        <button class="btn btn-sm" id="btnConfirmarConcluirAg" onclick="confirmarConcluirAg()" style="background:#16a34a;color:#fff;font-weight:700">✓ Concluir</button>
+      </div>
     </div>
   </div>
 </div>

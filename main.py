@@ -343,6 +343,7 @@ async def startup():
         ("leads",           "email",              "VARCHAR(150)"),
         ("parceiros",       "nome_agenda",        "VARCHAR(200)"),
         ("parceiros",       "operadora_id",       "INTEGER"),
+        ("agendamentos",    "resultado",          "TEXT"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -2758,6 +2759,7 @@ def _serial_agendamento(a: Agendamento, lead: Lead | None = None) -> dict:
         "quando": _fmt_br(a.quando, "%d/%m/%Y %H:%M"),
         "quando_iso": _fmt_br(a.quando, "%Y-%m-%dT%H:%M"),
         "concluido": bool(a.concluido),
+        "resultado": a.resultado or "",
         "criado_por": a.criado_por,
         "criado_por_nome": (a.criador.nome if a.criador else ""),
         "vencido": (not a.concluido) and a.quando <= datetime.utcnow(),
@@ -2827,9 +2829,26 @@ async def editar_agendamento(ag_id: int, request: Request, db: Session = Depends
             ag.quando = _dt_local_para_utc_naive(body["quando"])
         except ValueError:
             raise HTTPException(400, "Data/hora inválida")
+    if "resultado" in body:
+        ag.resultado = (body.get("resultado") or "").strip() or None
     if "concluido" in body:
-        ag.concluido = bool(body["concluido"])
-        ag.concluido_em = datetime.utcnow() if ag.concluido else None
+        concluir = bool(body["concluido"])
+        marcando_agora = concluir and not ag.concluido
+        ag.concluido = concluir
+        ag.concluido_em = datetime.utcnow() if concluir else None
+        # Ao concluir com um relato, registra automaticamente uma observação no lead
+        resultado_txt = (body.get("resultado") or "").strip()
+        if marcando_agora and resultado_txt:
+            lead = db.query(Lead).filter(Lead.id == ag.lead_id).first()
+            if lead:
+                lista = _parse_observacoes(lead.observacoes)
+                lista.append({
+                    "texto": f"✅ Follow-up concluído — {ag.titulo}: {resultado_txt}",
+                    "usuario": usuario.nome,
+                    "em": datetime.utcnow().strftime("%d/%m/%Y %H:%M"),
+                })
+                lead.observacoes = json.dumps(lista, ensure_ascii=False)
+                lead.atualizado_em = datetime.utcnow()
     db.commit()
     db.refresh(ag)
     return _serial_agendamento(ag)
