@@ -3333,24 +3333,27 @@ async def relatorio_ponto_xlsx(
 
     # ── Aba Resumo ───────────────────────────────────────────────────────────
     ws = wb.create_sheet(title="Resumo")
-    for i, larg in enumerate([24, 10, 14, 14, 14, 12], 1):
+    for i, larg in enumerate([24, 8, 13, 13, 13, 10, 15, 15], 1):
         ws.column_dimensions[get_column_letter(i)].width = larg
-    ws.merge_cells("A1:F1")
+    ws.merge_cells("A1:H1")
     t = ws.cell(row=1, column=1, value=f"Ponto × Tempo Ativo — {periodo_label}")
     t.font = Font(bold=True, color="FFFFFF", size=12); t.fill = cor_cab; t.alignment = centro
     ws.row_dimensions[1].height = 22
-    _set(ws, 2, ["Funcionária", "Dias", "Jornada", "Tempo Ativo", "Ocioso", "% Ativo"], fill=cor_cab, font=fonte_cab)
+    _set(ws, 2, ["Funcionária", "Dias", "Jornada", "Tempo Ativo", "Ocioso", "% Ativo",
+                 "Méd. Jornada/dia", "Méd. Ativo/dia"], fill=cor_cab, font=fonte_cab)
     linha = 3
     for u in funcionarias:
         if u.id not in totais:
             continue
         t = totais[u.id]
         perc = round(t["ativo_s"] / t["jornada_s"] * 100) if t["jornada_s"] else 0
+        dias = t["dias"] or 1
         _set(ws, linha, [t["nome"], t["dias"], _duracao_str(t["jornada_s"]),
-                         _duracao_str(t["ativo_s"]), _duracao_str(t["ocioso_s"]), f"{perc}%"])
+                         _duracao_str(t["ativo_s"]), _duracao_str(t["ocioso_s"]), f"{perc}%",
+                         _duracao_str(t["jornada_s"] // dias), _duracao_str(t["ativo_s"] // dias)])
         linha += 1
     if linha == 3:
-        ws.merge_cells(f"A3:F3")
+        ws.merge_cells(f"A3:H3")
         ws.cell(row=3, column=1, value="Nenhum ponto registrado no período.").alignment = centro
 
     # ── Aba Detalhado ──────────────────────────────────────────────────────────
