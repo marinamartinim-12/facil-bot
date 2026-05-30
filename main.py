@@ -3264,6 +3264,95 @@ async def relatorio_sessoes(
     return _sessoes_funcionarias(db)
 
 
+@app.get("/api/relatorio/ip-compartilhado")
+async def relatorio_ip_compartilhado(
+    dias: int = 30,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Detecta IPs usados por mais de uma funcionária (possível acesso por terceiro).
+    Sinaliza em vermelho quando houve acesso CONCOMITANTE (sobreposição no tempo)."""
+    from collections import defaultdict
+    desde = datetime.utcnow() - timedelta(days=max(1, min(dias, 180)))
+    sessoes = (
+        db.query(SessaoUsuario)
+        .join(Usuario, Usuario.id == SessaoUsuario.usuario_id)
+        .filter(Usuario.role == RoleEnum.funcionario)
+        .filter(SessaoUsuario.login_em >= desde)
+        .order_by(SessaoUsuario.login_em)
+        .all()
+    )
+    por_ip = defaultdict(list)
+    for s in sessoes:
+        if s.ip and s.ip != "—":
+            por_ip[s.ip].append(s)
+
+    agora = datetime.utcnow()
+    resultado = []
+    for ip, lst in por_ip.items():
+        # Resumo por usuária
+        usuarios = {}
+        for s in lst:
+            nome = s.usuario.nome if s.usuario else "—"
+            u = usuarios.setdefault(s.usuario_id, {
+                "nome": nome, "sessoes": 0, "ultima": None, "localizacao": None,
+            })
+            u["sessoes"] += 1
+            fim = s.ultimo_ativo_em or s.login_em
+            if fim and (u["ultima"] is None or fim > u["ultima"]):
+                u["ultima"] = fim
+            if s.localizacao and s.localizacao != "—":
+                u["localizacao"] = s.localizacao
+        if len(usuarios) < 2:
+            continue  # IP usado por uma só pessoa — normal
+
+        # Detecta sobreposições no tempo entre usuárias diferentes
+        intervalos = [
+            (s.usuario_id, (s.usuario.nome if s.usuario else "—"),
+             s.login_em, (s.logout_em or s.ultimo_ativo_em or s.login_em))
+            for s in lst
+        ]
+        overlaps = []
+        for i in range(len(intervalos)):
+            for j in range(i + 1, len(intervalos)):
+                a, b = intervalos[i], intervalos[j]
+                if a[0] == b[0]:
+                    continue
+                if a[2] and b[2] and a[2] <= b[3] and b[2] <= a[3]:
+                    ini = max(a[2], b[2])
+                    fim = min(a[3], b[3])
+                    overlaps.append({
+                        "u1": a[1], "u2": b[1],
+                        "inicio": _fmt_br(ini, "%d/%m/%Y %H:%M"),
+                        "fim": _fmt_br(fim, "%H:%M"),
+                        "_ts": ini,
+                    })
+        overlaps.sort(key=lambda o: o["_ts"], reverse=True)
+        for o in overlaps:
+            o.pop("_ts", None)
+
+        usuarios_lst = sorted(usuarios.values(), key=lambda u: u["ultima"] or datetime.min, reverse=True)
+        resultado.append({
+            "ip": ip,
+            "qtd_usuarias": len(usuarios),
+            "concomitante": bool(overlaps),
+            "usuarias": [{
+                "nome": u["nome"],
+                "sessoes": u["sessoes"],
+                "ultima": _fmt_br(u["ultima"]) if u["ultima"] else "—",
+                "localizacao": u["localizacao"] or "—",
+            } for u in usuarios_lst],
+            "sobreposicoes": overlaps[:5],
+            "_recencia": max((u["ultima"] for u in usuarios.values() if u["ultima"]), default=datetime.min),
+        })
+
+    # Ordena: concomitantes primeiro, depois mais recentes
+    resultado.sort(key=lambda r: (r["concomitante"], r["_recencia"]), reverse=True)
+    for r in resultado:
+        r.pop("_recencia", None)
+    return {"dias": dias, "itens": resultado}
+
+
 @app.delete("/api/relatorio/sessoes")
 async def zerar_sessoes(
     db: Session = Depends(get_db),

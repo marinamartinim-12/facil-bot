@@ -1055,6 +1055,18 @@
           </div>
         </div>
 
+        <!-- ── IP COMPARTILHADO (possível acesso por terceiro) ── -->
+        <div class="rel-card" id="relIpCard">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem;flex-wrap:wrap;gap:.5rem">
+            <h3 style="margin:0">🕵️ Acessos do mesmo IP</h3>
+            <button onclick="carregarIpCompartilhado()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
+          </div>
+          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .75rem">Mais de uma funcionária acessando do mesmo IP — possível acesso por outra pessoa. 🔴 = ao mesmo tempo.</p>
+          <div id="relIpBody" style="display:flex;flex-direction:column;gap:.6rem">
+            <div style="text-align:center;padding:1.2rem;color:var(--muted)">Carregando…</div>
+          </div>
+        </div>
+
         <!-- ── PONTO × TEMPO ATIVO (admin) ── -->
         <div class="rel-card" id="relPontoCard">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
@@ -2977,6 +2989,47 @@
     await carregarRelatorioContratosMes();
     await carregarRelatorioPerfil();
     await carregarRelatorioPonto();
+    await carregarIpCompartilhado();
+  }
+
+  async function carregarIpCompartilhado() {
+    const card = document.getElementById('relIpCard');
+    if (!card) return;
+    if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
+    const body = document.getElementById('relIpBody');
+    try {
+      const r = await fetch('/api/relatorio/ip-compartilhado?dias=30');
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      if (!d.itens || !d.itens.length) {
+        body.innerHTML = '<div style="text-align:center;padding:1.2rem;color:#16a34a;font-weight:600">✅ Nenhum IP compartilhado entre funcionárias nos últimos 30 dias.</div>';
+        return;
+      }
+      body.innerHTML = d.itens.map(it => {
+        const cor = it.concomitante ? '#dc2626' : '#d97706';
+        const bg  = it.concomitante ? '#fef2f2' : '#fffbeb';
+        const usuarias = it.usuarias.map(u =>
+          `<div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;font-size:.8rem;padding:.2rem 0">
+            <span style="font-weight:700;color:#1e293b">👤 ${esc(u.nome)}</span>
+            <span style="color:#64748b">${u.sessoes} sess. · ${esc(u.localizacao)} · últ: ${esc(u.ultima)}</span>
+          </div>`).join('');
+        const overlaps = (it.sobreposicoes || []).map(o =>
+          `<div style="font-size:.76rem;color:#991b1b;background:#fff;border:1px solid #fecaca;border-radius:6px;padding:.3rem .5rem;margin-top:.3rem">
+            ⏱️ ${esc(o.u1)} e ${esc(o.u2)} ao mesmo tempo — ${esc(o.inicio)} às ${esc(o.fim)}
+          </div>`).join('');
+        return `
+        <div style="border:1px solid #e2e8f0;border-left:4px solid ${cor};border-radius:10px;background:${bg};padding:.65rem .85rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-bottom:.3rem">
+            <div style="font-weight:800;color:${cor}">${it.concomitante ? '🔴 Mesmo IP, ao mesmo tempo' : '🟡 Mesmo IP'}</div>
+            <code style="font-size:.74rem;background:#0f172a;color:#e2e8f0;padding:.1rem .4rem;border-radius:5px">${esc(it.ip)}</code>
+          </div>
+          <div style="border-top:1px dashed #e2e8f0;padding-top:.3rem">${usuarias}</div>
+          ${overlaps}
+        </div>`;
+      }).join('');
+    } catch {
+      body.innerHTML = '<div style="text-align:center;padding:1.2rem;color:#991b1b">Erro ao carregar.</div>';
+    }
   }
 
   async function carregarRelatorioPonto() {
