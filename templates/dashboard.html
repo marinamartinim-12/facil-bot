@@ -1056,6 +1056,18 @@
           </div>
         </div>
 
+        <!-- ── TEMPO DE 1ª RESPOSTA ── -->
+        <div class="rel-card" id="relRespostaCard">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem;flex-wrap:wrap;gap:.5rem">
+            <h3 style="margin:0">⏱️ Tempo até a 1ª resposta</h3>
+            <button onclick="carregarTempoResposta()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
+          </div>
+          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .75rem">Quanto a equipe demora pra dar a 1ª resposta depois que a IA passou o lead — contando só horário comercial (Seg–Sex 9–18h, Sáb 9–13h). Últimos 30 dias.</p>
+          <div id="relRespostaBody">
+            <div style="text-align:center;padding:1.2rem;color:var(--muted)">Carregando…</div>
+          </div>
+        </div>
+
         <!-- ── IP COMPARTILHADO (possível acesso por terceiro) ── -->
         <div class="rel-card" id="relIpCard">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem;flex-wrap:wrap;gap:.5rem">
@@ -2991,7 +3003,58 @@
     await carregarRelatorioContratosMes();
     await carregarRelatorioPerfil();
     await carregarRelatorioPonto();
+    await carregarTempoResposta();
     await carregarIpCompartilhado();
+  }
+
+  async function carregarTempoResposta() {
+    const card = document.getElementById('relRespostaCard');
+    if (!card) return;
+    if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
+    const body = document.getElementById('relRespostaBody');
+    try {
+      const r = await fetch('/api/relatorio/tempo-resposta?dias=30');
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      const g = d.geral || {};
+      const cards = `
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.9rem">
+          <div style="flex:1;min-width:130px;text-align:center;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:.7rem">
+            <div style="font-size:.68rem;text-transform:uppercase;color:#1e40af;font-weight:700">Média geral</div>
+            <div style="font-size:1.3rem;font-weight:800;color:#1d4ed8">${esc(g.media || '—')}</div>
+          </div>
+          <div style="flex:1;min-width:130px;text-align:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:.7rem">
+            <div style="font-size:.68rem;text-transform:uppercase;color:#166534;font-weight:700">Mediana</div>
+            <div style="font-size:1.3rem;font-weight:800;color:#15803d">${esc(g.mediana || '—')}</div>
+          </div>
+          <div style="flex:1;min-width:130px;text-align:center;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:.7rem">
+            <div style="font-size:.68rem;text-transform:uppercase;color:#9a3412;font-weight:700">Aguardando 1ª resp.</div>
+            <div style="font-size:1.3rem;font-weight:800;color:#c2410c">${d.aguardando || 0}</div>
+          </div>
+        </div>`;
+      let tabela = '';
+      if (d.funcionarias && d.funcionarias.length) {
+        tabela = `
+          <div style="overflow-x:auto">
+            <table class="rel-table" style="min-width:340px">
+              <thead><tr><th>Atendente</th><th>Respostas</th><th>Tempo médio</th><th>Mediana</th></tr></thead>
+              <tbody>
+                ${d.funcionarias.map(f => `<tr>
+                  <td><strong>${esc(f.nome)}</strong></td>
+                  <td style="text-align:center">${f.qtd}</td>
+                  <td style="text-align:center;font-weight:700">${esc(f.media)}</td>
+                  <td style="text-align:center;color:var(--muted)">${esc(f.mediana)}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`;
+      } else {
+        tabela = '<p style="font-size:.82rem;color:var(--muted);text-align:center;padding:.8rem">Nenhuma resposta registrada no período.</p>';
+      }
+      body.innerHTML = cards + tabela;
+    } catch {
+      body.innerHTML = '<div style="text-align:center;padding:1.2rem;color:#991b1b">Erro ao carregar.</div>';
+    }
   }
 
   async function carregarIpCompartilhado() {

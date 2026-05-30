@@ -3265,6 +3265,101 @@ async def relatorio_sessoes(
     return _sessoes_funcionarias(db)
 
 
+# Horário comercial (BR): seg-sex 9–18h, sáb 9–13h, domingo fechado
+_COMERCIAL = {0: (9, 18), 1: (9, 18), 2: (9, 18), 3: (9, 18), 4: (9, 18), 5: (9, 13)}
+
+
+def _segundos_comerciais(ini_utc, fim_utc) -> int:
+    """Segundos decorridos entre dois instantes, contando SÓ o horário comercial (BR)."""
+    if not ini_utc or not fim_utc or fim_utc <= ini_utc:
+        return 0
+    ini = ini_utc.replace(tzinfo=timezone.utc).astimezone(_TZ_BR)
+    fim = fim_utc.replace(tzinfo=timezone.utc).astimezone(_TZ_BR)
+    total = 0.0
+    dia = ini.date()
+    while dia <= fim.date():
+        janela = _COMERCIAL.get(dia.weekday())
+        if janela:
+            h0, h1 = janela
+            d0 = datetime(dia.year, dia.month, dia.day, h0, 0, tzinfo=_TZ_BR)
+            d1 = datetime(dia.year, dia.month, dia.day, h1, 0, tzinfo=_TZ_BR)
+            s = max(ini, d0)
+            e = min(fim, d1)
+            if e > s:
+                total += (e - s).total_seconds()
+        dia += timedelta(days=1)
+    return int(total)
+
+
+@app.get("/api/relatorio/tempo-resposta")
+async def relatorio_tempo_resposta(
+    dias: int = 30,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Tempo até a 1ª resposta humana (após handoff da IA), contando só horário comercial.
+    Mensagens da equipe são salvas com prefixo '[Nome]:' — é assim que distinguimos da IA."""
+    from collections import defaultdict
+    desde = datetime.utcnow() - timedelta(days=max(1, min(dias, 180)))
+    msgs = (db.query(MensagemConversa)
+            .filter(MensagemConversa.criado_em >= desde)
+            .order_by(MensagemConversa.telefone, MensagemConversa.criado_em).all())
+    grupos = defaultdict(list)
+    for m in msgs:
+        grupos[m.telefone].append(m)
+
+    tempos = []          # (segundos, nome_funcionaria)
+    for tel, lst in grupos.items():
+        idx_h = next((i for i, m in enumerate(lst)
+                      if m.role == "assistant" and (m.conteudo or "").startswith("[")), None)
+        if idx_h is None:
+            continue
+        h = lst[idx_h]
+        cli = next((lst[j] for j in range(idx_h - 1, -1, -1) if lst[j].role == "user"), None)
+        if cli is None:
+            continue
+        seg = _segundos_comerciais(cli.criado_em, h.criado_em)
+        mobj = re.match(r"^\[([^\]]+)\]:", h.conteudo or "")
+        nome = mobj.group(1) if mobj else "—"
+        tempos.append((seg, nome))
+
+    # Leads qualificados que ainda não tiveram nenhuma 1ª resposta humana
+    aguardando = 0
+    quali = db.query(Lead).filter(Lead.status == StatusLeadEnum.qualificado).all()
+    for l in quali:
+        tem_humano = (db.query(MensagemConversa)
+                      .filter(MensagemConversa.telefone == l.telefone,
+                              MensagemConversa.role == "assistant",
+                              MensagemConversa.conteudo.like("[%"))
+                      .first())
+        if not tem_humano:
+            aguardando += 1
+
+    def _agg(lista_seg):
+        if not lista_seg:
+            return {"qtd": 0, "media_s": 0, "mediana_s": 0, "media": "—", "mediana": "—"}
+        ordenada = sorted(lista_seg)
+        n = len(ordenada)
+        media = sum(ordenada) // n
+        mediana = ordenada[n // 2] if n % 2 else (ordenada[n // 2 - 1] + ordenada[n // 2]) // 2
+        return {"qtd": n, "media_s": media, "mediana_s": mediana,
+                "media": _duracao_str(media), "mediana": _duracao_str(mediana)}
+
+    geral = _agg([s for s, _ in tempos])
+
+    por_func = defaultdict(list)
+    for s, nome in tempos:
+        por_func[nome].append(s)
+    funcionarias = []
+    for nome, segs in por_func.items():
+        a = _agg(segs)
+        funcionarias.append({"nome": nome, "qtd": a["qtd"], "media": a["media"],
+                             "media_s": a["media_s"], "mediana": a["mediana"]})
+    funcionarias.sort(key=lambda f: f["media_s"])
+
+    return {"dias": dias, "geral": geral, "funcionarias": funcionarias, "aguardando": aguardando}
+
+
 @app.get("/api/relatorio/ip-compartilhado")
 async def relatorio_ip_compartilhado(
     dias: int = 30,
