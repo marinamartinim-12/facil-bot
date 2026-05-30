@@ -282,6 +282,7 @@
     .badge-fechado { background: #ede9fe; color: #5b21b6; }
     .badge-perdido { background: #fee2e2; color: #991b1b; }
     .badge-desqualificado { background: #f3f4f6; color: #6b7280; }
+    .badge-parceiro { background: #e0f2fe; color: #075985; }
     .card-time { font-size: .7rem; color: var(--muted); }
     .card-actions { display: flex; gap: .3rem; margin-top: .5rem; flex-wrap: wrap; }
     .card-resp { font-size: .72rem; color: var(--muted); margin-top: .35rem; }
@@ -1487,6 +1488,7 @@
     { key:'proposta_aprovada',label:'Proposta Aprovada', icon:'✅', color:'#10b981' },
     { key:'fechado',          label:'Fechado',           icon:'🏁', color:'#8b5cf6' },
     { key:'perdido',         label:'Perdido',          icon:'❌', color:'#ef4444' },
+    { key:'parceiro',        label:'Parceiro',         icon:'🤝', color:'#0ea5e9' },
   ];
 
   let dragLeadId = null;
@@ -4693,7 +4695,7 @@
     return html;
   }
   function labMod(m) { return {financiamento:'Financiamento',refinanciamento:'Refinanciamento',indefinido:'Indefinido'}[m]||m; }
-  function labSt(s) { return {em_atendimento:'Atend. IA',qualificado:'Qualificado',assumido:'Assumido',proposta_enviada:'Proposta',proposta_aprovada:'Prop. Aprovada',fechado:'Fechado',perdido:'Perdido',desqualificado:'Fora escopo'}[s]||s; }
+  function labSt(s) { return {em_atendimento:'Atend. IA',qualificado:'Qualificado',assumido:'Assumido',proposta_enviada:'Proposta',proposta_aprovada:'Prop. Aprovada',fechado:'Fechado',perdido:'Perdido',desqualificado:'Fora escopo',parceiro:'Parceiro'}[s]||s; }
 
   // Paleta de cores distintas por atendente — sempre a mesma cor para o mesmo ID
   const _CORES_ATENDENTE = [

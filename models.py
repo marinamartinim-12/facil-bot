@@ -57,6 +57,7 @@ class StatusLeadEnum(str, enum.Enum):
     fechado = "fechado"
     perdido = "perdido"
     desqualificado = "desqualificado"
+    parceiro = "parceiro"
 
 
 class EstadoConversaEnum(str, enum.Enum):

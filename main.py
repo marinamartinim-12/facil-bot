@@ -1472,6 +1472,7 @@ async def mover_lead(
         StatusLeadEnum.proposta_aprovada,
         StatusLeadEnum.fechado,
         StatusLeadEnum.perdido,
+        StatusLeadEnum.parceiro,
     ]
     if novo_status not in [s.value for s in estagios_validos]:
         raise HTTPException(status_code=400, detail="Estágio inválido")
