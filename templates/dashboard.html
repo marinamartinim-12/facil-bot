@@ -736,6 +736,14 @@
               <div id="dashRanking"></div>
             </div>
           </div>
+          <!-- Resumo dos relatórios (admin) -->
+          <div class="form-card admin-only" id="dashRelatoriosCard" style="display:none;padding:.85rem 1rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.65rem">
+              <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted)">📊 Resumo dos relatórios</div>
+              <button onclick="showView('relatorios')" class="btn btn-sm btn-outline" style="padding:.25rem .7rem;font-size:.72rem">Ver relatórios →</button>
+            </div>
+            <div id="dashRelatorios" style="display:flex;flex-wrap:wrap;gap:.6rem"></div>
+          </div>
         </div>
       </div>
 
@@ -3805,6 +3813,58 @@
       renderDashboard();
       renderFunilStats();
     } catch {}
+    if (currentUser?.role === 'admin') carregarDashRelatorios();
+  }
+
+  function _dashTile(icone, valor, label, cor, view) {
+    return `
+      <div onclick="showView('${view}')" title="Abrir relatório"
+        style="flex:1;min-width:130px;cursor:pointer;background:#fff;border:1px solid var(--border);border-left:4px solid ${cor};border-radius:10px;padding:.6rem .75rem;transition:box-shadow .15s"
+        onmouseover="this.style.boxShadow='0 3px 12px rgba(0,0,0,.1)'" onmouseout="this.style.boxShadow='none'">
+        <div style="font-size:.68rem;color:var(--muted);font-weight:700;text-transform:uppercase;display:flex;align-items:center;gap:.3rem">${icone} ${label}</div>
+        <div style="font-size:1.35rem;font-weight:800;color:${cor};margin-top:.15rem">${valor}</div>
+      </div>`;
+  }
+
+  async function carregarDashRelatorios() {
+    const card = document.getElementById('dashRelatoriosCard');
+    const el = document.getElementById('dashRelatorios');
+    if (!card || !el) return;
+    card.style.display = '';
+    el.innerHTML = '<span style="font-size:.8rem;color:var(--muted)">Carregando…</span>';
+    try {
+      const [resp, ip, ponto, sess] = await Promise.all([
+        fetch('/api/relatorio/tempo-resposta?dias=30').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/relatorio/ip-compartilhado?dias=30').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/ponto/relatorio').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/relatorio/sessoes').then(r => r.ok ? r.json() : null).catch(() => null),
+      ]);
+
+      let tiles = '';
+      // Tempo de 1ª resposta
+      if (resp) {
+        tiles += _dashTile('⏱️', esc(resp.geral?.media || '—'), 'Média 1ª resposta', '#1d4ed8', 'relatorios');
+        tiles += _dashTile('⏳', resp.aguardando || 0, 'Aguardando 1ª resp.', '#c2410c', 'relatorios');
+      }
+      // Online agora
+      if (Array.isArray(sess)) {
+        const online = sess.filter(s => s.ativa).length;
+        tiles += _dashTile('🟢', online, 'Online agora', '#16a34a', 'relatorios');
+      }
+      // Em jornada agora (ponto)
+      if (ponto && Array.isArray(ponto.funcionarias)) {
+        const emJornada = ponto.funcionarias.filter(f => f.em_andamento).length;
+        tiles += _dashTile('🕐', emJornada, 'Em jornada agora', '#0d2b4e', 'relatorios');
+      }
+      // Alertas de IP (concomitantes = vermelho)
+      if (ip && Array.isArray(ip.itens)) {
+        const alertas = ip.itens.filter(i => i.concomitante).length;
+        tiles += _dashTile('🕵️', alertas, 'Mesmo IP (alerta)', alertas ? '#dc2626' : '#94a3b8', 'relatorios');
+      }
+      el.innerHTML = tiles || '<span style="font-size:.8rem;color:var(--muted)">Sem dados ainda.</span>';
+    } catch {
+      el.innerHTML = '<span style="font-size:.8rem;color:#991b1b">Erro ao carregar resumo.</span>';
+    }
   }
 
   function renderDashboard() {
