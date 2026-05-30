@@ -791,6 +791,17 @@ async def _salvar_audio_cliente(telefone: str, audio_url: str, db) -> str | None
     return "[AUDIO_INDISPONIVEL]"
 
 
+def _ha_funcionaria_online(db) -> bool:
+    """True se alguma funcionária está com sessão ativa (ativa nos últimos 10 min).
+    Usado para NÃO mandar a mensagem de 'fora do horário' quando há alguém disponível."""
+    limite = datetime.utcnow() - timedelta(seconds=600)
+    return db.query(SessaoUsuario).join(Usuario, Usuario.id == SessaoUsuario.usuario_id).filter(
+        Usuario.role == RoleEnum.funcionario,
+        SessaoUsuario.logout_em.is_(None),
+        SessaoUsuario.ultimo_ativo_em >= limite,
+    ).first() is not None
+
+
 @app.post("/webhook/zapi")
 async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
     body = await request.json()
@@ -923,7 +934,7 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
                     lead.oculto_funil = False
                     db.commit()
                 prox = _proximo_horario_atendimento()
-                if prox:
+                if prox and not _ha_funcionaria_online(db):
                     primeiro_nome = parceiro.nome.split()[0]
                     aviso = (
                         f"Olá {primeiro_nome}! 😊 No momento estamos fora do horário de atendimento. "
@@ -993,7 +1004,8 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
                 db.commit()
             _salvar_msg_webhook(db, telefone, texto)
             prox = _proximo_horario_atendimento()
-            if prox:
+            # Só avisa "fora do horário" se NÃO houver nenhuma funcionária online
+            if prox and not _ha_funcionaria_online(db):
                 nome = f" {lead.nome}" if lead.nome else ""
                 aviso = (
                     f"Olá{nome}! 😊 No momento estamos fora do horário de atendimento. "
