@@ -836,6 +836,31 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
                     print(f"📝 EDIT salvo para {telefone} ({role})")
             return JSONResponse({"status": "edit_saved"})
 
+        # ── Ligação recebida pelo WhatsApp (Z-API: notification CALL_*) ───────
+        notif = (body.get("notification") or "").upper()
+        if notif.startswith("CALL"):
+            perdida = "MISSED" in notif
+            video = "VIDEO" in notif
+            icone = "📹" if video else "📞"
+            tipo_txt = ("Chamada de vídeo" if video else "Ligação")
+            estado = "perdida" if perdida else "recebida"
+            conteudo = f"{icone} {tipo_txt} {estado} pelo WhatsApp"
+            # Garante um lead para não perder o registro (cliente que ligou)
+            lead = db.query(Lead).filter(Lead.telefone == telefone).first()
+            if not lead:
+                nome_caller = (body.get("senderName") or body.get("chatName") or "").strip() or None
+                lead = Lead(telefone=telefone, nome=nome_caller)
+                db.add(lead)
+                db.commit()
+                db.refresh(lead)
+            _salvar_msg_webhook(db, telefone, conteudo, role="user")
+            lead.atualizado_em = datetime.utcnow()
+            if lead.oculto_funil:
+                lead.oculto_funil = False
+            db.commit()
+            print(f"{icone} {tipo_txt} {estado} de {telefone}")
+            return JSONResponse({"status": "chamada_registrada"})
+
         # ── Mensagem enviada do próprio aparelho pelo atendente ──────────────
         if body.get("fromMe"):
             texto = _extrair_texto_zapi(body)
@@ -2918,6 +2943,35 @@ async def alertas_agendamentos(db: Session = Depends(get_db),
          .filter((Agendamento.criado_por == usuario.id) | (Lead.atribuido_para == usuario.id))
          .order_by(Agendamento.quando))
     return [_serial_agendamento(a, lead) for a, lead in q.all()]
+
+
+@app.get("/api/chamadas/alertas")
+async def alertas_chamadas(minutos: int = 5, db: Session = Depends(get_db),
+                           usuario: Usuario = Depends(obter_usuario_atual)):
+    """Ligações recebidas pelo WhatsApp nos últimos N minutos — para o alerta no painel."""
+    desde = datetime.utcnow() - timedelta(minutes=max(1, min(minutos, 60)))
+    msgs = (db.query(MensagemConversa)
+            .filter(MensagemConversa.criado_em >= desde,
+                    MensagemConversa.role == "user")
+            .filter((MensagemConversa.conteudo.like("📞%")) | (MensagemConversa.conteudo.like("📹%")))
+            .order_by(MensagemConversa.criado_em.desc()).all())
+    if not msgs:
+        return []
+    tels = {m.telefone for m in msgs}
+    leads = {l.telefone: l for l in db.query(Lead).filter(Lead.telefone.in_(tels)).all()}
+    out = []
+    for m in msgs:
+        lead = leads.get(m.telefone)
+        out.append({
+            "id": m.id,
+            "lead_id": lead.id if lead else None,
+            "nome": (lead.nome if lead and lead.nome else m.telefone),
+            "telefone": m.telefone,
+            "perdida": "perdida" in (m.conteudo or ""),
+            "texto": m.conteudo,
+            "hora": _fmt_br(m.criado_em, "%H:%M"),
+        })
+    return out
 
 
 # ─── Ponto: marcação e relatório ─────────────────────────────────────────────────

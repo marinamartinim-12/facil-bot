@@ -1319,6 +1319,8 @@
     iniciarPollingInbox();  // Atualiza lista de conversas a cada 5s
     _checarAlertasAgendamento();                 // alertas de agendamento (sino/pop-up)
     setInterval(_checarAlertasAgendamento, 60000); // a cada 1min
+    _checarChamadas();                            // alerta de ligação recebida pelo WhatsApp
+    setInterval(_checarChamadas, 20000);          // a cada 20s
   }
 
   document.getElementById('loginSenha').addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); });
@@ -2170,6 +2172,58 @@
     g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
     o.start(); o.stop(ctx.currentTime + 0.42);
     setTimeout(() => ctx.close(), 600);
+  }
+
+  // ─── Alerta de ligação recebida pelo WhatsApp ────────────────────────────
+  let _chamadasVistas = new Set();
+  let _primeiraChecagemChamadas = true;
+
+  async function _checarChamadas() {
+    try {
+      const r = await fetch('/api/chamadas/alertas?minutos=5');
+      if (!r.ok) return;
+      const lista = await r.json();
+      const novas = lista.filter(c => !_chamadasVistas.has(c.id));
+      if (_primeiraChecagemChamadas) {
+        lista.forEach(c => _chamadasVistas.add(c.id));
+        _primeiraChecagemChamadas = false;
+        return;
+      }
+      novas.forEach(c => _chamadasVistas.add(c.id));
+      if (novas.length) _mostrarPopupChamada(novas);
+    } catch {}
+  }
+
+  function _mostrarPopupChamada(itens) {
+    let cont = document.getElementById('chamadaPopupContainer');
+    if (!cont) {
+      cont = document.createElement('div');
+      cont.id = 'chamadaPopupContainer';
+      cont.style.cssText = 'position:fixed;bottom:18px;left:18px;z-index:9999;display:flex;flex-direction:column;gap:.5rem;max-width:340px';
+      document.body.appendChild(cont);
+    }
+    itens.forEach(c => {
+      const cor = c.perdida ? '#dc2626' : '#16a34a';
+      const titulo = c.perdida ? 'Ligação perdida' : 'Ligação recebida';
+      const card = document.createElement('div');
+      card.style.cssText = `background:#fff;border:1px solid ${cor}55;border-left:4px solid ${cor};border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:.7rem .85rem`;
+      const btnAbrir = c.lead_id
+        ? `<button class="btn btn-sm" style="padding:.15rem .5rem;font-size:.73rem;background:${cor};color:#fff" onclick="verLead(${c.lead_id});this.closest('div[style]').parentElement.remove()">Abrir conversa</button>`
+        : '';
+      card.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:.5rem">
+          <span style="font-size:1.2rem">📞</span>
+          <div style="flex:1">
+            <div style="font-size:.8rem;font-weight:800;color:${cor}">${titulo}</div>
+            <div style="font-size:.85rem;font-weight:700;color:#1e293b;margin-top:.15rem">${esc(c.nome)}</div>
+            <div style="font-size:.74rem;color:#64748b;margin-top:.1rem">🕐 ${esc(c.hora)} · ${esc(c.telefone)}</div>
+            <div style="display:flex;gap:.4rem;margin-top:.5rem">${btnAbrir}</div>
+          </div>
+          <button onclick="this.closest('div[style]').parentElement.remove()" style="background:none;border:none;font-size:1rem;cursor:pointer;color:#94a3b8;line-height:1">×</button>
+        </div>`;
+      cont.appendChild(card);
+      try { _tocarBipAgendamento(); } catch {}
+    });
   }
 
   // Fecha o dropdown do sino ao clicar fora
@@ -4772,6 +4826,13 @@
             <span style="font-size:.75rem;color:#94a3b8"><i>Arquivo não pôde ser baixado</i></span>
           </div>
         </div>`;
+        return buildBubble(conteudoHtml);
+      }
+      // Ligação recebida pelo WhatsApp (📞 / 📹)
+      if (/^(📞|📹)/.test(textoLimpo)) {
+        const perdida = /perdida/i.test(textoLimpo);
+        const cor = perdida ? '#dc2626' : '#16a34a';
+        conteudoHtml = `<span style="display:inline-flex;align-items:center;gap:6px;font-size:.83rem;font-weight:600;color:${cor}">📞 ${escHtml(textoLimpo.replace(/^(📞|📹)\s*/, ''))}</span>`;
         return buildBubble(conteudoHtml);
       }
       const audioMatch = textoLimpo.match(/^\[AUDIO:([a-f0-9]{32}\.(webm|ogg|mp3))\]$/);
