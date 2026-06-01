@@ -2968,6 +2968,50 @@ async def debug_webhooks(db: Session = Depends(get_db),
     return list(reversed(_DEBUG_WEBHOOKS))
 
 
+@app.get("/api/debug/painel", response_class=HTMLResponse)
+async def debug_painel(db: Session = Depends(get_db),
+                       admin: Usuario = Depends(requer_admin)):
+    """Tela amigável dos últimos eventos do Z-API — para diagnosticar ligações."""
+    calls = 0
+    linhas = ""
+    for w in reversed(_DEBUG_WEBHOOKS):
+        notif = str(w.get("notification") or "")
+        tipo = str(w.get("type") or "")
+        is_call = notif.upper().startswith("CALL") or "call" in tipo.lower()
+        if is_call:
+            calls += 1
+        cor = "#fee2e2" if is_call else "#ffffff"
+        rotulo = "📞 LIGAÇÃO" if is_call else (notif or tipo or "mensagem")
+        linhas += (f"<tr style='background:{cor}'>"
+                   f"<td>{w.get('em','')}</td>"
+                   f"<td>{w.get('phone') or '—'}</td>"
+                   f"<td><b>{rotulo}</b></td>"
+                   f"<td style='color:#64748b'>type={tipo or '—'} | notification={notif or '—'}</td>"
+                   f"</tr>")
+    if not linhas:
+        linhas = "<tr><td colspan='4' style='text-align:center;padding:1rem;color:#888'>Nenhum evento recebido ainda. Mande uma mensagem ou ligue e atualize.</td></tr>"
+    banner_cor = "#16a34a" if calls else "#64748b"
+    html = f"""<!doctype html><html lang="pt-br"><head><meta charset="utf-8">
+    <meta http-equiv="refresh" content="5">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Diagnóstico de Ligações</title></head>
+    <body style="font-family:system-ui,Segoe UI,Arial;margin:0;background:#f1f5f9;padding:1.2rem">
+      <h2 style="margin:.2rem 0;color:#0d2b4e">🔎 Diagnóstico de eventos do WhatsApp</h2>
+      <p style="color:#64748b;margin:.2rem 0 1rem">Esta tela atualiza sozinha a cada 5 segundos. Ligue para o número e observe se aparece uma linha vermelha <b>📞 LIGAÇÃO</b>.</p>
+      <div style="display:inline-block;background:{banner_cor};color:#fff;font-weight:800;padding:.5rem 1rem;border-radius:10px;margin-bottom:1rem">
+        Ligações detectadas: {calls}
+      </div>
+      <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;font-size:.9rem">
+        <thead><tr style="background:#0d2b4e;color:#fff;text-align:left">
+          <th style="padding:.5rem">Hora</th><th style="padding:.5rem">Telefone</th>
+          <th style="padding:.5rem">Evento</th><th style="padding:.5rem">Detalhe técnico</th>
+        </tr></thead>
+        <tbody>{linhas}</tbody>
+      </table>
+    </body></html>"""
+    return HTMLResponse(html)
+
+
 @app.get("/api/chamadas/alertas")
 async def alertas_chamadas(minutos: int = 5, db: Session = Depends(get_db),
                            usuario: Usuario = Depends(obter_usuario_atual)):
