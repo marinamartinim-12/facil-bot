@@ -791,6 +791,9 @@ async def _salvar_audio_cliente(telefone: str, audio_url: str, db) -> str | None
     return "[AUDIO_INDISPONIVEL]"
 
 
+_DEBUG_WEBHOOKS = []  # últimos webhooks recebidos (memória) — apenas para depuração
+
+
 def _ha_funcionaria_online(db) -> bool:
     """True se alguma funcionária está com sessão ativa (ativa nos últimos 10 min).
     Usado para NÃO mandar a mensagem de 'fora do horário' quando há alguém disponível."""
@@ -805,6 +808,19 @@ def _ha_funcionaria_online(db) -> bool:
 @app.post("/webhook/zapi")
 async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
     body = await request.json()
+    # Diagnóstico: guarda os últimos webhooks em memória (visível em /api/debug/webhooks)
+    try:
+        _DEBUG_WEBHOOKS.append({
+            "em": _fmt_br(datetime.utcnow(), "%d/%m %H:%M:%S"),
+            "type": body.get("type"),
+            "notification": body.get("notification"),
+            "phone": body.get("phone"),
+            "fromMe": body.get("fromMe"),
+            "body": body,
+        })
+        del _DEBUG_WEBHOOKS[:-20]
+    except Exception:
+        pass
     try:
         telefone = body.get("phone", "").replace("+", "").replace(" ", "")
         if not telefone:
@@ -2943,6 +2959,13 @@ async def alertas_agendamentos(db: Session = Depends(get_db),
          .filter((Agendamento.criado_por == usuario.id) | (Lead.atribuido_para == usuario.id))
          .order_by(Agendamento.quando))
     return [_serial_agendamento(a, lead) for a, lead in q.all()]
+
+
+@app.get("/api/debug/webhooks")
+async def debug_webhooks(db: Session = Depends(get_db),
+                        admin: Usuario = Depends(requer_admin)):
+    """Mostra os últimos webhooks recebidos do Z-API (para depurar ligações)."""
+    return list(reversed(_DEBUG_WEBHOOKS))
 
 
 @app.get("/api/chamadas/alertas")
