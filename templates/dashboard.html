@@ -2297,10 +2297,7 @@
               <span id="docBadge-${c.id}" style="font-size:.7rem;background:#dcfce7;color:#166534;padding:.1rem .45rem;border-radius:99px;font-weight:700;${c.docs?'':'display:none'}">📎 ${c.docs}</span>
             </div>
             <div style="font-size:.78rem;color:#64748b">
-              📞 ${esc(c.telefone)}${c.cpf?' · 🪪 '+esc(c.cpf):''}
-            </div>
-            <div style="font-size:.78rem;color:#64748b">
-              🚗 ${esc(c.deal_veiculo||'—')}${c.deal_placa?' · <b>'+esc(c.deal_placa)+'</b>':''}${c.deal_banco?' · 🏦 '+esc(c.deal_banco):''}
+              📞 ${esc(c.telefone)}${c.cpf?' · 🪪 '+esc(c.cpf):''} · 🚗 ${esc(c.deal_veiculo||'—')}${c.deal_placa?' · <b>'+esc(c.deal_placa)+'</b>':''}${c.deal_banco?' · 🏦 '+esc(c.deal_banco):''}
             </div>
           </div>
           <div style="font-size:.74rem;color:#64748b;text-align:right">
