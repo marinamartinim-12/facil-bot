@@ -4977,6 +4977,16 @@ def _parse_observacoes(raw: str | None) -> list:
         return [{"texto": raw, "usuario": "—", "em": "—"}]
 
 
+def _safe_json(raw, padrao):
+    """json.loads que nunca quebra — retorna o padrão se o conteúdo estiver inválido/vazio."""
+    if not raw:
+        return padrao
+    try:
+        return json.loads(raw)
+    except Exception:
+        return padrao
+
+
 def _serial_lead(l: Lead, db: Session) -> dict:
     responsavel = None
     if l.atribuido_para:
@@ -5013,7 +5023,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "deal_conta_pg":   l.deal_conta_pg or "",
         "deal_operadora":  l.deal_operadora or "",
         # Dados extras p/ requerimento
-        "dados_contrato": json.loads(l.dados_contrato) if l.dados_contrato else {},
+        "dados_contrato": _safe_json(l.dados_contrato, {}),
         # Perfil do cliente
         "cidade":   l.cidade   or "",
         "email":    l.email    or "",
@@ -5022,7 +5032,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "tem_cnh":  l.tem_cnh,   # None=não informado | True=sim | False=não
         "oculto_funil": bool(l.oculto_funil),
         "descadastrado": bool(l.descadastrado),
-        "carros_proposta": (json.loads(l.carros_proposta) if l.carros_proposta else []),
+        "carros_proposta": _safe_json(l.carros_proposta, []),
     }
 
 

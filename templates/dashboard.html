@@ -1864,10 +1864,11 @@
       carregarAgendamentos(leadId);
 
       // Chat
-      if (!conv.mensagens.length) {
+      const _msgs = (conv && Array.isArray(conv.mensagens)) ? conv.mensagens : [];
+      if (!_msgs.length) {
         document.getElementById('modalChat').innerHTML = '<div class="loading-msg">Nenhuma mensagem registrada.</div>';
       } else {
-        document.getElementById('modalChat').innerHTML = renderMensagens(conv.mensagens);
+        document.getElementById('modalChat').innerHTML = renderMensagens(_msgs);
         const chat = document.getElementById('modalChat');
         chat.scrollTop = chat.scrollHeight;
       }
@@ -5196,8 +5197,9 @@
       const dir = isCliente ? 'in' : 'out';   // cliente=esquerda, bot=direita
 
       // Detecta mensagem editada (prefixo ✏️)
-      const isEditada = m.conteudo.startsWith('✏️ ');
-      const textoBase = isEditada ? m.conteudo.slice(3) : m.conteudo;
+      const _ct = (m.conteudo == null ? '' : String(m.conteudo));
+      const isEditada = _ct.startsWith('✏️ ');
+      const textoBase = isEditada ? _ct.slice(3) : _ct;
 
       // Detecta remetente humano: [Nome]: texto
       const matchFunc = textoBase.match(/^\[([^\]]+)\]:\s*/);
