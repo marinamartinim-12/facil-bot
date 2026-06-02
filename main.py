@@ -988,9 +988,13 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
             tipo_txt = ("Chamada de vídeo" if video else "Ligação")
             estado = "perdida" if perdida else "recebida"
             conteudo = f"{icone} {tipo_txt} {estado} pelo WhatsApp"
-            # Garante um lead para não perder o registro (cliente que ligou)
+            eh_lid = ("@" in telefone) or ("lid" in telefone.lower())
             lead = db.query(Lead).filter(Lead.telefone == telefone).first()
             if not lead:
+                # Número oculto (@lid): NÃO cria lead fantasma — evita duplicar o contato
+                if eh_lid:
+                    print(f"📞 Ligação de número oculto ({telefone}) — lead fantasma NÃO criado")
+                    return JSONResponse({"status": "chamada_lid_ignorada"})
                 nome_caller = (body.get("senderName") or body.get("chatName") or "").strip() or None
                 lead = Lead(telefone=telefone, nome=nome_caller)
                 db.add(lead)
