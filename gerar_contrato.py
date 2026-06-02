@@ -185,7 +185,7 @@ def _pagina_requerimento(pdf, d):
 
     # Endereço do requerente
     partes = []
-    for k, prefix in [("req_rua",""), ("req_numero","N."), ("req_bairro","Bairro "), ("req_cep","CEP "), ("req_cidade","")]:
+    for k, prefix in [("req_rua",""), ("req_numero","N."), ("req_complemento",""), ("req_bairro","Bairro "), ("req_cep","CEP "), ("req_cidade","")]:
         v = _v(d, k)
         if v:
             partes.append((prefix + (v.upper() if k in ("req_bairro","req_cidade") else v)))

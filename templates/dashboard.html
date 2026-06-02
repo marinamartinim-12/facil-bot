@@ -2421,7 +2421,7 @@
     const lead = allLeads.find(l => l.id === modalLeadId) || {};
 
     // Limpa todos os campos do formulário antes de preencher
-    ['fc_req_nome','fc_req_cpf','fc_req_rg','fc_req_rua','fc_req_numero',
+    ['fc_req_nome','fc_req_cpf','fc_req_rg','fc_req_rua','fc_req_numero','fc_req_complemento',
      'fc_req_bairro','fc_req_cep','fc_req_cidade','fc_req_celular','fc_req_email',
      'fc_vei_modelo','fc_vei_placa','fc_vei_ano','fc_vei_cor','fc_vei_renavam','fc_vei_chassi',
      'fc_fin_valor','fc_fin_banco','fc_fin_parcelas','fc_fin_parcela','fc_fin_vencimento',
@@ -2446,6 +2446,7 @@
     set('fc_req_rg',       dc.req_rg);
     set('fc_req_rua',      dc.req_rua);
     set('fc_req_numero',   dc.req_numero);
+    set('fc_req_complemento', dc.req_complemento);
     set('fc_req_bairro',   dc.req_bairro);
     set('fc_req_cep',      dc.req_cep);
     set('fc_req_cidade',   dc.req_cidade);
@@ -2486,7 +2487,8 @@
       modalidade:            document.getElementById('fc_modalidade')?.value,
       req_nome:              g('fc_req_nome'),   req_cpf:      g('fc_req_cpf'),
       req_rg:                g('fc_req_rg'),     req_rua:      g('fc_req_rua'),
-      req_numero:            g('fc_req_numero'), req_bairro:   g('fc_req_bairro'),
+      req_numero:            g('fc_req_numero'), req_complemento: g('fc_req_complemento'),
+      req_bairro:            g('fc_req_bairro'),
       req_cep:               g('fc_req_cep'),    req_cidade:   g('fc_req_cidade'),
       req_celular:           g('fc_req_celular'),req_email:    g('fc_req_email'),
       vei_modelo:            g('fc_vei_modelo'), vei_placa:    g('fc_vei_placa'),
@@ -5239,6 +5241,7 @@
       <div class="data-item"><label>CEP</label>${cepField}</div>
       <div class="data-item"><label>Rua / Av.</label>${dcInput('req_rua','Nome da rua')}</div>
       <div class="data-item"><label>Número</label>${dcInput('req_numero','Nº')}</div>
+      <div class="data-item full"><label>Complemento</label>${dcInput('req_complemento','Apto, bloco, casa, ponto de referência…')}</div>
       <div class="data-item"><label>Bairro</label>${dcInput('req_bairro','Bairro')}</div>
       <div class="data-item"><label>Cidade/UF</label>${cidadeField}</div>
       <div class="data-item full" style="margin-top:.2rem"><label style="font-weight:700;color:var(--navy);text-transform:uppercase;font-size:.7rem;letter-spacing:.04em">🚗 Dados do veículo</label></div>
@@ -5353,7 +5356,8 @@
     const gc = key => document.getElementById('ec_' + key)?.value?.trim() || '';
     body.dados_contrato = {
       req_rg: gc('req_rg'), req_cep: gc('req_cep'), req_rua: gc('req_rua'),
-      req_numero: gc('req_numero'), req_bairro: gc('req_bairro'), req_cidade: gc('req_cidade'),
+      req_numero: gc('req_numero'), req_complemento: gc('req_complemento'),
+      req_bairro: gc('req_bairro'), req_cidade: gc('req_cidade'),
       req_email: document.getElementById('ei_email')?.value.trim() || '',
       vei_placa: gc('vei_placa'), vei_ano: gc('vei_ano'), vei_cor: gc('vei_cor'),
       vei_renavam: gc('vei_renavam'), vei_chassi: gc('vei_chassi'),
@@ -5613,6 +5617,7 @@
             <div class="fc-group"><label class="fc-label">Rua / Av.</label><input id="fc_req_rua" class="fc-input" placeholder="Nome da rua"></div>
             <div class="fc-group"><label class="fc-label">Número</label><input id="fc_req_numero" class="fc-input" placeholder="Nº"></div>
           </div>
+          <div class="fc-group"><label class="fc-label">Complemento</label><input id="fc_req_complemento" class="fc-input" placeholder="Apto, bloco, casa, ponto de referência…"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
             <div class="fc-group"><label class="fc-label">Bairro</label><input id="fc_req_bairro" class="fc-input" placeholder="Bairro"></div>
             <div class="fc-group"><label class="fc-label">CEP</label><input id="fc_req_cep" class="fc-input" placeholder="00000-000" oninput="_buscarCep(this.value)" onblur="_buscarCep(this.value)"><span id="fc_cep_msg" style="font-size:.68rem;color:var(--muted)"></span></div>
