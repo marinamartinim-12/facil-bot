@@ -4455,11 +4455,18 @@ async def avancar_fila(db: Session = Depends(get_db), usuario: Usuario = Depends
 
 # ─── Dashboard ────────────────────────────────────────────────────────────────────
 
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard():
     html_path = Path(__file__).parent / "templates" / "dashboard.html"
     if html_path.exists():
-        return HTMLResponse(html_path.read_text(encoding="utf-8"))
+        return HTMLResponse(html_path.read_text(encoding="utf-8"), headers=_NO_CACHE_HEADERS)
     return HTMLResponse("<h1>dashboard.html não encontrado</h1>")
 
 
