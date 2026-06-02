@@ -2394,6 +2394,32 @@
     } catch { alert('Erro de conexão.'); }
   }
 
+  // ─── Busca de endereço por CEP (ViaCEP) ──────────────────────────────────
+  let _ultimoCepBuscado = '';
+  async function _buscarCep(valor) {
+    const cep = (valor || '').replace(/\D/g, '');
+    const msg = document.getElementById('fc_cep_msg');
+    if (cep.length !== 8) { if (msg) msg.textContent = ''; return; }
+    if (cep === _ultimoCepBuscado) return;   // evita buscar o mesmo CEP repetido
+    _ultimoCepBuscado = cep;
+    if (msg) { msg.style.color = 'var(--muted)'; msg.textContent = 'Buscando endereço…'; }
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      if (d.erro) { if (msg) { msg.style.color = '#dc2626'; msg.textContent = 'CEP não encontrado'; } return; }
+      const setF = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+      setF('fc_req_rua', d.logradouro);
+      setF('fc_req_bairro', d.bairro);
+      setF('fc_req_cidade', (d.localidade || '') + (d.uf ? '/' + d.uf : ''));
+      if (msg) { msg.style.color = '#16a34a'; msg.textContent = '✓ endereço preenchido'; }
+      const num = document.getElementById('fc_req_numero');
+      if (num && !num.value) num.focus();
+    } catch {
+      if (msg) { msg.style.color = '#dc2626'; msg.textContent = 'Não foi possível buscar o CEP'; }
+    }
+  }
+
   function gerarContrato() {
     if (!modalLeadId) return;
     const lead = allLeads.find(l => l.id === modalLeadId) || {};
@@ -5556,7 +5582,7 @@
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
             <div class="fc-group"><label class="fc-label">Bairro</label><input id="fc_req_bairro" class="fc-input" placeholder="Bairro"></div>
-            <div class="fc-group"><label class="fc-label">CEP</label><input id="fc_req_cep" class="fc-input" placeholder="00000-000"></div>
+            <div class="fc-group"><label class="fc-label">CEP</label><input id="fc_req_cep" class="fc-input" placeholder="00000-000" oninput="_buscarCep(this.value)" onblur="_buscarCep(this.value)"><span id="fc_cep_msg" style="font-size:.68rem;color:var(--muted)"></span></div>
           </div>
           <div style="display:grid;grid-template-columns:2fr 1fr;gap:.5rem">
             <div class="fc-group"><label class="fc-label">Cidade / UF</label><input id="fc_req_cidade" class="fc-input" placeholder="Cidade/UF"></div>
