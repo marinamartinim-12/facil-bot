@@ -111,8 +111,17 @@ async def _enviar_followups():
             c = db.query(Configuracao).filter(Configuracao.chave == chave).first()
             return c.valor if c else padrao
 
+        # Interruptor geral — permite desligar todos os follow-ups
+        if _cfg("followup_ativo", "1").strip().lower() in ("0", "false", "nao", "não", "off"):
+            print("⏸️ Follow-up desativado nas configurações")
+            return
+
         horas = int(h) if (h := _cfg("followup_horas", "4")).isdigit() else 4
         limite_1 = datetime.utcnow() - timedelta(hours=horas)   # 1º: X h sem resposta
+
+        # Segurança anti-banimento: teto por rodada e idade máxima do lead
+        max_rodada = int(m) if (m := _cfg("followup_max_rodada", "20")).isdigit() else 20
+        max_dias   = int(d) if (d := _cfg("followup_max_dias", "15")).isdigit() else 15
 
         msgs = {
             0: _cfg("mensagem_followup",
@@ -167,6 +176,9 @@ async def _enviar_followups():
 
                 # ── Decide se é hora de disparar ─────────────────────────────
                 if tentativa == 0:
+                    # Não começa a cutucar lead que ficou frio há muito tempo (anti-spam)
+                    if ultima_user.criado_em < (agora - timedelta(days=max_dias)):
+                        continue
                     # 1º: cliente ficou X horas sem responder
                     if ultima_user.criado_em > limite_1:
                         continue   # ainda recente
@@ -200,6 +212,13 @@ async def _enviar_followups():
                 db.commit()
                 enviados += 1
                 print(f"📨 Follow-up #{tentativa + 1} enviado para {lead.telefone} (lead #{lead.id})")
+
+                # Teto por rodada — evita rajada de mensagens (parece spam → risco de ban)
+                if enviados >= max_rodada:
+                    print(f"🛑 Teto de {max_rodada} follow-ups por rodada atingido")
+                    break
+                # Espaça os envios para não disparar tudo no mesmo segundo
+                await asyncio.sleep(6)
 
             except Exception as e_lead:
                 print(f"⚠️ Erro ao enviar follow-up para lead #{lead.id}: {e_lead}")
@@ -2287,6 +2306,35 @@ async def buscar_cep(cep: str, usuario: Usuario = Depends(obter_usuario_atual)):
         "cidade": d.get("localidade", ""),
         "uf": d.get("uf", ""),
     }
+
+
+@app.get("/api/admin/backup")
+async def baixar_backup(admin: Usuario = Depends(requer_admin)):
+    """Baixa um backup COMPLETO do banco (conversas, mídias, documentos — tudo). Admin only."""
+    from models import engine
+    import sqlite3
+    from starlette.background import BackgroundTask
+    db_path = engine.url.database
+    if not db_path or not os.path.exists(db_path):
+        raise HTTPException(400, "Backup disponível apenas para banco SQLite")
+    fd, tmp_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        src = sqlite3.connect(db_path)
+        dst = sqlite3.connect(tmp_path)
+        with dst:
+            src.backup(dst)   # snapshot consistente mesmo com o sistema rodando
+        src.close()
+        dst.close()
+    except Exception as e:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+        raise HTTPException(500, f"Erro ao gerar backup: {e}")
+    fname = f"backup_facil_{_agora_br().strftime('%Y%m%d_%H%M')}.db"
+    return FileResponse(tmp_path, filename=fname, media_type="application/octet-stream",
+                        background=BackgroundTask(os.remove, tmp_path))
 
 
 @app.get("/api/inbox")
@@ -4894,6 +4942,21 @@ def _criar_config_padrao(db: Session):
             "chave": "followup_horas",
             "descricao": "Horas de inatividade antes de enviar o 1º follow-up (padrão: 4)",
             "valor": "4",
+        },
+        {
+            "chave": "followup_ativo",
+            "descricao": "Liga/desliga TODOS os follow-ups automáticos. Use 1 para ligado, 0 para desligado.",
+            "valor": "1",
+        },
+        {
+            "chave": "followup_max_rodada",
+            "descricao": "Máximo de follow-ups enviados por rodada (anti-spam/ban). Padrão: 20",
+            "valor": "20",
+        },
+        {
+            "chave": "followup_max_dias",
+            "descricao": "Não inicia follow-up em lead cuja última mensagem é mais antiga que X dias. Padrão: 15",
+            "valor": "15",
         },
         {
             "chave": "meta_contratos",
