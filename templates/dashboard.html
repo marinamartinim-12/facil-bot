@@ -1193,6 +1193,10 @@
               <input id="carAno" placeholder="Ano" maxlength="9" style="width:90px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
             </div>
             <input id="carModelo" placeholder="Marca / Modelo" style="border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+              <input id="carCor" placeholder="Cor" style="flex:1;min-width:90px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+              <input id="carRenavam" placeholder="RENAVAM (manual)" style="flex:1;min-width:120px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+            </div>
             <input id="carChassi" placeholder="Chassi (opcional)" style="border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none;text-transform:uppercase">
             <button class="btn btn-primary btn-sm" onclick="adicionarCarro()">➕ Adicionar carro</button>
             <span id="carMsg" style="font-size:.75rem"></span>
@@ -2464,8 +2468,8 @@
       <div style="border:1px solid ${escolhido?'#16a34a':'#e2e8f0'};border-left:3px solid ${escolhido?'#16a34a':'#cbd5e1'};border-radius:8px;background:${escolhido?'#f0fdf4':'#fff'};padding:.5rem .65rem">
         <div style="display:flex;align-items:flex-start;gap:.5rem">
           <div style="flex:1;min-width:0">
-            <div style="font-size:.85rem;font-weight:700;color:#0d2b4e">${esc1(c.modelo) || '—'} ${c.ano?('· '+esc1(c.ano)):''}</div>
-            <div style="font-size:.74rem;color:#64748b">🔖 ${esc1(c.placa)||'sem placa'}${c.chassi?(' · Chassi '+esc1(c.chassi)):''}</div>
+            <div style="font-size:.85rem;font-weight:700;color:#0d2b4e">${esc1(c.modelo) || '—'} ${c.ano?('· '+esc1(c.ano)):''}${c.cor?(' · '+esc1(c.cor)):''}</div>
+            <div style="font-size:.74rem;color:#64748b">🔖 ${esc1(c.placa)||'sem placa'}${c.chassi?(' · Chassi '+esc1(c.chassi)):''}${c.renavam?(' · RENAVAM '+esc1(c.renavam)):''}</div>
             ${escolhido?'<div style="font-size:.7rem;color:#166534;font-weight:700;margin-top:.15rem">⭐ Carro escolhido para fechar</div>':''}
           </div>
           <div style="display:flex;flex-direction:column;gap:.25rem">
@@ -2492,6 +2496,7 @@
       setF('carModelo', d.modelo_completo);
       setF('carAno', d.ano);
       setF('carChassi', d.chassi);
+      setF('carCor', d.cor);
       msg.style.color = '#16a34a'; msg.textContent = '✓ dados preenchidos pela placa';
     } catch {
       msg.style.color = '#dc2626'; msg.textContent = 'Erro de conexão.';
@@ -2506,11 +2511,13 @@
     const ano    = document.getElementById('carAno').value.trim();
     const modelo = document.getElementById('carModelo').value.trim();
     const chassi = document.getElementById('carChassi').value.trim().toUpperCase();
+    const cor    = document.getElementById('carCor').value.trim();
+    const renavam = document.getElementById('carRenavam').value.trim();
     const msg = document.getElementById('carMsg');
     if (!placa && !modelo) { msg.style.color = '#dc2626'; msg.textContent = 'Informe ao menos a placa ou o modelo.'; return; }
-    _carrosLead.push({ placa, ano, modelo, chassi, escolhido: _carrosLead.length === 0 });
+    _carrosLead.push({ placa, ano, modelo, chassi, cor, renavam, escolhido: _carrosLead.length === 0 });
     if (await _salvarCarros()) {
-      ['carPlaca','carAno','carModelo','carChassi'].forEach(id => document.getElementById(id).value = '');
+      ['carPlaca','carAno','carModelo','carChassi','carCor','carRenavam'].forEach(id => document.getElementById(id).value = '');
       msg.style.color = '#16a34a'; msg.textContent = 'Carro adicionado ✓';
       _desenharCarros();
     }
@@ -2608,11 +2615,13 @@
     set('fc_req_cep',      dc.req_cep);
     set('fc_req_cidade',   dc.req_cidade);
     set('fc_req_email',    dc.req_email || lead.email);
-    set('fc_vei_placa',    dc.vei_placa);
-    set('fc_vei_ano',      dc.vei_ano);
-    set('fc_vei_cor',      dc.vei_cor);
-    set('fc_vei_renavam',  dc.vei_renavam);
-    set('fc_vei_chassi',   dc.vei_chassi);
+    // Veículo do contrato = carro marcado com ⭐ em "Carros em proposta" (fallback: 1º carro / dados antigos)
+    const carroSel = ((lead.carros_proposta || []).find(c => c.escolhido)) || (lead.carros_proposta || [])[0] || {};
+    set('fc_vei_placa',    carroSel.placa   || dc.vei_placa);
+    set('fc_vei_ano',      carroSel.ano     || dc.vei_ano);
+    set('fc_vei_cor',      carroSel.cor     || dc.vei_cor);
+    set('fc_vei_renavam',  carroSel.renavam || dc.vei_renavam);
+    set('fc_vei_chassi',   carroSel.chassi  || dc.vei_chassi);
     set('fc_prop_nome',    dc.prop_nome);
     set('fc_prop_cpf',     dc.prop_cpf);
     set('fc_prop_telefone',dc.prop_telefone);
@@ -2627,8 +2636,8 @@
     set('fc_fin_parcela',  dc.fin_parcela);
     set('fc_fin_vencimento',dc.fin_vencimento);
 
-    // ── Veículo: deal_veiculo > dados_contrato.vei_modelo > carro_interesse
-    const veiculo = (lead.deal_veiculo || dc.vei_modelo || lead.carro_interesse || '').trim();
+    // ── Veículo (marca/modelo): carro marcado ⭐ > deal_veiculo > dados antigos > interesse
+    const veiculo = (carroSel.modelo || lead.deal_veiculo || dc.vei_modelo || lead.carro_interesse || '').trim();
     set('fc_vei_modelo', veiculo);
 
     // ── Financeiro: deal_valor/banco > dados_contrato
@@ -5452,13 +5461,7 @@
       <div class="data-item"><label>Número</label>${dcInput('req_numero','Nº')}</div>
       <div class="data-item full"><label>Complemento</label>${dcInput('req_complemento','Apto, bloco, casa, ponto de referência…')}</div>
       <div class="data-item"><label>Bairro</label>${dcInput('req_bairro','Bairro')}</div>
-      <div class="data-item"><label>Cidade/UF</label>${cidadeField}</div>
-      <div class="data-item full" style="margin-top:.2rem"><label style="font-weight:700;color:var(--navy);text-transform:uppercase;font-size:.7rem;letter-spacing:.04em">🚗 Dados do veículo</label></div>
-      <div class="data-item"><label>Placa</label>${dcInput('vei_placa','ABC1D23')}</div>
-      <div class="data-item"><label>Ano</label>${dcInput('vei_ano','2020/2021')}</div>
-      <div class="data-item"><label>Cor</label>${dcInput('vei_cor','Prata')}</div>
-      <div class="data-item"><label>RENAVAM</label>${dcInput('vei_renavam','00000000000')}</div>
-      <div class="data-item full"><label>Chassi</label>${dcInput('vei_chassi','9BW...')}</div>`;
+      <div class="data-item"><label>Cidade/UF</label>${cidadeField}</div>`;
     const inputNome   = editando ? `<input id="ei_nome"  value="${escHtml(lead.nome&&lead.nome!=='—'?lead.nome:'')}" style="${inpStyle}" placeholder="Nome do cliente">` : `<span>${escHtml(lead.nome||'—')}</span>`;
     const inputCPF    = editando ? `<input id="ei_cpf"   value="${escHtml(lead.cpf&&lead.cpf!=='—'?lead.cpf:'')}" style="${inpStyle}" placeholder="000.000.000-00">` : `<span>${escHtml(lead.cpf||'—')}</span>`;
     const inputNasc   = editando ? `<input id="ei_nasc"  value="${escHtml(lead.data_nascimento&&lead.data_nascimento!=='—'?lead.data_nascimento:'')}" style="${inpStyle}" placeholder="DD/MM/AAAA">` : `<span>${escHtml(lead.data_nascimento||'—')}</span>`;
@@ -5579,13 +5582,14 @@
     };
     // Dados do requerimento (endereço / veículo) — guardados em dados_contrato
     const gc = key => document.getElementById('ec_' + key)?.value?.trim() || '';
+    // Preserva dados do veículo já existentes (o veículo agora vem de "Carros em proposta")
+    const dcAtual = (window._modalLeadData?.dados_contrato) || {};
     body.dados_contrato = {
+      ...dcAtual,
       req_rg: gc('req_rg'), req_cep: gc('req_cep'), req_rua: gc('req_rua'),
       req_numero: gc('req_numero'), req_complemento: gc('req_complemento'),
       req_bairro: gc('req_bairro'), req_cidade: gc('req_cidade'),
       req_email: document.getElementById('ei_email')?.value.trim() || '',
-      vei_placa: gc('vei_placa'), vei_ano: gc('vei_ano'), vei_cor: gc('vei_cor'),
-      vei_renavam: gc('vei_renavam'), vei_chassi: gc('vei_chassi'),
     };
     try {
       const r = await fetch(`/api/leads/${modalLeadId}`, {
@@ -6825,10 +6829,11 @@
     document.getElementById('fcSubtitle').textContent =
       ld?.nome && ld.nome !== '—' ? `Cliente: ${ld.nome}` : 'Preencha os dados do negócio';
 
-    // Pré-preenche veículo e placa
-    const veiculo = ld?.deal_veiculo || ld?.carro_interesse || '';
+    // Pré-preenche veículo e placa — prioriza o carro marcado ⭐ em "Carros em proposta"
+    const carroSel = ((ld?.carros_proposta || []).find(c => c.escolhido)) || (ld?.carros_proposta || [])[0] || {};
+    const veiculo = carroSel.modelo || ld?.deal_veiculo || ld?.carro_interesse || '';
     document.getElementById('fc_veiculo').value = veiculo !== '—' ? veiculo : '';
-    document.getElementById('fc_placa').value = (ld?.deal_placa && ld.deal_placa !== '—') ? ld.deal_placa : '';
+    document.getElementById('fc_placa').value = carroSel.placa || ((ld?.deal_placa && ld.deal_placa !== '—') ? ld.deal_placa : '');
 
     // Pré-preenche data com hoje (ou data já salva)
     if (ld?.deal_data && ld.deal_data !== '—') {
