@@ -1170,6 +1170,21 @@
           <div class="data-grid" id="modalDados"></div>
         </div>
         <div id="modalDealSection" style="display:none"></div>
+        <!-- Carros em proposta -->
+        <div class="modal-section" id="modalCarrosSection">
+          <h4 style="margin-bottom:.6rem">🚗 Carros em proposta</h4>
+          <div id="modalCarrosLista" style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.6rem"></div>
+          <div style="display:flex;flex-direction:column;gap:.4rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.6rem">
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+              <input id="carPlaca" placeholder="Placa" maxlength="8" style="flex:1;min-width:100px;text-transform:uppercase;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+              <input id="carAno" placeholder="Ano" maxlength="9" style="width:90px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+            </div>
+            <input id="carModelo" placeholder="Marca / Modelo" style="border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+            <input id="carChassi" placeholder="Chassi (opcional)" style="border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none;text-transform:uppercase">
+            <button class="btn btn-primary btn-sm" onclick="adicionarCarro()">➕ Adicionar carro</button>
+            <span id="carMsg" style="font-size:.75rem"></span>
+          </div>
+        </div>
         <div class="modal-section" style="flex:1;display:flex;flex-direction:column;gap:.5rem">
           <h4>📝 Observações</h4>
           <!-- Lista somente leitura -->
@@ -1810,6 +1825,9 @@
       // Contratos
       carregarContratos(leadId);
 
+      // Carros em proposta
+      renderCarros(lead);
+
       // Documentos do contrato — pasta do cliente (visível em contratos fechados)
       const docsSection = document.getElementById('modalDocsSection');
       if (lead.status === 'fechado') {
@@ -2409,6 +2427,84 @@
       _atualizarBadgeDocs(leadId, -1);
       await carregarDocsContrato(leadId, containerId);
     } catch { alert('Erro de conexão.'); }
+  }
+
+  // ─── Carros em proposta ───────────────────────────────────────────────────
+  let _carrosLead = [];
+
+  function renderCarros(lead) {
+    _carrosLead = Array.isArray(lead?.carros_proposta) ? lead.carros_proposta.slice() : [];
+    _desenharCarros();
+  }
+
+  function _desenharCarros() {
+    const el = document.getElementById('modalCarrosLista');
+    if (!el) return;
+    if (!_carrosLead.length) {
+      el.innerHTML = '<span style="font-size:.78rem;color:var(--muted);font-style:italic">Nenhum carro adicionado ainda.</span>';
+      return;
+    }
+    el.innerHTML = _carrosLead.map((c, i) => {
+      const esc1 = s => esc(s || '');
+      const escolhido = !!c.escolhido;
+      return `
+      <div style="border:1px solid ${escolhido?'#16a34a':'#e2e8f0'};border-left:3px solid ${escolhido?'#16a34a':'#cbd5e1'};border-radius:8px;background:${escolhido?'#f0fdf4':'#fff'};padding:.5rem .65rem">
+        <div style="display:flex;align-items:flex-start;gap:.5rem">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.85rem;font-weight:700;color:#0d2b4e">${esc1(c.modelo) || '—'} ${c.ano?('· '+esc1(c.ano)):''}</div>
+            <div style="font-size:.74rem;color:#64748b">🔖 ${esc1(c.placa)||'sem placa'}${c.chassi?(' · Chassi '+esc1(c.chassi)):''}</div>
+            ${escolhido?'<div style="font-size:.7rem;color:#166534;font-weight:700;margin-top:.15rem">⭐ Carro escolhido para fechar</div>':''}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:.25rem">
+            <button onclick="marcarCarro(${i})" title="${escolhido?'Desmarcar':'Marcar como o que vai fechar'}" class="btn btn-sm btn-outline" style="padding:.15rem .4rem;font-size:.72rem">${escolhido?'★':'☆'}</button>
+            <button onclick="removerCarro(${i})" title="Remover" class="btn btn-sm" style="padding:.15rem .4rem;font-size:.72rem;background:#fee2e2;color:#991b1b">✕</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  async function adicionarCarro() {
+    if (!modalLeadId) return;
+    const placa  = document.getElementById('carPlaca').value.trim().toUpperCase();
+    const ano    = document.getElementById('carAno').value.trim();
+    const modelo = document.getElementById('carModelo').value.trim();
+    const chassi = document.getElementById('carChassi').value.trim().toUpperCase();
+    const msg = document.getElementById('carMsg');
+    if (!placa && !modelo) { msg.style.color = '#dc2626'; msg.textContent = 'Informe ao menos a placa ou o modelo.'; return; }
+    _carrosLead.push({ placa, ano, modelo, chassi, escolhido: _carrosLead.length === 0 });
+    if (await _salvarCarros()) {
+      ['carPlaca','carAno','carModelo','carChassi'].forEach(id => document.getElementById(id).value = '');
+      msg.style.color = '#16a34a'; msg.textContent = 'Carro adicionado ✓';
+      _desenharCarros();
+    }
+  }
+
+  async function marcarCarro(idx) {
+    _carrosLead = _carrosLead.map((c, i) => ({ ...c, escolhido: i === idx ? !c.escolhido : false }));
+    if (await _salvarCarros()) _desenharCarros();
+  }
+
+  async function removerCarro(idx) {
+    if (!confirm('Remover este carro?')) return;
+    _carrosLead.splice(idx, 1);
+    if (await _salvarCarros()) _desenharCarros();
+  }
+
+  async function _salvarCarros() {
+    try {
+      const r = await fetch(`/api/leads/${modalLeadId}`, {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ carros_proposta: _carrosLead }),
+      });
+      if (!r.ok) { const m = document.getElementById('carMsg'); if (m){m.style.color='#dc2626';m.textContent='Erro ao salvar.';} return false; }
+      const lead = await r.json();
+      window._modalLeadData = lead;
+      const idx = allLeads.findIndex(l => l.id === modalLeadId);
+      if (idx !== -1) allLeads[idx] = lead;
+      _carrosLead = Array.isArray(lead.carros_proposta) ? lead.carros_proposta.slice() : _carrosLead;
+      return true;
+    } catch { const m = document.getElementById('carMsg'); if (m){m.style.color='#dc2626';m.textContent='Erro de conexão.';} return false; }
   }
 
   // ─── Busca de endereço por CEP (ViaCEP, via nosso servidor) ───────────────

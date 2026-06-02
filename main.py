@@ -398,6 +398,7 @@ async def startup():
         ("leads",           "tem_cnh",            "BOOLEAN"),
         ("leads",           "oculto_funil",       "BOOLEAN DEFAULT 0"),
         ("leads",           "descadastrado",      "BOOLEAN DEFAULT 0"),
+        ("leads",           "carros_proposta",    "TEXT"),
         ("leads",           "email",              "VARCHAR(150)"),
         ("parceiros",       "nome_agenda",        "VARCHAR(200)"),
         ("parceiros",       "operadora_id",       "INTEGER"),
@@ -2443,6 +2444,10 @@ async def editar_lead(
         import json as _json
         dc = body["dados_contrato"]
         lead.dados_contrato = _json.dumps(dc, ensure_ascii=False) if isinstance(dc, dict) else None
+    # Carros em proposta (lista JSON)
+    if "carros_proposta" in body:
+        cp = body["carros_proposta"]
+        lead.carros_proposta = json.dumps(cp, ensure_ascii=False) if isinstance(cp, list) else None
     lead.atualizado_em = datetime.utcnow()
     db.commit()
     db.refresh(lead)
@@ -4959,6 +4964,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "tem_cnh":  l.tem_cnh,   # None=não informado | True=sim | False=não
         "oculto_funil": bool(l.oculto_funil),
         "descadastrado": bool(l.descadastrado),
+        "carros_proposta": (json.loads(l.carros_proposta) if l.carros_proposta else []),
     }
 
 
