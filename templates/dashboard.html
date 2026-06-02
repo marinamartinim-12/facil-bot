@@ -5226,6 +5226,11 @@
     const cepField = editando
       ? `<input id="ec_req_cep" value="${escHtml(dc.req_cep||'')}" style="${inpStyle}" placeholder="00000-000" oninput="_buscarCepCampos(this.value,${cepIds})" onblur="_buscarCepCampos(this.value,${cepIds})"><span id="ec_cep_msg" style="font-size:.66rem;color:var(--muted);display:block"></span>`
       : `<span>${escHtml(dc.req_cep||'—')}</span>`;
+    // Cidade/UF do endereço — começa com a cidade coletada pelo bot se ainda não houver endereço
+    const cidadeVal = dc.req_cidade || (lead.cidade && lead.cidade !== '—' ? lead.cidade : '');
+    const cidadeField = editando
+      ? `<input id="ec_req_cidade" value="${escHtml(cidadeVal)}" style="${inpStyle}" placeholder="Ex: Belo Horizonte/MG">`
+      : `<span>${escHtml(cidadeVal||'—')}</span>`;
     const reqBlock = `
       <div class="data-item full" style="border-top:1px solid var(--border);margin-top:.5rem;padding-top:.55rem">
         <label style="font-weight:700;color:var(--navy);text-transform:uppercase;font-size:.7rem;letter-spacing:.04em">📄 Endereço & documentos (requerimento)</label>
@@ -5235,7 +5240,7 @@
       <div class="data-item"><label>Rua / Av.</label>${dcInput('req_rua','Nome da rua')}</div>
       <div class="data-item"><label>Número</label>${dcInput('req_numero','Nº')}</div>
       <div class="data-item"><label>Bairro</label>${dcInput('req_bairro','Bairro')}</div>
-      <div class="data-item"><label>Cidade/UF</label>${dcInput('req_cidade','Ex: Belo Horizonte/MG')}</div>
+      <div class="data-item"><label>Cidade/UF</label>${cidadeField}</div>
       <div class="data-item full" style="margin-top:.2rem"><label style="font-weight:700;color:var(--navy);text-transform:uppercase;font-size:.7rem;letter-spacing:.04em">🚗 Dados do veículo</label></div>
       <div class="data-item"><label>Placa</label>${dcInput('vei_placa','ABC1D23')}</div>
       <div class="data-item"><label>Ano</label>${dcInput('vei_ano','2020/2021')}</div>
@@ -5246,7 +5251,6 @@
     const inputCPF    = editando ? `<input id="ei_cpf"   value="${escHtml(lead.cpf&&lead.cpf!=='—'?lead.cpf:'')}" style="${inpStyle}" placeholder="000.000.000-00">` : `<span>${escHtml(lead.cpf||'—')}</span>`;
     const inputNasc   = editando ? `<input id="ei_nasc"  value="${escHtml(lead.data_nascimento&&lead.data_nascimento!=='—'?lead.data_nascimento:'')}" style="${inpStyle}" placeholder="DD/MM/AAAA">` : `<span>${escHtml(lead.data_nascimento||'—')}</span>`;
     const inputCarro  = editando ? `<input id="ei_carro" value="${escHtml(lead.carro_interesse&&lead.carro_interesse!=='—'?lead.carro_interesse:'')}" style="${inpStyle}" placeholder="Ex: Honda Civic 2020">` : `<span>${escHtml(lead.carro_interesse||'—')}</span>`;
-    const inputCidade = editando ? `<input id="ei_cidade" value="${escHtml(lead.cidade||'')}" style="${inpStyle}" placeholder="Ex: Belo Horizonte/MG">` : `<span>${escHtml(lead.cidade||'—')}</span>`;
     const inputEmail  = editando ? `<input id="ei_email" type="email" value="${escHtml(lead.email||'')}" style="${inpStyle}" placeholder="email@exemplo.com">` : `<span>${escHtml(lead.email||'—')}</span>`;
     const inputProf   = editando ? `<input id="ei_prof" value="${escHtml(lead.profissao||'')}" style="${inpStyle}" placeholder="Ex: Motorista, Servidor público…">` : `<span>${escHtml(lead.profissao||'—')}</span>`;
     const rendaOpts   = ['','Até R$2.000','R$2.000 a R$5.000','R$5.000 a R$10.000','Acima de R$10.000'];
@@ -5283,7 +5287,6 @@
       <div class="data-item"><label>Nasc.</label>${inputNasc}</div>
       <div class="data-item full"><label>Veículo de interesse</label>${inputCarro}</div>
       <div class="data-item"><label>Modalidade</label>${inputMod}</div>
-      <div class="data-item"><label>Cidade</label>${inputCidade}</div>
       <div class="data-item full"><label>E-mail</label>${inputEmail}</div>
       <div class="data-item"><label>Profissão</label>${inputProf}</div>
       <div class="data-item full"><label>Faixa de renda</label>${inputRenda}</div>
@@ -5341,7 +5344,6 @@
       data_nascimento:  document.getElementById('ei_nasc')?.value.trim()   || null,
       carro_interesse:  document.getElementById('ei_carro')?.value.trim()  || null,
       modalidade:       document.getElementById('ei_mod')?.value           || null,
-      cidade:           document.getElementById('ei_cidade')?.value.trim() || null,
       email:            document.getElementById('ei_email')?.value.trim()  || null,
       profissao:        document.getElementById('ei_prof')?.value.trim()   || null,
       renda:            document.getElementById('ei_renda')?.value         || null,
