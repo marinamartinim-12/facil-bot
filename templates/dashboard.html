@@ -1089,6 +1089,16 @@
           </div>
         </div>
 
+        <!-- ── MEDIDOR DE VOLUME / ESTIMATIVA API OFICIAL ── -->
+        <div class="rel-card" id="relVolumeCard">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem;flex-wrap:wrap;gap:.5rem">
+            <h3 style="margin:0">📊 Volume & estimativa (API Oficial)</h3>
+            <button onclick="carregarVolumeApi()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
+          </div>
+          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .75rem">Volume dos últimos 30 dias e estimativa de custo se você migrar pra API Oficial do WhatsApp.</p>
+          <div id="relVolumeBody"><div style="text-align:center;padding:1.2rem;color:var(--muted)">Carregando…</div></div>
+        </div>
+
         <!-- ── TEMPO DE 1ª RESPOSTA ── -->
         <div class="rel-card" id="relRespostaCard">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem;flex-wrap:wrap;gap:.5rem">
@@ -3260,7 +3270,42 @@
     await carregarRelatorioPerfil();
     await carregarRelatorioPonto();
     await carregarTempoResposta();
+    await carregarVolumeApi();
     await carregarIpCompartilhado();
+  }
+
+  async function carregarVolumeApi() {
+    const card = document.getElementById('relVolumeCard');
+    if (!card) return;
+    if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
+    const body = document.getElementById('relVolumeBody');
+    try {
+      const r = await fetch('/api/relatorio/volume-api');
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      const fmtBRL = n => 'R$ ' + Number(n).toLocaleString('pt-BR');
+      const tile = (icone, valor, label, cor) => `
+        <div style="flex:1;min-width:130px;text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.7rem">
+          <div style="font-size:.66rem;text-transform:uppercase;color:var(--muted);font-weight:700">${icone} ${label}</div>
+          <div style="font-size:1.3rem;font-weight:800;color:${cor}">${valor}</div>
+        </div>`;
+      body.innerHTML = `
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.9rem">
+          ${tile('📥','💬 '+d.conversas_recebidas,'Conversas recebidas','#1d4ed8')}
+          ${tile('📨',d.msgs_enviadas,'Mensagens enviadas','#0d2b4e')}
+          ${tile('📤',d.msgs_proativas,'Proativas (cobradas)','#c2410c')}
+        </div>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:.9rem 1rem">
+          <div style="font-size:.72rem;text-transform:uppercase;color:#166534;font-weight:800">💰 Estimativa na API Oficial / mês</div>
+          <div style="font-size:1.6rem;font-weight:900;color:#065f46;margin:.2rem 0">${fmtBRL(d.custo_min)} – ${fmtBRL(d.custo_max)}</div>
+          <div style="font-size:.74rem;color:#166534">
+            Inclui plataforma (R$ 200–400) + ${d.msgs_proativas} mensagem(ns) proativa(s) cobrada(s). As ${d.conversas_recebidas} conversas iniciadas pelo cliente são <b>grátis</b>.
+          </div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.4rem">Você paga hoje ~R$ 200/mês no Z-API. Estimativa aproximada — o valor exato depende do provedor.</div>
+        </div>`;
+    } catch {
+      body.innerHTML = '<div style="text-align:center;padding:1.2rem;color:#991b1b">Erro ao carregar.</div>';
+    }
   }
 
   async function carregarTempoResposta() {

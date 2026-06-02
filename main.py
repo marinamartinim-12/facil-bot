@@ -3775,6 +3775,50 @@ async def relatorio_tempo_resposta(
     return {"dias": dias, "geral": geral, "funcionarias": funcionarias, "aguardando": aguardando}
 
 
+@app.get("/api/relatorio/volume-api")
+async def relatorio_volume_api(db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
+    """Mede o volume dos últimos 30 dias e estima o custo na API Oficial do WhatsApp.
+    Regra: cliente chama + resposta em até 24h = grátis; mensagem fora das 24h = cobrada (template)."""
+    from collections import defaultdict
+    desde = datetime.utcnow() - timedelta(days=30)
+    msgs = (db.query(MensagemConversa)
+            .filter(MensagemConversa.criado_em >= desde)
+            .order_by(MensagemConversa.telefone, MensagemConversa.criado_em).all())
+    grupos = defaultdict(list)
+    for m in msgs:
+        grupos[m.telefone].append(m)
+
+    conversas_recebidas = recebidas = enviadas = proativas = 0
+    for tel, lst in grupos.items():
+        if any(m.role == "user" for m in lst):
+            conversas_recebidas += 1
+        last_user = None
+        for m in lst:
+            if m.role == "user":
+                recebidas += 1
+                last_user = m.criado_em
+            else:
+                enviadas += 1
+                # fora da janela de 24h → seria mensagem-modelo (cobrada)
+                if last_user is None or (m.criado_em - last_user) > timedelta(hours=24):
+                    proativas += 1
+
+    # Estimativa (faixas): plataforma BSP fixa + mensagens proativas por unidade
+    BSP_MIN, BSP_MAX = 200, 400
+    MSG_MIN, MSG_MAX = 0.10, 0.50
+    custo_min = round(BSP_MIN + proativas * MSG_MIN)
+    custo_max = round(BSP_MAX + proativas * MSG_MAX)
+    return {
+        "dias": 30,
+        "conversas_recebidas": conversas_recebidas,
+        "msgs_recebidas": recebidas,
+        "msgs_enviadas": enviadas,
+        "msgs_proativas": proativas,
+        "custo_min": custo_min,
+        "custo_max": custo_max,
+    }
+
+
 @app.get("/api/relatorio/ip-compartilhado")
 async def relatorio_ip_compartilhado(
     dias: int = 30,
