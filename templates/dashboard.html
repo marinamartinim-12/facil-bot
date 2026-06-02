@@ -1185,6 +1185,11 @@
             <span id="agMsg" style="font-size:.75rem"></span>
           </div>
         </div>
+        <!-- Documentos do contrato (pasta do cliente) -->
+        <div class="modal-section" id="modalDocsSection" style="display:none">
+          <h4 style="margin-bottom:.6rem">📁 Documentos do contrato</h4>
+          <div id="modalDocsPasta"></div>
+        </div>
         <!-- Contratos -->
         <div class="modal-section">
           <h4 style="margin-bottom:.6rem">📄 Contratos</h4>
@@ -1788,6 +1793,15 @@
       // Contratos
       carregarContratos(leadId);
 
+      // Documentos do contrato — pasta do cliente (visível em contratos fechados)
+      const docsSection = document.getElementById('modalDocsSection');
+      if (lead.status === 'fechado') {
+        docsSection.style.display = '';
+        carregarDocsContrato(leadId, 'modalDocsPasta');
+      } else {
+        docsSection.style.display = 'none';
+      }
+
       // Agendamentos
       document.getElementById('agTitulo').value = '';
       document.getElementById('agQuando').value = '';
@@ -2311,9 +2325,11 @@
     return '📎';
   }
 
-  async function carregarDocsContrato(id) {
-    const pasta = document.getElementById('docPasta-'+id);
+  async function carregarDocsContrato(id, containerId) {
+    containerId = containerId || ('docPasta-'+id);
+    const pasta = document.getElementById(containerId);
     if (!pasta) return;
+    const isAdmin = currentUser?.role === 'admin';
     pasta.innerHTML = '<div style="color:var(--muted);font-size:.82rem">Carregando documentos…</div>';
     try {
       const r = await fetch(`/api/leads/${id}/documentos`);
@@ -2326,15 +2342,15 @@
             <div style="font-size:.7rem;color:#94a3b8">${esc(d.tamanho_str)} · ${esc(d.em)} · ${esc(d.enviado_por)}</div>
           </div>
           <a href="/api/documento/${d.filename}" download class="btn btn-sm btn-outline" title="Baixar" style="padding:.2rem .5rem;font-size:.72rem">⬇️</a>
-          <button onclick="removerDocumento(${d.id}, ${id})" title="Remover" class="btn btn-sm" style="padding:.2rem .5rem;font-size:.72rem;background:#fee2e2;color:#991b1b">✕</button>
+          ${isAdmin ? `<button onclick="removerDocumento(${d.id}, ${id}, '${containerId}')" title="Remover" class="btn btn-sm" style="padding:.2rem .5rem;font-size:.72rem;background:#fee2e2;color:#991b1b">✕</button>` : ''}
         </div>`).join('') : '<div style="color:var(--muted);font-size:.82rem;font-style:italic">Nenhum documento anexado ainda.</div>';
       pasta.innerHTML = `
         <div style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.7rem">${lista}</div>
         <label class="btn btn-sm btn-primary" style="cursor:pointer">
           📎 Anexar documento
-          <input type="file" style="display:none" onchange="anexarDocumento(${id}, this)">
+          <input type="file" style="display:none" onchange="anexarDocumento(${id}, this, '${containerId}')">
         </label>
-        <span id="docMsg-${id}" style="font-size:.75rem;margin-left:.5rem"></span>`;
+        <span id="${containerId}-msg" style="font-size:.75rem;margin-left:.5rem"></span>`;
     } catch {
       pasta.innerHTML = '<div style="color:#991b1b;font-size:.82rem">Erro ao carregar documentos.</div>';
     }
@@ -2347,10 +2363,11 @@
     if (badge && c) { badge.textContent = '📎 ' + c.docs; badge.style.display = c.docs ? '' : 'none'; }
   }
 
-  async function anexarDocumento(leadId, input) {
+  async function anexarDocumento(leadId, input, containerId) {
+    containerId = containerId || ('docPasta-'+leadId);
     const file = input.files[0];
     if (!file) return;
-    const msg = document.getElementById('docMsg-'+leadId);
+    const msg = document.getElementById(containerId+'-msg');
     if (msg) { msg.style.color = '#64748b'; msg.textContent = 'Enviando…'; }
     const fd = new FormData();
     fd.append('arquivo', file);
@@ -2359,19 +2376,19 @@
       const d = await r.json();
       if (!r.ok) { if (msg) { msg.style.color='#dc2626'; msg.textContent = d.detail || 'Erro ao enviar.'; } return; }
       _atualizarBadgeDocs(leadId, +1);
-      await carregarDocsContrato(leadId);
+      await carregarDocsContrato(leadId, containerId);
     } catch {
       if (msg) { msg.style.color='#dc2626'; msg.textContent='Erro de conexão.'; }
     } finally { input.value=''; }
   }
 
-  async function removerDocumento(docId, leadId) {
+  async function removerDocumento(docId, leadId, containerId) {
     if (!confirm('Remover este documento? Esta ação não pode ser desfeita.')) return;
     try {
       const r = await fetch(`/api/documentos-cliente/${docId}`, { method: 'DELETE' });
       if (!r.ok) { alert('Não foi possível remover.'); return; }
       _atualizarBadgeDocs(leadId, -1);
-      await carregarDocsContrato(leadId);
+      await carregarDocsContrato(leadId, containerId);
     } catch { alert('Erro de conexão.'); }
   }
 

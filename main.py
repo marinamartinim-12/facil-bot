@@ -2166,7 +2166,7 @@ async def listar_contratos_fechados(
 
 @app.get("/api/leads/{lead_id}/documentos")
 async def listar_documentos_cliente(
-    lead_id: int, db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin),
+    lead_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(obter_usuario_atual),
 ):
     docs = (db.query(DocumentoCliente)
             .filter(DocumentoCliente.lead_id == lead_id)
@@ -2185,7 +2185,7 @@ async def listar_documentos_cliente(
 @app.post("/api/leads/{lead_id}/documentos")
 async def anexar_documento_cliente(
     lead_id: int, arquivo: UploadFile = File(...),
-    db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin),
+    db: Session = Depends(get_db), usuario: Usuario = Depends(obter_usuario_atual),
 ):
     """Anexa um documento à pasta do cliente — bytes guardados no banco (durável)."""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
@@ -2203,7 +2203,7 @@ async def anexar_documento_cliente(
     mime = arquivo.content_type or "application/octet-stream"
     _guardar_blob(db, filename, "documento", dados, nome_original=nome_orig, mime=mime, subdir="documentos")
     doc = DocumentoCliente(lead_id=lead_id, nome=nome_orig, filename=filename,
-                           mime=mime, tamanho=len(dados), enviado_por=admin.id)
+                           mime=mime, tamanho=len(dados), enviado_por=usuario.id)
     db.add(doc)
     db.commit()
     db.refresh(doc)
