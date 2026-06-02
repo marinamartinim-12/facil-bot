@@ -2351,6 +2351,39 @@ async def buscar_cep(cep: str, usuario: Usuario = Depends(obter_usuario_atual)):
     }
 
 
+@app.get("/api/placa/{placa}")
+async def consultar_placa(placa: str, db: Session = Depends(get_db),
+                          usuario: Usuario = Depends(obter_usuario_atual)):
+    """Consulta dados do veículo pela placa via API Placas (apiplacas.com.br / wdapi2)."""
+    placa_limpa = re.sub(r"[^A-Za-z0-9]", "", placa or "").upper()
+    if len(placa_limpa) != 7:
+        raise HTTPException(400, "Placa inválida (esperado 7 caracteres, ex: ABC1D23)")
+    cfg = db.query(Configuracao).filter(Configuracao.chave == "apiplacas_token").first()
+    token = (cfg.valor.strip() if cfg and cfg.valor else "") or os.getenv("APIPLACAS_TOKEN", "")
+    if not token:
+        raise HTTPException(400, "Token da API Placas não configurado. Cole-o em Config. do Bot.")
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(f"https://wdapi2.com.br/consulta/{placa_limpa}/{token}")
+        d = r.json()
+    except Exception:
+        raise HTTPException(502, "Erro ao consultar a placa. Tente novamente.")
+    if not isinstance(d, dict):
+        raise HTTPException(502, "Resposta inesperada da consulta de placa")
+    extra = d.get("extra") or {}
+    marca  = (d.get("MARCA")  or d.get("marca")  or "").strip()
+    modelo = (d.get("MODELO") or d.get("modelo") or "").strip()
+    ano    = str(d.get("anoModelo") or d.get("ano") or extra.get("ano_modelo")
+                 or extra.get("ano_fabricacao") or "").strip()
+    chassi = (d.get("chassi") or extra.get("chassi") or "").strip().upper()
+    cor    = (d.get("cor") or extra.get("cor") or "").strip()
+    if not (marca or modelo or chassi):
+        raise HTTPException(404, str(d.get("mensagem") or d.get("message") or "Placa não encontrada"))
+    modelo_completo = " ".join(x for x in [marca, modelo] if x).strip()
+    return {"placa": placa_limpa, "marca": marca, "modelo": modelo,
+            "modelo_completo": modelo_completo, "ano": ano, "chassi": chassi, "cor": cor}
+
+
 @app.get("/api/admin/backup")
 async def baixar_backup(admin: Usuario = Depends(requer_admin)):
     """Baixa um backup COMPLETO do banco (conversas, mídias, documentos — tudo). Admin only."""
@@ -5060,6 +5093,11 @@ def _criar_config_padrao(db: Session):
             "chave": "followup_optout_texto",
             "descricao": "Frase de descadastro adicionada ao fim dos follow-ups",
             "valor": "\n\n_Se não quiser mais receber, responda SAIR._",
+        },
+        {
+            "chave": "apiplacas_token",
+            "descricao": "Token da API Placas (apiplacas.com.br) para buscar dados do veículo pela placa",
+            "valor": "",
         },
         {
             "chave": "meta_contratos",

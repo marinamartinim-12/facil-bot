@@ -964,6 +964,18 @@
             <a href="/api/admin/backup" download class="btn btn-sm" style="background:#065f46;color:#fff;text-decoration:none;padding:.45rem 1rem">⬇️ Baixar backup completo</a>
           </div>
 
+          <!-- Token API Placas -->
+          <div class="form-card" style="margin-bottom:1rem;padding:1.1rem 1.25rem">
+            <div style="font-size:.95rem;font-weight:800;color:var(--navy)">🚗 Busca por placa (API Placas)</div>
+            <div style="font-size:.8rem;color:var(--muted);margin:.35rem 0 .7rem">Cole aqui a sua chave (token) da apiplacas.com.br. Ela é usada para preencher marca/modelo/ano/chassi ao digitar a placa de um carro. Fica guardada só aqui, no seu sistema.</div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+              <input id="cfgPlacasToken" type="text" placeholder="Cole o token aqui" autocomplete="off"
+                style="flex:1;min-width:240px;border:1.5px solid var(--border);border-radius:8px;padding:.45rem .7rem;font-size:.85rem;outline:none">
+              <button onclick="salvarTokenPlacas()" class="btn btn-sm" style="background:var(--navy);color:#fff;padding:.45rem 1rem">💾 Salvar token</button>
+              <span id="cfgPlacasMsg" style="font-size:.78rem"></span>
+            </div>
+          </div>
+
           <!-- Meta mensal -->
           <div class="form-card" style="margin-bottom:1rem;padding:1.1rem 1.25rem">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.85rem;flex-wrap:wrap;gap:.5rem">
@@ -1176,7 +1188,8 @@
           <div id="modalCarrosLista" style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.6rem"></div>
           <div style="display:flex;flex-direction:column;gap:.4rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.6rem">
             <div style="display:flex;gap:.4rem;flex-wrap:wrap">
-              <input id="carPlaca" placeholder="Placa" maxlength="8" style="flex:1;min-width:100px;text-transform:uppercase;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+              <input id="carPlaca" placeholder="Placa" maxlength="8" style="flex:1;min-width:90px;text-transform:uppercase;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+              <button class="btn btn-sm" id="btnBuscarPlaca" onclick="buscarPlaca()" title="Preencher pela placa" style="background:#0d2b4e;color:#fff;white-space:nowrap">🔍 Buscar placa</button>
               <input id="carAno" placeholder="Ano" maxlength="9" style="width:90px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
             </div>
             <input id="carModelo" placeholder="Marca / Modelo" style="border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
@@ -2462,6 +2475,29 @@
         </div>
       </div>`;
     }).join('');
+  }
+
+  async function buscarPlaca() {
+    const placa = document.getElementById('carPlaca').value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const msg = document.getElementById('carMsg');
+    const btn = document.getElementById('btnBuscarPlaca');
+    if (placa.length !== 7) { msg.style.color = '#dc2626'; msg.textContent = 'Digite a placa completa (7 caracteres).'; return; }
+    btn.disabled = true; const txt = btn.textContent; btn.textContent = '🔄 Buscando…';
+    msg.style.color = 'var(--muted)'; msg.textContent = 'Consultando a placa…';
+    try {
+      const r = await fetch(`/api/placa/${placa}`);
+      const d = await r.json();
+      if (!r.ok) { msg.style.color = '#dc2626'; msg.textContent = d.detail || 'Não foi possível consultar.'; return; }
+      const setF = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+      setF('carModelo', d.modelo_completo);
+      setF('carAno', d.ano);
+      setF('carChassi', d.chassi);
+      msg.style.color = '#16a34a'; msg.textContent = '✓ dados preenchidos pela placa';
+    } catch {
+      msg.style.color = '#dc2626'; msg.textContent = 'Erro de conexão.';
+    } finally {
+      btn.disabled = false; btn.textContent = txt;
+    }
   }
 
   async function adicionarCarro() {
@@ -5057,6 +5093,23 @@
   async function carregarConfiguracoes() {
     try { const r = await fetch('/api/config'); configData = await r.json(); renderConfiguracoes(); } catch {}
     carregarMetaMensal();
+    const tk = (configData || []).find(c => c.chave === 'apiplacas_token');
+    const inp = document.getElementById('cfgPlacasToken');
+    if (inp) inp.value = tk?.valor || '';
+  }
+
+  async function salvarTokenPlacas() {
+    const val = document.getElementById('cfgPlacasToken').value.trim();
+    const msg = document.getElementById('cfgPlacasMsg');
+    try {
+      const r = await fetch('/api/config/apiplacas_token', {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ valor: val }),
+      });
+      if (!r.ok) { msg.style.color = '#dc2626'; msg.textContent = 'Erro ao salvar.'; return; }
+      msg.style.color = '#16a34a'; msg.textContent = 'Token salvo ✓';
+      try { const rl = await fetch('/api/config'); configData = await rl.json(); } catch {}
+    } catch { msg.style.color = '#dc2626'; msg.textContent = 'Erro de conexão.'; }
   }
 
   const configLabels = {
@@ -5081,7 +5134,7 @@
     const map = {};
     configData.forEach(c => map[c.chave] = c);
     const ordered = configOrdem.map(k => map[k]).filter(Boolean);
-    const outros = configData.filter(c => !configOrdem.includes(c.chave));
+    const outros = configData.filter(c => !configOrdem.includes(c.chave) && c.chave !== 'apiplacas_token');
     document.getElementById('configCards').innerHTML = [...ordered, ...outros].map(c => {
       const label = configLabels[c.chave] || { titulo: c.chave, subtitulo: c.descricao || '' };
       return `<div class="form-card" style="margin-bottom:1rem">
