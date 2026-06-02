@@ -875,6 +875,7 @@
                 <div class="wsp-header-sub" id="chatTelefone"></div>
               </div>
               <div class="wsp-header-actions">
+                <button id="btnDadosChat" class="btn btn-sm" style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.35);display:none;font-weight:600" onclick="verDadosChat()" title="Ver e editar os dados do cliente">📋 Dados do cliente</button>
                 <button id="btnAssumirChat" class="btn btn-gold btn-sm" style="display:none" onclick="assumirLeadAtivo()">👤 Assumir</button>
                 <button id="btnFecharChat" class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);display:none" onclick="fecharLeadAtivo()">✓ Fechar</button>
               </div>
@@ -4729,6 +4730,7 @@
     document.getElementById('chatNome').textContent = nome;
     document.getElementById('chatTelefone').textContent = chatLeadAtivo.telefone;
     document.getElementById('btnFecharChat').style.display = '';
+    document.getElementById('btnDadosChat').style.display = '';
 
     // Mostrar botão assumir se não for responsável
     const jaAssumido = chatLeadAtivo.responsavel?.id === currentUser.id;
@@ -4740,6 +4742,10 @@
     await carregarMensagensChat(true); // sempre vai pro fim na abertura
     if (chatPollingInterval) clearInterval(chatPollingInterval);
     chatPollingInterval = setInterval(carregarMensagensChat, 5000);
+  }
+
+  function verDadosChat() {
+    if (chatLeadAtivo) verLead(chatLeadAtivo.id);
   }
 
   async function assumirLeadAtivo() {
@@ -5014,6 +5020,7 @@
     document.getElementById('chatAvatar').textContent = '?';
     document.getElementById('btnFecharChat').style.display = 'none';
     document.getElementById('btnAssumirChat').style.display = 'none';
+    document.getElementById('btnDadosChat').style.display = 'none';
     await carregarInbox();
   }
 
