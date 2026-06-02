@@ -8,6 +8,8 @@ import base64
 import json
 import os
 import re
+import subprocess
+import tempfile
 import uuid
 import httpx
 from datetime import datetime, timedelta, timezone
@@ -684,6 +686,41 @@ def _guardar_blob(db, filename: str, tipo: str, dados: bytes,
             print(f"⚠️ Erro ao gravar mídia em disco ({filename}): {e}")
 
 
+def _transcode_audio_sync(audio_bytes: bytes, fmt: str) -> bytes | None:
+    """Converte bytes de áudio para 'ogg' (voz WhatsApp) ou 'mp3' (player universal) via ffmpeg.
+    Usa arquivo temporário de entrada (formatos como mp4 do iPhone não funcionam por pipe)."""
+    fd, inpath = tempfile.mkstemp(suffix=".bin")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(audio_bytes)
+        if fmt == "ogg":
+            args = ["ffmpeg", "-y", "-i", inpath, "-c:a", "libopus",
+                    "-b:a", "32k", "-ac", "1", "-ar", "48000",
+                    "-application", "voip", "-f", "ogg", "pipe:1"]
+        else:  # mp3
+            args = ["ffmpeg", "-y", "-i", inpath, "-c:a", "libmp3lame",
+                    "-b:a", "64k", "-ac", "1", "-f", "mp3", "pipe:1"]
+        proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        if proc.returncode == 0 and proc.stdout:
+            return proc.stdout
+        print(f"⚠️ ffmpeg falhou ({fmt}) rc={proc.returncode}: {proc.stderr[:300]}")
+    except FileNotFoundError:
+        print("⚠️ ffmpeg não está instalado — usando áudio original")
+    except Exception as e:
+        print(f"⚠️ Erro no transcode de áudio ({fmt}): {e}")
+    finally:
+        try:
+            os.remove(inpath)
+        except Exception:
+            pass
+    return None
+
+
+async def _transcode_audio(audio_bytes: bytes, fmt: str) -> bytes | None:
+    """Versão async — roda o ffmpeg (bloqueante) numa thread para não travar o servidor."""
+    return await asyncio.to_thread(_transcode_audio_sync, audio_bytes, fmt)
+
+
 async def _salvar_imagem(url: str, db=None) -> str | None:
     """Baixa imagem com retries, guarda no banco (+disco) e retorna marcador [IMAGE:filename].
     Retorna None em caso de falha (caller deve salvar placeholder)."""
@@ -776,13 +813,19 @@ async def _salvar_audio_cliente(telefone: str, audio_url: str, db) -> str | None
                     await asyncio.sleep(2)
                     continue
                 return "[AUDIO_INDISPONIVEL]"
-            # Detecta extensão pelo content-type
-            ct = resp.headers.get("content-type", "audio/ogg")
-            ext = "ogg" if "ogg" in ct else ("mp3" if "mp3" in ct or "mpeg" in ct else "webm")
+            # Converte para MP3 (toca em qualquer navegador, inclusive iPhone/Safari)
             audio_id = uuid.uuid4().hex
-            filename = f"{audio_id}.{ext}"
-            _guardar_blob(db, filename, "audio", resp.content, mime=ct, subdir="audios")
-            print(f"🎙️ Áudio do cliente salvo: {filename} ({len(resp.content)} bytes)")
+            mp3 = await _transcode_audio(resp.content, "mp3")
+            if mp3:
+                filename = f"{audio_id}.mp3"
+                _guardar_blob(db, filename, "audio", mp3, mime="audio/mpeg", subdir="audios")
+            else:
+                # Fallback: guarda o original se o ffmpeg não estiver disponível
+                ct = resp.headers.get("content-type", "audio/ogg")
+                ext = "ogg" if "ogg" in ct else ("mp3" if "mp3" in ct or "mpeg" in ct else "webm")
+                filename = f"{audio_id}.{ext}"
+                _guardar_blob(db, filename, "audio", resp.content, mime=ct, subdir="audios")
+            print(f"🎙️ Áudio do cliente salvo: {filename}")
             return f"[AUDIO:{filename}]"
         except Exception as e:
             print(f"⚠️ Erro ao salvar áudio do cliente (tentativa {tentativa+1}): {e}")
@@ -1950,29 +1993,36 @@ async def enviar_audio_gravado(
         header, raw_b64 = audio_base64_raw.split(",", 1)
         mime = header.split(":")[1].split(";")[0] if ":" in header else mime
 
-    m = mime.lower()
-    if "ogg" in m:
-        ext = "ogg"
-    elif "mp4" in m or "m4a" in m or "aac" in m:
-        ext = "m4a"
-    elif "mpeg" in m or "mp3" in m:
-        ext = "mp3"
-    else:
-        ext = "webm"
     audio_bytes = base64.b64decode(raw_b64)
     print(f"🎤 Áudio para {lead.telefone} | mime={mime} | bytes={len(audio_bytes)}")
 
-    # Guarda no BANCO (durável) + disco — para reprodução no painel mesmo após deploy
+    # Converte: ogg/opus para enviar como ÁUDIO DE VOZ no WhatsApp; mp3 para tocar no painel
+    ogg = await _transcode_audio(audio_bytes, "ogg")
+    mp3 = await _transcode_audio(audio_bytes, "mp3")
+
+    # O que será enviado ao WhatsApp
+    if ogg:
+        envio_mime, envio_b64 = "audio/ogg", base64.b64encode(ogg).decode()
+    else:
+        envio_mime, envio_b64 = mime, raw_b64  # fallback: original
+
+    # O que fica guardado para reprodução no painel
     audio_id = uuid.uuid4().hex
-    audio_filename = f"{audio_id}.{ext}"
-    _guardar_blob(db, audio_filename, "audio", audio_bytes, mime=mime, subdir="audios")
+    if mp3:
+        audio_filename = f"{audio_id}.mp3"
+        _guardar_blob(db, audio_filename, "audio", mp3, mime="audio/mpeg", subdir="audios")
+    else:
+        ext = "ogg" if ogg else ("ogg" if "ogg" in mime.lower() else "webm")
+        audio_filename = f"{audio_id}.{ext}"
+        _guardar_blob(db, audio_filename, "audio", (ogg or audio_bytes),
+                      mime=("audio/ogg" if ogg else mime), subdir="audios")
 
     # Envia pelo Z-API enviando base64 diretamente (evita race condition de download de URL)
     if settings.ZAPI_INSTANCE and settings.ZAPI_TOKEN:
         zapi_url = f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE}/token/{settings.ZAPI_TOKEN}/send-audio"
         headers_zapi = {"Client-Token": settings.ZAPI_CLIENT_TOKEN}
-        # Monta data URI com o base64 original para envio direto
-        audio_data_uri = f"data:{mime};base64,{raw_b64}"
+        # Monta data URI com o áudio convertido (ogg/opus) para virar nota de voz
+        audio_data_uri = f"data:{envio_mime};base64,{envio_b64}"
         payload = {"phone": lead.telefone, "audio": audio_data_uri}
         zapi_ok = False
         try:

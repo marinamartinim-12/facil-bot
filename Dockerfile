@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 WORKDIR /app
+# ffmpeg: conversão de áudio (ogg/opus p/ WhatsApp e mp3 p/ o painel)
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
