@@ -120,6 +120,7 @@ class Lead(Base):
     email      = Column(String(150), nullable=True)
     tem_cnh    = Column(Boolean, nullable=True)            # True=tem CNH | False=não tem | None=não informado
     oculto_funil = Column(Boolean, default=False)   # True = oculto do kanban por inatividade
+    descadastrado = Column(Boolean, default=False)  # True = pediu p/ não receber mensagens (opt-out)
     observacoes = Column(Text, nullable=True)
     origem = Column(String(50), nullable=True)        # rede_social | parceiro | ex_cliente | indicacao | whatsapp
     origem_detalhe = Column(String(100), nullable=True) # google | instagram | nome livre (rede_social); ou nome do parceiro

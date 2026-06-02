@@ -1763,7 +1763,8 @@
       // Badge status
       const stLabel = labSt(lead.status || '');
       document.getElementById('modalStatusBadge').innerHTML =
-        `<span class="badge badge-${lead.status}" style="font-size:.75rem;margin-left:.5rem">${stLabel}</span>`;
+        `<span class="badge badge-${lead.status}" style="font-size:.75rem;margin-left:.5rem">${stLabel}</span>` +
+        (lead.descadastrado ? `<span title="Cliente pediu para não receber mensagens" style="font-size:.72rem;margin-left:.4rem;background:#fee2e2;color:#991b1b;padding:.1rem .45rem;border-radius:99px;font-weight:700">🚫 Descadastrado</span>` : '');
 
       // Dados do cliente — modo visualização
       window._modalLeadData = lead;
@@ -1792,6 +1793,11 @@
         acoes += `<button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="moverLeadModal(${leadId},'fechado')">🏁 Fechar</button>`;
       if ((lead.status === 'fechado' || lead.status === 'perdido') && isAdmin)
         acoes += `<button class="btn btn-sm btn-outline" onclick="moverLeadModal(${leadId},'assumido')">↩ Reabrir</button>`;
+
+      // Reativar contato (se descadastrado) — admin/responsável
+      if (lead.descadastrado && (isAdmin || isResp)) {
+        acoes += `<button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="reativarContato(${leadId})" title="Voltar a permitir mensagens">↩ Reativar contato</button>`;
+      }
 
       // Ações exclusivas de admin
       if (isAdmin) {
@@ -5391,6 +5397,22 @@
         elDeal.style.display = 'none';
       }
     }
+  }
+
+  async function reativarContato(leadId) {
+    if (!confirm('Reativar o contato? O cliente voltará a poder receber follow-ups.')) return;
+    try {
+      const r = await fetch(`/api/leads/${leadId}`, {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ descadastrado: false }),
+      });
+      if (!r.ok) { alert('Erro ao reativar.'); return; }
+      const lead = await r.json();
+      window._modalLeadData = lead;
+      const idx = allLeads.findIndex(l => l.id === leadId);
+      if (idx !== -1) allLeads[idx] = lead;
+      verLead(leadId);
+    } catch { alert('Erro de rede.'); }
   }
 
   async function salvarDadosLead() {

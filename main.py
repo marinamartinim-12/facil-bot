@@ -145,10 +145,16 @@ async def _enviar_followups():
         ).all()
 
         enviados = 0
+        optout_on = _cfg("followup_optout", "1").strip().lower() not in ("0", "false", "off")
+        optout_txt = _cfg("followup_optout_texto", "\n\n_Se não quiser mais receber, responda SAIR._")
+
         for lead in leads:
             try:
                 # Pula leads manuais sem telefone real
                 if lead.telefone.startswith("_manual_"):
+                    continue
+                # Pula quem pediu para não receber mais (opt-out)
+                if lead.descadastrado:
                     continue
 
                 # Última mensagem do usuário
@@ -197,6 +203,8 @@ async def _enviar_followups():
                 nome = f" {lead.nome}" if lead.nome else ""
                 texto_base = msgs[tentativa]
                 texto = texto_base.replace("{nome}", nome.strip()).replace("Oi!", f"Oi{nome}!")
+                if optout_on and optout_txt:
+                    texto = texto + optout_txt
 
                 await enviar_zapi(lead.telefone, texto)
                 _salvar_msg_webhook(db, lead.telefone, texto, role="assistant")
@@ -389,6 +397,7 @@ async def startup():
         ("leads",           "profissao",          "VARCHAR(100)"),
         ("leads",           "tem_cnh",            "BOOLEAN"),
         ("leads",           "oculto_funil",       "BOOLEAN DEFAULT 0"),
+        ("leads",           "descadastrado",      "BOOLEAN DEFAULT 0"),
         ("leads",           "email",              "VARCHAR(150)"),
         ("parceiros",       "nome_agenda",        "VARCHAR(200)"),
         ("parceiros",       "operadora_id",       "INTEGER"),
@@ -894,6 +903,23 @@ async def _salvar_audio_cliente(telefone: str, audio_url: str, db) -> str | None
 _DEBUG_WEBHOOKS = []  # últimos webhooks recebidos (memória) — apenas para depuração
 
 
+def _e_descadastro(texto: str) -> bool:
+    """Detecta se o cliente pediu para parar de receber mensagens (opt-out)."""
+    t = re.sub(r"[^\w\s]", "", (texto or "").strip().lower()).strip()
+    if not t:
+        return False
+    exatas = {"sair", "parar", "pare", "para", "cancelar", "cancela", "stop",
+              "descadastrar", "sai", "remover", "remove", "desinscrever"}
+    if t in exatas:
+        return True
+    frases = ["nao quero receber", "não quero receber", "nao quero mais mensagem",
+              "não quero mais mensagem", "para de mandar", "pare de mandar",
+              "parem de mandar", "descadastr", "me tira da lista", "me tirem da lista",
+              "nao me mande", "não me mande", "nao me envie", "não me envie",
+              "nao quero mais contato", "não quero mais contato"]
+    return any(f in t for f in frases)
+
+
 def _ha_funcionaria_online(db) -> bool:
     """True se alguma funcionária está com sessão ativa (ativa nos últimos 10 min).
     Usado para NÃO mandar a mensagem de 'fora do horário' quando há alguém disponível."""
@@ -1056,6 +1082,22 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
                 return JSONResponse({"status": "documento_salvo" if "[DOC:" in conteudo_doc else "documento_indisponivel"})
 
             return JSONResponse({"status": "ignored"})
+
+        # ── Opt-out: cliente pediu para parar de receber mensagens ───────────
+        if _e_descadastro(texto):
+            lead_opt = db.query(Lead).filter(Lead.telefone == telefone).first()
+            if lead_opt and not telefone.startswith("_manual_"):
+                _salvar_msg_webhook(db, telefone, texto, role="user")
+                lead_opt.descadastrado = True
+                lead_opt.followup_tentativa = 99   # garante que não entra mais em follow-up
+                lead_opt.atualizado_em = datetime.utcnow()
+                db.commit()
+                conf = ("Pronto! ✅ Você não receberá mais mensagens automáticas nossas. "
+                        "Se mudar de ideia, é só nos chamar aqui a qualquer momento. Obrigado! 🙏")
+                await enviar_zapi(telefone, conf)
+                _salvar_msg_webhook(db, telefone, conf, role="assistant")
+                print(f"🚫 Lead {telefone} descadastrado (opt-out)")
+                return JSONResponse({"status": "descadastrado"})
 
         # ── Verifica se é número de parceiro ─────────────────────────────────
         parceiro = _buscar_parceiro_por_telefone(telefone, db)
@@ -2387,7 +2429,7 @@ async def editar_lead(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     body = await request.json()
-    campos_editaveis = ["nome", "cpf", "data_nascimento", "carro_interesse", "modalidade", "observacoes", "cidade", "renda", "profissao", "tem_cnh", "email"]
+    campos_editaveis = ["nome", "cpf", "data_nascimento", "carro_interesse", "modalidade", "observacoes", "cidade", "renda", "profissao", "tem_cnh", "email", "descadastrado"]
     for campo in campos_editaveis:
         if campo in body:
             valor = body[campo]
@@ -4916,6 +4958,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "profissao": l.profissao or "",
         "tem_cnh":  l.tem_cnh,   # None=não informado | True=sim | False=não
         "oculto_funil": bool(l.oculto_funil),
+        "descadastrado": bool(l.descadastrado),
     }
 
 
@@ -5001,6 +5044,16 @@ def _criar_config_padrao(db: Session):
             "chave": "followup_max_dias",
             "descricao": "Não inicia follow-up em lead cuja última mensagem é mais antiga que X dias. Padrão: 15",
             "valor": "15",
+        },
+        {
+            "chave": "followup_optout",
+            "descricao": "Inclui a frase de descadastro (SAIR) nos follow-ups — reduz risco de denúncia/ban. 1=sim, 0=não",
+            "valor": "1",
+        },
+        {
+            "chave": "followup_optout_texto",
+            "descricao": "Frase de descadastro adicionada ao fim dos follow-ups",
+            "valor": "\n\n_Se não quiser mais receber, responda SAIR._",
         },
         {
             "chave": "meta_contratos",
