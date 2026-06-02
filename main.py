@@ -29,14 +29,14 @@ def _fmt_br(dt: datetime | None, fmt: str = "%d/%m/%Y %H:%M") -> str | None:
 def _agora_br() -> datetime:
     """Retorna o datetime atual no fuso de Brasília."""
     return datetime.now(_TZ_BR)
-from fastapi import FastAPI, Request, Depends, HTTPException, Query, Response
+from fastapi import FastAPI, Request, Depends, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
 import secrets
 from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, AtividadePing, Agendamento, MidiaArquivo, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, AtividadePing, Agendamento, MidiaArquivo, DocumentoCliente, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
@@ -684,6 +684,16 @@ def _guardar_blob(db, filename: str, tipo: str, dados: bytes,
                 f.write(dados)
         except Exception as e:
             print(f"⚠️ Erro ao gravar mídia em disco ({filename}): {e}")
+
+
+def _tamanho_legivel(n: int) -> str:
+    """Converte bytes em texto legível: 1.2 MB, 340 KB, etc."""
+    n = n or 0
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 * 1024:
+        return f"{n/1024:.0f} KB"
+    return f"{n/(1024*1024):.1f} MB"
 
 
 def _transcode_audio_sync(audio_bytes: bytes, fmt: str) -> bytes | None:
@@ -2108,6 +2118,116 @@ async def servir_documento(filename: str, db: Session = Depends(get_db)):
     from urllib.parse import quote
     disp = f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(nome_dl)}"
     return Response(content=dados, media_type=media_type, headers={"Content-Disposition": disp})
+
+
+# ─── Contratos fechados + pasta de documentos do cliente (admin) ─────────────────
+
+_MAX_DOC_BYTES = 25 * 1024 * 1024  # 25 MB por arquivo
+
+
+@app.get("/api/contratos-fechados")
+async def listar_contratos_fechados(
+    busca: str = "",
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Lista os contratos fechados (admin) com dados do negócio e nº de documentos anexados."""
+    q = db.query(Lead).filter(Lead.status == StatusLeadEnum.fechado)
+    termo = (busca or "").strip().lower()
+    leads = q.order_by(Lead.atualizado_em.desc()).all()
+    # contagem de docs por lead
+    from collections import defaultdict
+    docs_count = defaultdict(int)
+    for (lid,) in db.query(DocumentoCliente.lead_id).all():
+        docs_count[lid] += 1
+    resultado = []
+    for l in leads:
+        nome = l.nome or l.telefone or ""
+        if termo and termo not in nome.lower() and termo not in (l.telefone or "").lower():
+            continue
+        resp = db.query(Usuario).filter(Usuario.id == l.atribuido_para).first() if l.atribuido_para else None
+        resultado.append({
+            "id": l.id,
+            "nome": nome,
+            "telefone": l.telefone,
+            "cpf": l.cpf or "",
+            "deal_data": l.deal_data or "",
+            "deal_veiculo": l.deal_veiculo or "",
+            "deal_banco": l.deal_banco or "",
+            "deal_operadora": l.deal_operadora or "",
+            "deal_valor": l.deal_valor or "",
+            "deal_comissao": l.deal_comissao or "",
+            "responsavel": resp.nome if resp else "—",
+            "docs": docs_count.get(l.id, 0),
+            "fechado_em": _fmt_br(l.atualizado_em, "%d/%m/%Y") or "",
+        })
+    return resultado
+
+
+@app.get("/api/leads/{lead_id}/documentos")
+async def listar_documentos_cliente(
+    lead_id: int, db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin),
+):
+    docs = (db.query(DocumentoCliente)
+            .filter(DocumentoCliente.lead_id == lead_id)
+            .order_by(DocumentoCliente.criado_em.desc()).all())
+    return [{
+        "id": d.id,
+        "nome": d.nome,
+        "filename": d.filename,
+        "tamanho": d.tamanho,
+        "tamanho_str": _tamanho_legivel(d.tamanho),
+        "enviado_por": (d.usuario.nome if d.usuario else "—"),
+        "em": _fmt_br(d.criado_em, "%d/%m/%Y %H:%M") or "",
+    } for d in docs]
+
+
+@app.post("/api/leads/{lead_id}/documentos")
+async def anexar_documento_cliente(
+    lead_id: int, arquivo: UploadFile = File(...),
+    db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin),
+):
+    """Anexa um documento à pasta do cliente — bytes guardados no banco (durável)."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Cliente não encontrado")
+    dados = await arquivo.read()
+    if not dados:
+        raise HTTPException(400, "Arquivo vazio")
+    if len(dados) > _MAX_DOC_BYTES:
+        raise HTTPException(400, "Arquivo muito grande (máx. 25 MB)")
+    nome_orig = (arquivo.filename or "documento")[:250]
+    ext = (nome_orig.rsplit(".", 1)[-1][:5] if "." in nome_orig else "bin").lower()
+    ext = re.sub(r"[^a-z0-9]", "", ext) or "bin"
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    mime = arquivo.content_type or "application/octet-stream"
+    _guardar_blob(db, filename, "documento", dados, nome_original=nome_orig, mime=mime, subdir="documentos")
+    doc = DocumentoCliente(lead_id=lead_id, nome=nome_orig, filename=filename,
+                           mime=mime, tamanho=len(dados), enviado_por=admin.id)
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return {"status": "ok", "id": doc.id, "filename": filename}
+
+
+@app.delete("/api/documentos-cliente/{doc_id}")
+async def remover_documento_cliente(
+    doc_id: int, db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin),
+):
+    doc = db.query(DocumentoCliente).filter(DocumentoCliente.id == doc_id).first()
+    if not doc:
+        raise HTTPException(404, "Documento não encontrado")
+    # Remove o blob associado (se nenhum outro registro usa o mesmo filename)
+    outros = (db.query(DocumentoCliente)
+              .filter(DocumentoCliente.filename == doc.filename,
+                      DocumentoCliente.id != doc.id).first())
+    if not outros:
+        blob = db.query(MidiaArquivo).filter(MidiaArquivo.filename == doc.filename).first()
+        if blob:
+            db.delete(blob)
+    db.delete(doc)
+    db.commit()
+    return {"status": "ok"}
 
 
 @app.get("/api/inbox")

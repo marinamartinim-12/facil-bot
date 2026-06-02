@@ -321,6 +321,24 @@ class MidiaArquivo(Base):
     criado_em     = Column(DateTime, default=datetime.utcnow)
 
 
+class DocumentoCliente(Base):
+    """Documento anexado a um contrato fechado (pasta do cliente).
+    Os BYTES ficam em MidiaArquivo (banco = durável); aqui guardamos a referência e metadados."""
+    __tablename__ = "documentos_cliente"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    lead_id     = Column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
+    nome        = Column(String(250), nullable=False)        # nome original do arquivo
+    filename    = Column(String(64), nullable=False)         # uuidhex.ext (chave em MidiaArquivo)
+    mime        = Column(String(120), nullable=True)
+    tamanho     = Column(Integer, default=0)
+    enviado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    criado_em   = Column(DateTime, default=datetime.utcnow)
+
+    lead    = relationship("Lead")
+    usuario = relationship("Usuario")
+
+
 def criar_tabelas():
     Base.metadata.create_all(bind=engine)
 

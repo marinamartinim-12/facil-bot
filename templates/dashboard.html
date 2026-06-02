@@ -662,6 +662,9 @@
         <span class="nav-icon">🤝</span> Parceiros
       </button>
       <div class="nav-section admin-only" style="display:none">Administração</div>
+      <button class="nav-item admin-only" onclick="showView('contratos')" id="nav-contratos" style="display:none">
+        <span class="nav-icon">📁</span> Contratos
+      </button>
       <button class="nav-item admin-only" onclick="showView('usuarios')" id="nav-usuarios" style="display:none">
         <span class="nav-icon">👥</span> Usuários
       </button>
@@ -916,6 +919,19 @@
           <button class="btn btn-sm btn-outline" onclick="carregarAgenda()">🔄 Atualizar</button>
         </div>
         <div id="agendaConteudo" style="display:flex;flex-direction:column;gap:1.2rem">
+          <div style="text-align:center;padding:2rem;color:var(--muted)">Carregando…</div>
+        </div>
+      </div>
+
+      <!-- ── CONTRATOS FECHADOS (admin) ── -->
+      <div id="viewContratos" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem">
+          <input id="contratosBusca" type="search" placeholder="🔍 Buscar cliente (nome ou telefone)…"
+            oninput="renderContratosFechados()"
+            style="flex:1;min-width:220px;max-width:380px;padding:.5rem .85rem;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;outline:none">
+          <button class="btn btn-sm btn-outline" onclick="carregarContratosFechados()">🔄 Atualizar</button>
+        </div>
+        <div id="contratosLista" style="display:flex;flex-direction:column;gap:.7rem">
           <div style="text-align:center;padding:2rem;color:var(--muted)">Carregando…</div>
         </div>
       </div>
@@ -1326,8 +1342,8 @@
   document.getElementById('loginSenha').addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); });
 
   // ═══════ VIEWS ═══════
-  const views = ['dashboard','funil','lista','atendimento','agenda','parceiros','usuarios','relatorios','configuracoes'];
-  const adminViews = ['usuarios', 'relatorios', 'configuracoes'];
+  const views = ['dashboard','funil','lista','atendimento','agenda','parceiros','contratos','usuarios','relatorios','configuracoes'];
+  const adminViews = ['contratos', 'usuarios', 'relatorios', 'configuracoes'];
   function showView(v) {
     if (adminViews.includes(v) && currentUser?.role !== 'admin') return;
     localStorage.setItem('ultimaView', v);
@@ -1336,9 +1352,10 @@
       const n = document.getElementById('nav-'+x);
       if (n) n.classList.toggle('active', x === v);
     });
-    const titles = {dashboard:'Dashboard', funil:'Funil de Leads', lista:'Lista de Leads', usuarios:'Usuários', relatorios:'Relatórios', atendimento:'Atendimentos', agenda:'Agenda', configuracoes:'Config. do Bot', parceiros:'Parceiros'};
+    const titles = {dashboard:'Dashboard', funil:'Funil de Leads', lista:'Lista de Leads', usuarios:'Usuários', relatorios:'Relatórios', atendimento:'Atendimentos', agenda:'Agenda', contratos:'Contratos Fechados', configuracoes:'Config. do Bot', parceiros:'Parceiros'};
     document.getElementById('pageTitle').textContent = titles[v] || v;
     document.getElementById('mainContent').classList.toggle('funil-mode', v === 'funil');
+    if (v === 'contratos') carregarContratosFechados();
     if (v === 'dashboard') carregarDashboard();
     if (v === 'usuarios') carregarUsuarios();
     if (v === 'relatorios') carregarRelatorios();
@@ -2232,6 +2249,131 @@
     const wrap = document.getElementById('btnSino')?.parentElement;
     if (wrap && !wrap.contains(e.target)) { _sinoAberto = false; document.getElementById('sinoDropdown').style.display = 'none'; }
   });
+
+  // ─── Contratos fechados + pasta de documentos (admin) ─────────────────────
+  let _contratosFechados = [];
+
+  async function carregarContratosFechados() {
+    const el = document.getElementById('contratosLista');
+    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted)">Carregando…</div>';
+    try {
+      const r = await fetch('/api/contratos-fechados');
+      if (!r.ok) throw new Error();
+      _contratosFechados = await r.json();
+      renderContratosFechados();
+    } catch {
+      el.innerHTML = '<div style="text-align:center;padding:2rem;color:#991b1b">Erro ao carregar.</div>';
+    }
+  }
+
+  function renderContratosFechados() {
+    const el = document.getElementById('contratosLista');
+    const termo = (document.getElementById('contratosBusca')?.value || '').toLowerCase().trim();
+    const lista = _contratosFechados.filter(c =>
+      !termo || (c.nome||'').toLowerCase().includes(termo) || (c.telefone||'').includes(termo));
+    if (!lista.length) {
+      el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted)">Nenhum contrato fechado encontrado.</div>';
+      return;
+    }
+    el.innerHTML = lista.map(c => `
+      <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#fff">
+        <div style="display:flex;align-items:center;gap:.6rem;padding:.75rem 1rem;cursor:pointer;flex-wrap:wrap" onclick="toggleDocsContrato(${c.id})">
+          <div style="flex:1;min-width:180px">
+            <div style="font-weight:800;color:#0d2b4e">${esc(c.nome)}
+              <span id="docBadge-${c.id}" style="font-size:.7rem;background:#dcfce7;color:#166534;padding:.1rem .45rem;border-radius:99px;font-weight:700;${c.docs?'':'display:none'}">📎 ${c.docs}</span>
+            </div>
+            <div style="font-size:.78rem;color:#64748b">${esc(c.telefone)}${c.deal_veiculo?' · '+esc(c.deal_veiculo):''}${c.deal_banco?' · '+esc(c.deal_banco):''}</div>
+          </div>
+          <div style="font-size:.74rem;color:#64748b;text-align:right">
+            ${c.deal_data?('Fechado: '+esc(c.deal_data)):(c.fechado_em?('Fechado: '+esc(c.fechado_em)):'')}
+            ${c.responsavel!=='—'?('<br>👤 '+esc(c.responsavel)):''}
+          </div>
+          <span id="docToggle-${c.id}" style="color:var(--muted);font-size:.8rem">▼</span>
+        </div>
+        <div id="docPasta-${c.id}" style="display:none;border-top:1px solid var(--border);padding:.75rem 1rem;background:#f8fafc"></div>
+      </div>`).join('');
+  }
+
+  async function toggleDocsContrato(id) {
+    const pasta = document.getElementById('docPasta-'+id);
+    const tog = document.getElementById('docToggle-'+id);
+    if (pasta.style.display !== 'none') { pasta.style.display='none'; tog.textContent='▼'; return; }
+    pasta.style.display='block'; tog.textContent='▲';
+    await carregarDocsContrato(id);
+  }
+
+  function _iconeDoc(nome) {
+    const n = (nome||'').toLowerCase();
+    if (/\.(jpg|jpeg|png|webp|gif)$/.test(n)) return '🖼️';
+    if (/\.pdf$/.test(n)) return '📄';
+    if (/\.(doc|docx)$/.test(n)) return '📝';
+    if (/\.(xls|xlsx|csv)$/.test(n)) return '📊';
+    return '📎';
+  }
+
+  async function carregarDocsContrato(id) {
+    const pasta = document.getElementById('docPasta-'+id);
+    if (!pasta) return;
+    pasta.innerHTML = '<div style="color:var(--muted);font-size:.82rem">Carregando documentos…</div>';
+    try {
+      const r = await fetch(`/api/leads/${id}/documentos`);
+      const docs = await r.json();
+      const lista = docs.length ? docs.map(d => `
+        <div style="display:flex;align-items:center;gap:.5rem;padding:.4rem .6rem;background:#fff;border:1px solid #e2e8f0;border-radius:8px">
+          <span style="font-size:1.2rem">${_iconeDoc(d.nome)}</span>
+          <div style="flex:1;min-width:0">
+            <a href="/api/documento/${d.filename}" target="_blank" style="font-weight:600;color:#0d2b4e;text-decoration:none;word-break:break-all">${esc(d.nome)}</a>
+            <div style="font-size:.7rem;color:#94a3b8">${esc(d.tamanho_str)} · ${esc(d.em)} · ${esc(d.enviado_por)}</div>
+          </div>
+          <a href="/api/documento/${d.filename}" download class="btn btn-sm btn-outline" title="Baixar" style="padding:.2rem .5rem;font-size:.72rem">⬇️</a>
+          <button onclick="removerDocumento(${d.id}, ${id})" title="Remover" class="btn btn-sm" style="padding:.2rem .5rem;font-size:.72rem;background:#fee2e2;color:#991b1b">✕</button>
+        </div>`).join('') : '<div style="color:var(--muted);font-size:.82rem;font-style:italic">Nenhum documento anexado ainda.</div>';
+      pasta.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.7rem">${lista}</div>
+        <label class="btn btn-sm btn-primary" style="cursor:pointer">
+          📎 Anexar documento
+          <input type="file" style="display:none" onchange="anexarDocumento(${id}, this)">
+        </label>
+        <span id="docMsg-${id}" style="font-size:.75rem;margin-left:.5rem"></span>`;
+    } catch {
+      pasta.innerHTML = '<div style="color:#991b1b;font-size:.82rem">Erro ao carregar documentos.</div>';
+    }
+  }
+
+  function _atualizarBadgeDocs(leadId, delta) {
+    const c = _contratosFechados.find(x => x.id === leadId);
+    if (c) { c.docs = Math.max(0, (c.docs||0) + delta); }
+    const badge = document.getElementById('docBadge-'+leadId);
+    if (badge && c) { badge.textContent = '📎 ' + c.docs; badge.style.display = c.docs ? '' : 'none'; }
+  }
+
+  async function anexarDocumento(leadId, input) {
+    const file = input.files[0];
+    if (!file) return;
+    const msg = document.getElementById('docMsg-'+leadId);
+    if (msg) { msg.style.color = '#64748b'; msg.textContent = 'Enviando…'; }
+    const fd = new FormData();
+    fd.append('arquivo', file);
+    try {
+      const r = await fetch(`/api/leads/${leadId}/documentos`, { method: 'POST', body: fd });
+      const d = await r.json();
+      if (!r.ok) { if (msg) { msg.style.color='#dc2626'; msg.textContent = d.detail || 'Erro ao enviar.'; } return; }
+      _atualizarBadgeDocs(leadId, +1);
+      await carregarDocsContrato(leadId);
+    } catch {
+      if (msg) { msg.style.color='#dc2626'; msg.textContent='Erro de conexão.'; }
+    } finally { input.value=''; }
+  }
+
+  async function removerDocumento(docId, leadId) {
+    if (!confirm('Remover este documento? Esta ação não pode ser desfeita.')) return;
+    try {
+      const r = await fetch(`/api/documentos-cliente/${docId}`, { method: 'DELETE' });
+      if (!r.ok) { alert('Não foi possível remover.'); return; }
+      _atualizarBadgeDocs(leadId, -1);
+      await carregarDocsContrato(leadId);
+    } catch { alert('Erro de conexão.'); }
+  }
 
   function gerarContrato() {
     if (!modalLeadId) return;
