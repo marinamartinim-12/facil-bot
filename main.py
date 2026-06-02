@@ -1613,17 +1613,25 @@ async def obter_conversa(
     msgs = db.query(MensagemConversa).filter(
         MensagemConversa.telefone == lead.telefone
     ).order_by(MensagemConversa.id).all()
-    return {
-        "lead": _serial_lead(lead, db),
-        "mensagens": [
-            {
+    mensagens = []
+    for m in msgs:
+        try:
+            mensagens.append({
                 "role": m.role,
-                "conteudo": m.conteudo,
+                "conteudo": m.conteudo if m.conteudo is not None else "",
                 "horario": _fmt_br(m.criado_em) or "",
-            }
-            for m in msgs
-        ],
-    }
+            })
+        except Exception:
+            continue
+    # Serializa o lead com proteção — nunca derruba a conversa
+    try:
+        lead_serial = _serial_lead(lead, db)
+    except Exception as e:
+        print(f"⚠️ Erro ao serializar lead {lead_id} na conversa: {e}")
+        lead_serial = {"id": lead.id, "telefone": lead.telefone, "nome": lead.nome or "—",
+                       "status": lead.status, "observacoes": [], "dados_contrato": {},
+                       "carros_proposta": []}
+    return {"lead": lead_serial, "mensagens": mensagens}
 
 
 @app.post("/api/leads/{lead_id}/assumir")
