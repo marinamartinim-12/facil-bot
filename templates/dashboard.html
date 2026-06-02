@@ -1151,14 +1151,6 @@
           <div class="data-grid" id="modalDados"></div>
         </div>
         <div id="modalDealSection" style="display:none"></div>
-        <!-- Dados extras para o requerimento de intermediação -->
-        <div class="modal-section" id="modalDadosContratoSection">
-          <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleDadosContrato()">
-            <h4 style="margin:0">📋 Dados p/ Requerimento</h4>
-            <span id="dcToggleIcon" style="font-size:.85rem;color:var(--muted)">▼ expandir</span>
-          </div>
-          <div id="dcBody" style="display:none;margin-top:.75rem"></div>
-        </div>
         <div class="modal-section" style="flex:1;display:flex;flex-direction:column;gap:.5rem">
           <h4>📝 Observações</h4>
           <!-- Lista somente leitura -->
@@ -2394,14 +2386,11 @@
     } catch { alert('Erro de conexão.'); }
   }
 
-  // ─── Busca de endereço por CEP (ViaCEP) ──────────────────────────────────
-  let _ultimoCepBuscado = '';
-  async function _buscarCep(valor) {
+  // ─── Busca de endereço por CEP (ViaCEP, via nosso servidor) ───────────────
+  async function _buscarCepCampos(valor, ids) {
     const cep = (valor || '').replace(/\D/g, '');
-    const msg = document.getElementById('fc_cep_msg');
+    const msg = ids.msg ? document.getElementById(ids.msg) : null;
     if (cep.length !== 8) { if (msg) msg.textContent = ''; return; }
-    if (cep === _ultimoCepBuscado) return;   // evita buscar o mesmo CEP repetido
-    _ultimoCepBuscado = cep;
     if (msg) { msg.style.color = 'var(--muted)'; msg.textContent = 'Buscando endereço…'; }
     try {
       const r = await fetch(`/api/cep/${cep}`);
@@ -2410,16 +2399,21 @@
         return;
       }
       const d = await r.json();
-      const setF = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
-      setF('fc_req_rua', d.rua);
-      setF('fc_req_bairro', d.bairro);
-      setF('fc_req_cidade', (d.cidade || '') + (d.uf ? '/' + d.uf : ''));
+      const setF = (id, v) => { const el = id && document.getElementById(id); if (el && v) el.value = v; };
+      setF(ids.rua, d.rua);
+      setF(ids.bairro, d.bairro);
+      setF(ids.cidade, (d.cidade || '') + (d.uf ? '/' + d.uf : ''));
       if (msg) { msg.style.color = '#16a34a'; msg.textContent = '✓ endereço preenchido'; }
-      const num = document.getElementById('fc_req_numero');
+      const num = ids.numero && document.getElementById(ids.numero);
       if (num && !num.value) num.focus();
     } catch {
       if (msg) { msg.style.color = '#dc2626'; msg.textContent = 'Não foi possível buscar o CEP'; }
     }
+  }
+
+  // Wrapper para o formulário de gerar contrato
+  function _buscarCep(valor) {
+    _buscarCepCampos(valor, {rua:'fc_req_rua', bairro:'fc_req_bairro', cidade:'fc_req_cidade', numero:'fc_req_numero', msg:'fc_cep_msg'});
   }
 
   function gerarContrato() {
@@ -5223,6 +5217,31 @@
 
   function renderDadosLead(lead, editando) {
     const inpStyle = 'border:1px solid var(--border);border-radius:6px;padding:.3rem .5rem;font-size:.82rem;width:100%;background:#fff;font-family:inherit';
+    // Campos do requerimento (guardados em dados_contrato)
+    const dc = (lead && lead.dados_contrato) || {};
+    const dcInput = (key, ph) => editando
+      ? `<input id="ec_${key}" value="${escHtml(dc[key]||'')}" style="${inpStyle}" placeholder="${ph||''}">`
+      : `<span>${escHtml(dc[key]||'—')}</span>`;
+    const cepIds = "{rua:'ec_req_rua',bairro:'ec_req_bairro',cidade:'ec_req_cidade',numero:'ec_req_numero',msg:'ec_cep_msg'}";
+    const cepField = editando
+      ? `<input id="ec_req_cep" value="${escHtml(dc.req_cep||'')}" style="${inpStyle}" placeholder="00000-000" oninput="_buscarCepCampos(this.value,${cepIds})" onblur="_buscarCepCampos(this.value,${cepIds})"><span id="ec_cep_msg" style="font-size:.66rem;color:var(--muted);display:block"></span>`
+      : `<span>${escHtml(dc.req_cep||'—')}</span>`;
+    const reqBlock = `
+      <div class="data-item full" style="border-top:1px solid var(--border);margin-top:.5rem;padding-top:.55rem">
+        <label style="font-weight:700;color:var(--navy);text-transform:uppercase;font-size:.7rem;letter-spacing:.04em">📄 Endereço & documentos (requerimento)</label>
+      </div>
+      <div class="data-item"><label>RG</label>${dcInput('req_rg','RG')}</div>
+      <div class="data-item"><label>CEP</label>${cepField}</div>
+      <div class="data-item"><label>Rua / Av.</label>${dcInput('req_rua','Nome da rua')}</div>
+      <div class="data-item"><label>Número</label>${dcInput('req_numero','Nº')}</div>
+      <div class="data-item"><label>Bairro</label>${dcInput('req_bairro','Bairro')}</div>
+      <div class="data-item"><label>Cidade/UF</label>${dcInput('req_cidade','Ex: Belo Horizonte/MG')}</div>
+      <div class="data-item full" style="margin-top:.2rem"><label style="font-weight:700;color:var(--navy);text-transform:uppercase;font-size:.7rem;letter-spacing:.04em">🚗 Dados do veículo</label></div>
+      <div class="data-item"><label>Placa</label>${dcInput('vei_placa','ABC1D23')}</div>
+      <div class="data-item"><label>Ano</label>${dcInput('vei_ano','2020/2021')}</div>
+      <div class="data-item"><label>Cor</label>${dcInput('vei_cor','Prata')}</div>
+      <div class="data-item"><label>RENAVAM</label>${dcInput('vei_renavam','00000000000')}</div>
+      <div class="data-item full"><label>Chassi</label>${dcInput('vei_chassi','9BW...')}</div>`;
     const inputNome   = editando ? `<input id="ei_nome"  value="${escHtml(lead.nome&&lead.nome!=='—'?lead.nome:'')}" style="${inpStyle}" placeholder="Nome do cliente">` : `<span>${escHtml(lead.nome||'—')}</span>`;
     const inputCPF    = editando ? `<input id="ei_cpf"   value="${escHtml(lead.cpf&&lead.cpf!=='—'?lead.cpf:'')}" style="${inpStyle}" placeholder="000.000.000-00">` : `<span>${escHtml(lead.cpf||'—')}</span>`;
     const inputNasc   = editando ? `<input id="ei_nasc"  value="${escHtml(lead.data_nascimento&&lead.data_nascimento!=='—'?lead.data_nascimento:'')}" style="${inpStyle}" placeholder="DD/MM/AAAA">` : `<span>${escHtml(lead.data_nascimento||'—')}</span>`;
@@ -5272,6 +5291,7 @@
       <div class="data-item"><label>Responsável</label><span>${lead.responsavel ? escHtml(lead.responsavel.nome) : '—'}</span></div>
       <div class="data-item"><label>Cadastrado</label><span>${escHtml(lead.criado_em||'—')}</span></div>
       ${lead.assumido_em ? `<div class="data-item"><label>Assumido em</label><span>${escHtml(lead.assumido_em)}</span></div>` : ''}
+      ${reqBlock}
       ${btnEditar}
     `;
 
@@ -5326,6 +5346,15 @@
       profissao:        document.getElementById('ei_prof')?.value.trim()   || null,
       renda:            document.getElementById('ei_renda')?.value         || null,
       tem_cnh:          document.getElementById('ei_cnh')?.value === 'true' ? true : document.getElementById('ei_cnh')?.value === 'false' ? false : null,
+    };
+    // Dados do requerimento (endereço / veículo) — guardados em dados_contrato
+    const gc = key => document.getElementById('ec_' + key)?.value?.trim() || '';
+    body.dados_contrato = {
+      req_rg: gc('req_rg'), req_cep: gc('req_cep'), req_rua: gc('req_rua'),
+      req_numero: gc('req_numero'), req_bairro: gc('req_bairro'), req_cidade: gc('req_cidade'),
+      req_email: document.getElementById('ei_email')?.value.trim() || '',
+      vei_placa: gc('vei_placa'), vei_ano: gc('vei_ano'), vei_cor: gc('vei_cor'),
+      vei_renavam: gc('vei_renavam'), vei_chassi: gc('vei_chassi'),
     };
     try {
       const r = await fetch(`/api/leads/${modalLeadId}`, {
