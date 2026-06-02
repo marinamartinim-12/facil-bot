@@ -106,6 +106,7 @@ class Lead(Base):
     # ── Dados do contrato fechado ─────────────────────────────────────────
     deal_data      = Column(String(10),  nullable=True)   # DD/MM/YYYY
     deal_veiculo   = Column(String(200), nullable=True)
+    deal_placa     = Column(String(10),  nullable=True)   # placa do veículo
     deal_retorno   = Column(String(5),   nullable=True)   # número do retorno (admin only)
     deal_valor     = Column(String(20),  nullable=True)   # valor financiado (admin only)
     deal_comissao  = Column(String(20),  nullable=True)   # comissão recebida (admin only)

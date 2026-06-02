@@ -357,6 +357,7 @@ async def startup():
         ("leads",           "followup_tentativa", "INTEGER DEFAULT 0"),
         ("leads",           "deal_data",          "VARCHAR(10)"),
         ("leads",           "deal_veiculo",       "VARCHAR(200)"),
+        ("leads",           "deal_placa",         "VARCHAR(10)"),
         ("leads",           "deal_retorno",       "VARCHAR(5)"),
         ("leads",           "deal_valor",         "VARCHAR(20)"),
         ("leads",           "deal_comissao",      "VARCHAR(20)"),
@@ -1641,6 +1642,7 @@ async def fechar_contrato_lead(
     body = await request.json()
     lead.deal_data     = body.get("deal_data", "").strip() or None
     lead.deal_veiculo  = body.get("deal_veiculo", "").strip() or None
+    lead.deal_placa    = body.get("deal_placa", "").strip().upper() or None
     lead.deal_retorno  = body.get("deal_retorno", "").strip() or None
     lead.deal_valor    = body.get("deal_valor", "").strip() or None
     lead.deal_comissao = body.get("deal_comissao", "").strip() or None
@@ -2173,6 +2175,13 @@ async def listar_contratos_fechados(
         if termo and termo not in nome.lower() and termo not in (l.telefone or "").lower():
             continue
         resp = db.query(Usuario).filter(Usuario.id == l.atribuido_para).first() if l.atribuido_para else None
+        # Placa: usa deal_placa; se vazio, tenta o dados_contrato (contrato digital)
+        placa = l.deal_placa or ""
+        if not placa and l.dados_contrato:
+            try:
+                placa = (json.loads(l.dados_contrato) or {}).get("vei_placa", "") or ""
+            except Exception:
+                placa = ""
         resultado.append({
             "id": l.id,
             "nome": nome,
@@ -2180,6 +2189,7 @@ async def listar_contratos_fechados(
             "cpf": l.cpf or "",
             "deal_data": l.deal_data or "",
             "deal_veiculo": l.deal_veiculo or "",
+            "deal_placa": placa,
             "deal_banco": l.deal_banco or "",
             "deal_operadora": l.deal_operadora or "",
             "deal_valor": l.deal_valor or "",
@@ -4776,6 +4786,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         # Dados do contrato fechado
         "deal_data":     l.deal_data or "",
         "deal_veiculo":  l.deal_veiculo or "",
+        "deal_placa":    l.deal_placa or "",
         "deal_retorno":  l.deal_retorno or "",
         "deal_valor":    l.deal_valor or "",
         "deal_comissao": l.deal_comissao or "",

@@ -2296,7 +2296,12 @@
             <div style="font-weight:800;color:#0d2b4e">${esc(c.nome)}
               <span id="docBadge-${c.id}" style="font-size:.7rem;background:#dcfce7;color:#166534;padding:.1rem .45rem;border-radius:99px;font-weight:700;${c.docs?'':'display:none'}">📎 ${c.docs}</span>
             </div>
-            <div style="font-size:.78rem;color:#64748b">${esc(c.telefone)}${c.deal_veiculo?' · '+esc(c.deal_veiculo):''}${c.deal_banco?' · '+esc(c.deal_banco):''}</div>
+            <div style="font-size:.78rem;color:#64748b">
+              📞 ${esc(c.telefone)}${c.cpf?' · 🪪 '+esc(c.cpf):''}
+            </div>
+            <div style="font-size:.78rem;color:#64748b">
+              🚗 ${esc(c.deal_veiculo||'—')}${c.deal_placa?' · <b>'+esc(c.deal_placa)+'</b>':''}${c.deal_banco?' · 🏦 '+esc(c.deal_banco):''}
+            </div>
           </div>
           <div style="font-size:.74rem;color:#64748b;text-align:right">
             ${c.deal_data?('Fechado: '+esc(c.deal_data)):(c.fechado_em?('Fechado: '+esc(c.fechado_em)):'')}
@@ -6382,10 +6387,17 @@
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
         </div>
       </div>
-      <div>
-        <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Veículo</label>
-        <input type="text" id="fc_veiculo" placeholder="Ex: Corolla 2023" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
-          onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:.75rem">
+        <div>
+          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Veículo (marca/modelo)</label>
+          <input type="text" id="fc_veiculo" placeholder="Ex: VW Fox 2015" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
+            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+        </div>
+        <div>
+          <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Placa</label>
+          <input type="text" id="fc_placa" placeholder="ABC1D23" maxlength="8" style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box;text-transform:uppercase"
+            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
         <div>
@@ -6527,9 +6539,10 @@
     document.getElementById('fcSubtitle').textContent =
       ld?.nome && ld.nome !== '—' ? `Cliente: ${ld.nome}` : 'Preencha os dados do negócio';
 
-    // Pré-preenche veículo
+    // Pré-preenche veículo e placa
     const veiculo = ld?.deal_veiculo || ld?.carro_interesse || '';
     document.getElementById('fc_veiculo').value = veiculo !== '—' ? veiculo : '';
+    document.getElementById('fc_placa').value = (ld?.deal_placa && ld.deal_placa !== '—') ? ld.deal_placa : '';
 
     // Pré-preenche data com hoje (ou data já salva)
     if (ld?.deal_data && ld.deal_data !== '—') {
@@ -6585,6 +6598,7 @@
         body: JSON.stringify({
           deal_data:     dataFmt,
           deal_veiculo:  document.getElementById('fc_veiculo').value.trim(),
+          deal_placa:    document.getElementById('fc_placa').value.trim().toUpperCase(),
           deal_retorno:  document.getElementById('fc_retorno').value,
           deal_valor:    document.getElementById('fc_valor').value.trim(),
           deal_comissao: document.getElementById('fc_comissao').value.trim(),
