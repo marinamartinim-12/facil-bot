@@ -4396,6 +4396,15 @@
   let _timerInterval = null;
   let _segundos = 0;
 
+  // Escolhe o melhor formato de gravação suportado pelo navegador (inclui Safari/iPhone)
+  function _melhorMimeAudio() {
+    const cands = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported) {
+      for (const c of cands) { try { if (MediaRecorder.isTypeSupported(c)) return c; } catch {} }
+    }
+    return ''; // vazio = deixa o navegador escolher (ex.: Safari → mp4/aac)
+  }
+
   async function iniciarGravacao() {
     if (!chatLeadAtivo) return;
     try {
@@ -4403,16 +4412,13 @@
       _audioChunks = [];
       _segundos = 0;
 
-      // Prefere ogg/opus (melhor compatibilidade WhatsApp), fallback webm
-      const mimeType = MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
-        ? 'audio/ogg;codecs=opus'
-        : 'audio/webm;codecs=opus';
-
-      _mediaRecorder = new MediaRecorder(stream, { mimeType });
+      const mimeType = _melhorMimeAudio();
+      _mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      const tipoReal = _mediaRecorder.mimeType || mimeType || 'audio/webm';
       _mediaRecorder.ondataavailable = e => { if (e.data.size > 0) _audioChunks.push(e.data); };
       _mediaRecorder.onstop = () => {
         stream.getTracks().forEach(t => t.stop());
-        _audioBlob = new Blob(_audioChunks, { type: mimeType });
+        _audioBlob = new Blob(_audioChunks, { type: tipoReal });
         const url = URL.createObjectURL(_audioBlob);
         document.getElementById('audioPreview').src = url;
         _mostrarBarra('preview');
@@ -4533,12 +4539,13 @@
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       _audioChunksModal = [];
       _segundosModal = 0;
-      const mimeType = MediaRecorder.isTypeSupported('audio/ogg;codecs=opus') ? 'audio/ogg;codecs=opus' : 'audio/webm;codecs=opus';
-      _mediaRecorderModal = new MediaRecorder(stream, { mimeType });
+      const mimeType = _melhorMimeAudio();
+      _mediaRecorderModal = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      const tipoReal = _mediaRecorderModal.mimeType || mimeType || 'audio/webm';
       _mediaRecorderModal.ondataavailable = e => { if (e.data.size > 0) _audioChunksModal.push(e.data); };
       _mediaRecorderModal.onstop = () => {
         stream.getTracks().forEach(t => t.stop());
-        _audioBlobModal = new Blob(_audioChunksModal, { type: mimeType });
+        _audioBlobModal = new Blob(_audioChunksModal, { type: tipoReal });
         document.getElementById('audioPreviewModal').src = URL.createObjectURL(_audioBlobModal);
         _mostrarBarraModal('preview');
       };
@@ -4835,13 +4842,17 @@
         conteudoHtml = `<span style="display:inline-flex;align-items:center;gap:6px;font-size:.83rem;font-weight:600;color:${cor}">📞 ${escHtml(textoLimpo.replace(/^(📞|📹)\s*/, ''))}</span>`;
         return buildBubble(conteudoHtml);
       }
-      const audioMatch = textoLimpo.match(/^\[AUDIO:([a-f0-9]{32}\.(webm|ogg|mp3))\]$/);
+      const audioMatch = textoLimpo.match(/^\[AUDIO:([a-f0-9]{32}\.(webm|ogg|mp3|m4a|mp4|aac))\]$/);
       const imageMatch = textoLimpo.match(/^\[IMAGE:([a-f0-9]{32}\.(jpg|jpeg|png|webp|gif))\]/i);
       const docMatch   = textoLimpo.match(/^\[DOC:([a-f0-9]{32}\.\w{2,5})\|(.+)\]$/);
       let conteudoHtml;
       if (audioMatch) {
         const audioSrc = `/api/audio/${audioMatch[1]}`;
-        conteudoHtml = `<audio controls style="max-width:220px;height:36px;display:block" src="${audioSrc}"></audio>`;
+        // Player + botão de download (fallback caso o navegador não reproduza o formato)
+        conteudoHtml = `<div style="display:flex;align-items:center;gap:6px">
+          <audio controls preload="metadata" style="max-width:210px;height:36px;display:block" src="${audioSrc}"></audio>
+          <a href="${audioSrc}" download title="Baixar áudio" style="text-decoration:none;font-size:1.1rem">⬇️</a>
+        </div>`;
       } else if (imageMatch) {
         const imgSrc = `/api/imagem/${imageMatch[1]}`;
         // Captura legenda se houver (após o marcador)

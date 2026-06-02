@@ -1950,18 +1950,22 @@ async def enviar_audio_gravado(
         header, raw_b64 = audio_base64_raw.split(",", 1)
         mime = header.split(":")[1].split(";")[0] if ":" in header else mime
 
-    ext = "ogg" if "ogg" in mime else "webm"
+    m = mime.lower()
+    if "ogg" in m:
+        ext = "ogg"
+    elif "mp4" in m or "m4a" in m or "aac" in m:
+        ext = "m4a"
+    elif "mpeg" in m or "mp3" in m:
+        ext = "mp3"
+    else:
+        ext = "webm"
     audio_bytes = base64.b64decode(raw_b64)
     print(f"🎤 Áudio para {lead.telefone} | mime={mime} | bytes={len(audio_bytes)}")
 
-    # Salva áudio permanentemente para reprodução no painel
+    # Guarda no BANCO (durável) + disco — para reprodução no painel mesmo após deploy
     audio_id = uuid.uuid4().hex
-    audios_dir = "/app/audios"
-    os.makedirs(audios_dir, exist_ok=True)
     audio_filename = f"{audio_id}.{ext}"
-    audio_path = f"{audios_dir}/{audio_filename}"
-    with open(audio_path, "wb") as f:
-        f.write(audio_bytes)
+    _guardar_blob(db, audio_filename, "audio", audio_bytes, mime=mime, subdir="audios")
 
     # Envia pelo Z-API enviando base64 diretamente (evita race condition de download de URL)
     if settings.ZAPI_INSTANCE and settings.ZAPI_TOKEN:
@@ -2014,14 +2018,15 @@ def _buscar_midia(db, filename: str):
 @app.get("/api/audio/{filename}")
 async def servir_audio(filename: str, db: Session = Depends(get_db)):
     """Serve arquivos de áudio para o Z-API baixar e para reprodução no painel."""
-    if not re.match(r'^[a-f0-9]{32}\.(webm|ogg|mp3)$', filename):
+    if not re.match(r'^[a-f0-9]{32}\.(webm|ogg|mp3|m4a|mp4|aac)$', filename):
         raise HTTPException(status_code=404)
     dados, mime, _ = _buscar_midia(db, filename)
     if dados is None:
         raise HTTPException(status_code=404)
     ext = filename.rsplit(".", 1)[-1]
-    media_type = mime or ("audio/ogg" if ext == "ogg" else "audio/webm")
-    return Response(content=dados, media_type=media_type)
+    tipos = {"ogg": "audio/ogg", "webm": "audio/webm", "mp3": "audio/mpeg",
+             "m4a": "audio/mp4", "mp4": "audio/mp4", "aac": "audio/aac"}
+    return Response(content=dados, media_type=mime or tipos.get(ext, "audio/ogg"))
 
 
 @app.get("/api/imagem/{filename}")
