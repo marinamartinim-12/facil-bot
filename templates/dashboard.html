@@ -2404,14 +2404,16 @@
     _ultimoCepBuscado = cep;
     if (msg) { msg.style.color = 'var(--muted)'; msg.textContent = 'Buscando endereço…'; }
     try {
-      const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-      if (!r.ok) throw new Error();
+      const r = await fetch(`/api/cep/${cep}`);
+      if (!r.ok) {
+        if (msg) { msg.style.color = '#dc2626'; msg.textContent = r.status === 404 ? 'CEP não encontrado' : 'Não foi possível buscar o CEP'; }
+        return;
+      }
       const d = await r.json();
-      if (d.erro) { if (msg) { msg.style.color = '#dc2626'; msg.textContent = 'CEP não encontrado'; } return; }
       const setF = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
-      setF('fc_req_rua', d.logradouro);
+      setF('fc_req_rua', d.rua);
       setF('fc_req_bairro', d.bairro);
-      setF('fc_req_cidade', (d.localidade || '') + (d.uf ? '/' + d.uf : ''));
+      setF('fc_req_cidade', (d.cidade || '') + (d.uf ? '/' + d.uf : ''));
       if (msg) { msg.style.color = '#16a34a'; msg.textContent = '✓ endereço preenchido'; }
       const num = document.getElementById('fc_req_numero');
       if (num && !num.value) num.focus();

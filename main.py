@@ -2267,6 +2267,28 @@ async def remover_documento_cliente(
     return {"status": "ok"}
 
 
+@app.get("/api/cep/{cep}")
+async def buscar_cep(cep: str, usuario: Usuario = Depends(obter_usuario_atual)):
+    """Consulta o endereço de um CEP via ViaCEP (pelo servidor, sem bloqueio do navegador)."""
+    cep_num = re.sub(r"\D", "", cep or "")
+    if len(cep_num) != 8:
+        raise HTTPException(400, "CEP inválido")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(f"https://viacep.com.br/ws/{cep_num}/json/")
+        d = r.json()
+    except Exception:
+        raise HTTPException(502, "Erro ao consultar o CEP")
+    if not isinstance(d, dict) or d.get("erro"):
+        raise HTTPException(404, "CEP não encontrado")
+    return {
+        "rua": d.get("logradouro", ""),
+        "bairro": d.get("bairro", ""),
+        "cidade": d.get("localidade", ""),
+        "uf": d.get("uf", ""),
+    }
+
+
 @app.get("/api/inbox")
 async def inbox(
     db: Session = Depends(get_db),
