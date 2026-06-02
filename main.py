@@ -250,6 +250,33 @@ async def _loop_ocultar_inativos():
             if total:
                 db.commit()
                 print(f"📦 {total} lead(s) ocultados do funil por inatividade (30 dias)")
+
+            # ── Limpeza mensal: no virar do mês, esconde do funil os CONTRATOS
+            #    FECHADOS do mês anterior (1x por mês). Os dados continuam salvos. ──
+            try:
+                agora_br = _agora_br()
+                mes_atual = agora_br.strftime("%Y-%m")
+                cfg = db.query(Configuracao).filter(Configuracao.chave == "ultima_limpeza_funil").first()
+                if not cfg or cfg.valor != mes_atual:
+                    inicio_mes_utc = agora_br.replace(day=1, hour=0, minute=0, second=0,
+                                                      microsecond=0).astimezone(timezone.utc).replace(tzinfo=None)
+                    fechados = db.query(Lead).filter(
+                        Lead.status == StatusLeadEnum.fechado,
+                        Lead.oculto_funil == False,
+                        Lead.atualizado_em < inicio_mes_utc,
+                    ).all()
+                    for l in fechados:
+                        l.oculto_funil = True
+                    if cfg:
+                        cfg.valor = mes_atual
+                    else:
+                        db.add(Configuracao(chave="ultima_limpeza_funil", valor=mes_atual,
+                                            descricao="Último mês em que o funil foi limpo dos contratos fechados"))
+                    db.commit()
+                    print(f"🗓️ Limpeza mensal do funil: {len(fechados)} contrato(s) fechado(s) ocultado(s) ({mes_atual})")
+            except Exception as e:
+                print(f"⚠️ Erro na limpeza mensal do funil: {e}")
+
             db.close()
         except Exception as e:
             print(f"❌ Erro ao ocultar leads inativos: {e}")
