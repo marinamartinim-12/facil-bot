@@ -1188,9 +1188,12 @@
           <div id="modalCarrosLista" style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.6rem"></div>
           <div style="display:flex;flex-direction:column;gap:.4rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.6rem">
             <div style="display:flex;gap:.4rem;flex-wrap:wrap">
-              <input id="carPlaca" placeholder="Placa" maxlength="8" style="flex:1;min-width:90px;text-transform:uppercase;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+              <input id="carPlaca" placeholder="Placa" maxlength="8" style="flex:1;min-width:110px;text-transform:uppercase;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
               <button class="btn btn-sm" id="btnBuscarPlaca" onclick="buscarPlaca()" title="Preencher pela placa" style="background:#0d2b4e;color:#fff;white-space:nowrap">🔍 Buscar placa</button>
-              <input id="carAno" placeholder="Ano" maxlength="9" style="width:90px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+            </div>
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+              <input id="carAnoFab" placeholder="Ano fabricação" style="flex:1;min-width:110px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+              <input id="carAnoModelo" placeholder="Ano modelo" style="flex:1;min-width:110px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
             </div>
             <input id="carModelo" placeholder="Marca / Modelo" style="border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
             <div style="display:flex;gap:.4rem;flex-wrap:wrap">
@@ -2464,11 +2467,12 @@
     el.innerHTML = _carrosLead.map((c, i) => {
       const esc1 = s => esc(s || '');
       const escolhido = !!c.escolhido;
+      const anos = [c.ano_fab, c.ano_modelo].filter(Boolean).join('/') || c.ano || '';
       return `
       <div style="border:1px solid ${escolhido?'#16a34a':'#e2e8f0'};border-left:3px solid ${escolhido?'#16a34a':'#cbd5e1'};border-radius:8px;background:${escolhido?'#f0fdf4':'#fff'};padding:.5rem .65rem">
         <div style="display:flex;align-items:flex-start;gap:.5rem">
           <div style="flex:1;min-width:0">
-            <div style="font-size:.85rem;font-weight:700;color:#0d2b4e">${esc1(c.modelo) || '—'} ${c.ano?('· '+esc1(c.ano)):''}${c.cor?(' · '+esc1(c.cor)):''}</div>
+            <div style="font-size:.85rem;font-weight:700;color:#0d2b4e">${esc1(c.modelo) || '—'} ${anos?('· '+esc1(anos)):''}${c.cor?(' · '+esc1(c.cor)):''}</div>
             <div style="font-size:.74rem;color:#64748b">🔖 ${esc1(c.placa)||'sem placa'}${c.chassi?(' · Chassi '+esc1(c.chassi)):''}${c.renavam?(' · RENAVAM '+esc1(c.renavam)):''}</div>
             ${escolhido?'<div style="font-size:.7rem;color:#166534;font-weight:700;margin-top:.15rem">⭐ Carro escolhido para fechar</div>':''}
           </div>
@@ -2494,7 +2498,8 @@
       if (!r.ok) { msg.style.color = '#dc2626'; msg.textContent = d.detail || 'Não foi possível consultar.'; return; }
       const setF = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
       setF('carModelo', d.modelo_completo);
-      setF('carAno', d.ano);
+      setF('carAnoFab', d.ano_fab);
+      setF('carAnoModelo', d.ano_modelo);
       setF('carChassi', d.chassi);
       setF('carCor', d.cor);
       msg.style.color = '#16a34a'; msg.textContent = '✓ dados preenchidos pela placa';
@@ -2508,16 +2513,17 @@
   async function adicionarCarro() {
     if (!modalLeadId) return;
     const placa  = document.getElementById('carPlaca').value.trim().toUpperCase();
-    const ano    = document.getElementById('carAno').value.trim();
+    const ano_fab = document.getElementById('carAnoFab').value.trim();
+    const ano_modelo = document.getElementById('carAnoModelo').value.trim();
     const modelo = document.getElementById('carModelo').value.trim();
     const chassi = document.getElementById('carChassi').value.trim().toUpperCase();
     const cor    = document.getElementById('carCor').value.trim();
     const renavam = document.getElementById('carRenavam').value.trim();
     const msg = document.getElementById('carMsg');
     if (!placa && !modelo) { msg.style.color = '#dc2626'; msg.textContent = 'Informe ao menos a placa ou o modelo.'; return; }
-    _carrosLead.push({ placa, ano, modelo, chassi, cor, renavam, escolhido: _carrosLead.length === 0 });
+    _carrosLead.push({ placa, ano_fab, ano_modelo, modelo, chassi, cor, renavam, escolhido: _carrosLead.length === 0 });
     if (await _salvarCarros()) {
-      ['carPlaca','carAno','carModelo','carChassi','carCor','carRenavam'].forEach(id => document.getElementById(id).value = '');
+      ['carPlaca','carAnoFab','carAnoModelo','carModelo','carChassi','carCor','carRenavam'].forEach(id => document.getElementById(id).value = '');
       msg.style.color = '#16a34a'; msg.textContent = 'Carro adicionado ✓';
       _desenharCarros();
     }
@@ -2617,8 +2623,9 @@
     set('fc_req_email',    dc.req_email || lead.email);
     // Veículo do contrato = carro marcado com ⭐ em "Carros em proposta" (fallback: 1º carro / dados antigos)
     const carroSel = ((lead.carros_proposta || []).find(c => c.escolhido)) || (lead.carros_proposta || [])[0] || {};
+    const anosSel = [carroSel.ano_fab, carroSel.ano_modelo].filter(Boolean).join('/') || carroSel.ano || '';
     set('fc_vei_placa',    carroSel.placa   || dc.vei_placa);
-    set('fc_vei_ano',      carroSel.ano     || dc.vei_ano);
+    set('fc_vei_ano',      anosSel          || dc.vei_ano);
     set('fc_vei_cor',      carroSel.cor     || dc.vei_cor);
     set('fc_vei_renavam',  carroSel.renavam || dc.vei_renavam);
     set('fc_vei_chassi',   carroSel.chassi  || dc.vei_chassi);

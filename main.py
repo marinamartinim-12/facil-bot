@@ -2371,17 +2371,42 @@ async def consultar_placa(placa: str, db: Session = Depends(get_db),
     if not isinstance(d, dict):
         raise HTTPException(502, "Resposta inesperada da consulta de placa")
     extra = d.get("extra") or {}
-    marca  = (d.get("MARCA")  or d.get("marca")  or "").strip()
-    modelo = (d.get("MODELO") or d.get("modelo") or "").strip()
-    ano    = str(d.get("anoModelo") or d.get("ano") or extra.get("ano_modelo")
-                 or extra.get("ano_fabricacao") or "").strip()
-    chassi = (d.get("chassi") or extra.get("chassi") or "").strip().upper()
-    cor    = (d.get("cor") or extra.get("cor") or "").strip()
+    def _g(*chaves):
+        for ch in chaves:
+            for fonte in (d, extra):
+                v = fonte.get(ch)
+                if v:
+                    return str(v).strip()
+        return ""
+    marca       = _g("MARCA", "marca")
+    modelo      = _g("MODELO", "modelo")
+    ano_fab     = _g("ano", "anoFabricacao", "ano_fabricacao")
+    ano_modelo  = _g("anoModelo", "ano_modelo", "anoModelo")
+    chassi      = _g("chassi", "CHASSI").upper()
+    cor         = _g("cor", "COR")
     if not (marca or modelo or chassi):
         raise HTTPException(404, str(d.get("mensagem") or d.get("message") or "Placa não encontrada"))
     modelo_completo = " ".join(x for x in [marca, modelo] if x).strip()
     return {"placa": placa_limpa, "marca": marca, "modelo": modelo,
-            "modelo_completo": modelo_completo, "ano": ano, "chassi": chassi, "cor": cor}
+            "modelo_completo": modelo_completo,
+            "ano_fab": ano_fab, "ano_modelo": ano_modelo, "chassi": chassi, "cor": cor}
+
+
+@app.get("/api/placa-debug/{placa}")
+async def consultar_placa_debug(placa: str, db: Session = Depends(get_db),
+                                admin: Usuario = Depends(requer_admin)):
+    """Mostra a resposta CRUA da API Placas — para diagnosticar o preenchimento."""
+    placa_limpa = re.sub(r"[^A-Za-z0-9]", "", placa or "").upper()
+    cfg = db.query(Configuracao).filter(Configuracao.chave == "apiplacas_token").first()
+    token = (cfg.valor.strip() if cfg and cfg.valor else "") or os.getenv("APIPLACAS_TOKEN", "")
+    if not token:
+        return {"erro": "Token da API Placas NÃO está configurado em Config. do Bot."}
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(f"https://wdapi2.com.br/consulta/{placa_limpa}/{token}")
+        return {"status_http": r.status_code, "resposta": r.json()}
+    except Exception as e:
+        return {"erro": f"Falha ao consultar: {e}"}
 
 
 @app.get("/api/admin/backup")
