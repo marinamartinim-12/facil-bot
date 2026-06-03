@@ -3653,7 +3653,7 @@
   function baixarLeadsExcel() {
     if (_calAno == null) return;
     const func = document.getElementById('calFuncFiltro')?.value || '';
-    let qs = `?ano=${_calAno}&mes=${_calMes}`;
+    let qs = `?escopo=${_calEscopo}&ano=${_calAno}&mes=${_calMes}`;
     if (func) qs += `&funcionaria=${func}`;
     window.location.href = `/api/relatorio/leads-calendario/xlsx${qs}`;
   }

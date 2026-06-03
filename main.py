@@ -4230,10 +4230,10 @@ async def relatorio_leads_calendario(
 
 @app.get("/api/relatorio/leads-calendario/xlsx")
 async def relatorio_leads_calendario_xlsx(
-    ano: int = None, mes: int = None, funcionaria: int = None,
+    ano: int = None, mes: int = None, funcionaria: int = None, escopo: str = "mes",
     db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin),
 ):
-    """Exporta o relatório de leads do mês (por funcionária) em Excel."""
+    """Exporta o relatório de leads por funcionária em Excel (do mês ou geral)."""
     import io
     from collections import defaultdict
     from openpyxl import Workbook
@@ -4241,14 +4241,15 @@ async def relatorio_leads_calendario_xlsx(
     from openpyxl.utils import get_column_letter
     from fastapi.responses import StreamingResponse
 
+    geral = (escopo == "geral")
     hoje = _agora_br().date()
     ano = ano or hoje.year
     mes = mes or hoje.month
     inicio = datetime(ano, mes, 1) + timedelta(hours=3)
     fim = (datetime(ano + 1, 1, 1) if mes == 12 else datetime(ano, mes + 1, 1)) + timedelta(hours=3)
-    q = db.query(Lead).filter(Lead.atribuido_para.isnot(None),
-                              Lead.assumido_em >= inicio, Lead.assumido_em < fim,
-                              Lead.ignorar_relatorios.isnot(True))
+    q = db.query(Lead).filter(Lead.atribuido_para.isnot(None), Lead.ignorar_relatorios.isnot(True))
+    if not geral:
+        q = q.filter(Lead.assumido_em >= inicio, Lead.assumido_em < fim)
     if funcionaria:
         q = q.filter(Lead.atribuido_para == funcionaria)
     leads = q.all()
@@ -4293,8 +4294,9 @@ async def relatorio_leads_calendario_xlsx(
         ws.column_dimensions[get_column_letter(i)].width = larg
 
     n = len(cols)
+    titulo_periodo = "Geral (todos os tempos)" if geral else f"{_MESES[mes-1]} {ano}"
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n)
-    t = ws.cell(row=1, column=1, value=f"Leads atendidos — {_MESES[mes-1]} {ano}")
+    t = ws.cell(row=1, column=1, value=f"Leads por funcionária — {titulo_periodo}")
     t.font = Font(bold=True, color="FFFFFF", size=12); t.fill = cor_cab; t.alignment = centro
     ws.row_dimensions[1].height = 22
 
@@ -4316,12 +4318,12 @@ async def relatorio_leads_calendario_xlsx(
         linha += 1
     if linha == 3:
         ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=n)
-        ws.cell(row=3, column=1, value="Nenhum lead atendido neste mês.").alignment = centro
+        ws.cell(row=3, column=1, value="Nenhum lead no período.").alignment = centro
 
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    fname = f"leads_{ano}_{mes:02d}.xlsx"
+    fname = "leads_geral.xlsx" if geral else f"leads_{ano}_{mes:02d}.xlsx"
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": f"attachment; filename={fname}"})
 
