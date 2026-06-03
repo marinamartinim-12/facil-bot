@@ -1009,13 +1009,6 @@
       <div id="viewRelatorios" style="display:none">
         <div class="stats-row" id="relStatsRow"></div>
         <div class="rel-card">
-          <h3>👤 Desempenho por Funcionário</h3>
-          <table class="rel-table">
-            <thead><tr><th>Nome</th><th>Perfil</th><th>Leads Assumidos</th><th>Fechados</th><th>Taxa de Fechamento</th></tr></thead>
-            <tbody id="relBody"></tbody>
-          </table>
-        </div>
-        <div class="rel-card">
           <h3>🚗 Leads por Modalidade</h3>
           <table class="rel-table">
             <thead><tr><th>Modalidade</th><th>Total</th></tr></thead>
@@ -3446,16 +3439,6 @@
         <div class="stat s4"><div class="stat-label">Fechados</div><div class="stat-val">${s.fechados||0}</div></div>
         <div class="stat s6"><div class="stat-label">Taxa Qualificação</div><div class="stat-val" style="color:var(--gold3)">${s.taxa_qualificacao||0}%</div></div>
       `;
-      document.getElementById('relBody').innerHTML = d.por_funcionario.length === 0
-        ? '<tr><td colspan="5" style="text-align:center;padding:1rem;color:var(--muted)">Nenhum dado.</td></tr>'
-        : d.por_funcionario.map(f => `<tr>
-            <td><strong>${esc(f.nome)}</strong></td>
-            <td><span class="badge badge-${f.role}">${f.role==='admin'?'Admin':'Funcionário'}</span></td>
-            <td>${f.total_assumidos}</td><td>${f.fechados}</td>
-            <td><div style="display:flex;align-items:center;gap:.5rem">
-              <div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:${f.taxa}%"></div></div>
-              <span style="font-size:.78rem;font-weight:700">${f.taxa}%</span>
-            </div></td></tr>`).join('');
       const m = d.por_modalidade;
       document.getElementById('relModalBody').innerHTML = `
         <tr><td><span class="badge badge-financiamento">Financiamento</span></td><td><strong>${m.financiamento}</strong></td></tr>
