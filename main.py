@@ -3969,6 +3969,20 @@ async def relatorio_conversas_paradas(db: Session = Depends(get_db),
     return {"total": len(paradas), "por_responsavel": resumo, "leads": paradas}
 
 
+@app.get("/api/templates-mensagem")
+async def templates_mensagem(db: Session = Depends(get_db),
+                             usuario: Usuario = Depends(obter_usuario_atual)):
+    """Modelos de mensagem prontos para enviar ao cliente (proposta, pré-análise)."""
+    chaves = [("template_proposta", "📋 Proposta completa"),
+              ("template_pre_analise", "🔎 Pré-análise")]
+    out = []
+    for chave, titulo in chaves:
+        c = db.query(Configuracao).filter(Configuracao.chave == chave).first()
+        if c and c.valor and c.valor.strip():
+            out.append({"chave": chave, "titulo": titulo, "texto": c.valor})
+    return out
+
+
 @app.get("/api/conversas-paradas/minhas")
 async def conversas_paradas_minhas(db: Session = Depends(get_db),
                                    usuario: Usuario = Depends(obter_usuario_atual)):
@@ -5556,6 +5570,29 @@ def _criar_config_padrao(db: Session):
             "chave": "parada_alerta_min",
             "descricao": "Minutos sem resposta para alertar 'conversa parada' no topo do painel. Padrão: 30",
             "valor": "30",
+        },
+        {
+            "chave": "template_proposta",
+            "descricao": "Modelo de mensagem: Proposta completa (enviado ao cliente pelo botão Modelos)",
+            "valor": (
+                "PROPOSTA PARA FINANCIAMENTO\n\n"
+                "NOME :\nCPF:\nRG:\nDATA NASCIMENTO:\nNATURALIDADE (cidade):\n\n"
+                "POSSUI CNH? (   ) SIM   (    ) NÃO\n\n"
+                "PAI:\nMÃE:\n\n"
+                "RUA/AV:\nN°:\nBAIRRO:\nCEP:\nN° CELULAR:\nEMAIL:\n\n"
+                "*DADOS COMERCIAIS*\n\n"
+                "EMPRESA ONDE TRABALHA:\nCARGO:\nTEMPO DE SERVIÇO:\n"
+                "ENDEREÇO DE TRABALHO RUA/AV:\nN°:\nBAIRRO:\nN° TELEFONE EMPRESA:\n\n"
+                "RENDA MENSAL:\n\nOUTRAS RENDAS:"
+            ),
+        },
+        {
+            "chave": "template_pre_analise",
+            "descricao": "Modelo de mensagem: Pré-análise (enviado ao cliente pelo botão Modelos)",
+            "valor": (
+                "Dados necessários para pré análise:\n"
+                "• CPF:\n• Data de nascimento:\n• Modelo e ano do veículo:\n• Possui CNH?"
+            ),
         },
         {
             "chave": "meta_contratos",

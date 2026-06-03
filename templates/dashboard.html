@@ -902,6 +902,7 @@
             </div>
             <!-- Input WhatsApp -->
             <div class="wsp-input-bar" id="inputBarNormal">
+              <button class="wsp-send-btn" title="Modelos de mensagem" onclick="abrirModelos(chatLeadAtivo?.id)" style="background:#0d2b4e;margin-right:4px;font-size:1.1rem">📋</button>
               <input id="msgInput" type="text" placeholder="Digite uma mensagem"
                 onkeydown="if(event.key==='Enter')enviarMensagem()" />
               <button class="wsp-send-btn" title="Gravar áudio" onclick="iniciarGravacao()" style="background:#25d366;margin-right:4px">
@@ -1291,6 +1292,7 @@
         </div>
         <!-- Input de resposta direto no modal -->
         <div class="wsp-input-bar" id="modalInputBar" style="border-top:1px solid var(--border)">
+          <button class="wsp-send-btn" title="Modelos de mensagem" onclick="abrirModelos(modalLeadId)" style="background:#0d2b4e;margin-right:4px;font-size:1.1rem">📋</button>
           <input id="modalMsgInput" type="text" placeholder="Digite uma mensagem"
             onkeydown="if(event.key==='Enter')enviarMensagemModal()" />
           <button class="wsp-send-btn" title="Gravar áudio" onclick="iniciarGravacaoModal()" style="background:#25d366;margin-right:4px">
@@ -5149,6 +5151,59 @@
     } catch {}
   }
 
+  // ── Modelos de mensagem ──────────────────────────────────────────────────
+  let _modelosLeadId = null;
+
+  async function abrirModelos(leadId) {
+    if (!leadId) { alert('Abra uma conversa primeiro.'); return; }
+    _modelosLeadId = leadId;
+    const lista = document.getElementById('modelosLista');
+    lista.innerHTML = '<div style="color:var(--muted);font-size:.85rem;text-align:center;padding:.5rem">Carregando…</div>';
+    document.getElementById('modalModelos').classList.add('open');
+    try {
+      const r = await fetch('/api/templates-mensagem');
+      const modelos = await r.json();
+      if (!modelos.length) { lista.innerHTML = '<div style="color:var(--muted);font-size:.85rem">Nenhum modelo configurado.</div>'; return; }
+      lista.innerHTML = modelos.map(m => `
+        <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.55rem .8rem;background:#f8fafc">
+            <strong style="font-size:.88rem;color:#0d2b4e">${esc(m.titulo)}</strong>
+            <button class="btn btn-sm btn-primary" onclick="enviarModelo('${m.chave}')">📤 Enviar ao cliente</button>
+          </div>
+          <pre style="margin:0;padding:.6rem .8rem;font-family:inherit;font-size:.78rem;color:#475569;white-space:pre-wrap;max-height:200px;overflow-y:auto">${esc(m.texto)}</pre>
+        </div>`).join('');
+      window._modelosCache = modelos;
+    } catch {
+      lista.innerHTML = '<div style="color:#991b1b;font-size:.85rem">Erro ao carregar modelos.</div>';
+    }
+  }
+
+  function fecharModelos() {
+    document.getElementById('modalModelos').classList.remove('open');
+  }
+
+  async function enviarModelo(chave) {
+    const modelo = (window._modelosCache || []).find(m => m.chave === chave);
+    if (!modelo || !_modelosLeadId) return;
+    if (!confirm(`Enviar "${modelo.titulo}" para o cliente?`)) return;
+    try {
+      const r = await fetch(`/api/leads/${_modelosLeadId}/mensagem`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ mensagem: modelo.texto }),
+      });
+      if (!r.ok) { alert('Não foi possível enviar.'); return; }
+      fecharModelos();
+      // Atualiza a conversa visível (chat de atendimento ou modal)
+      if (typeof chatLeadAtivo !== 'undefined' && chatLeadAtivo && chatLeadAtivo.id === _modelosLeadId) {
+        await carregarMensagensChat(true); await carregarInbox();
+      }
+      if (typeof modalLeadId !== 'undefined' && modalLeadId === _modelosLeadId) {
+        try { const rc = await fetch(`/api/leads/${modalLeadId}/conversa`); const d = await rc.json();
+          const chat = document.getElementById('modalChat'); if (chat) { chat.innerHTML = renderMensagens(d.mensagens); chat.scrollTop = chat.scrollHeight; } } catch {}
+      }
+    } catch { alert('Erro de conexão.'); }
+  }
+
   async function enviarMensagem() {
     if (!chatLeadAtivo) return;
     const input = document.getElementById('msgInput');
@@ -6722,6 +6777,21 @@
       </div>
       <button class="btn btn-sm btn-outline" onclick="togglePontoHistorico()" id="btnPontoHist" style="width:100%">📋 Ver histórico</button>
       <div id="pontoHistorico" style="display:none;flex-direction:column;gap:.5rem"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: Modelos de mensagem ── -->
+<div class="overlay" id="modalModelos" onclick="if(event.target===this)fecharModelos()">
+  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:480px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
+    <div class="modal-hd">
+      <span style="font-size:1.15rem">📋</span>
+      <h3>Modelos de mensagem</h3>
+      <button class="modal-close" onclick="fecharModelos()">×</button>
+    </div>
+    <div style="padding:1rem 1.25rem;display:flex;flex-direction:column;gap:.8rem;overflow-y:auto">
+      <p style="font-size:.82rem;color:var(--muted);margin:0">Escolha um modelo para enviar ao cliente (com as quebras de linha certinhas).</p>
+      <div id="modelosLista" style="display:flex;flex-direction:column;gap:.7rem"></div>
     </div>
   </div>
 </div>
