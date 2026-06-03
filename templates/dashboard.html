@@ -3976,13 +3976,16 @@
       if (!r.ok) return;
       const d = await r.json();
 
-      const bar = (val, max, cor='#065f46') =>
-        `<div style="display:flex;align-items:center;gap:.5rem">
-           <div style="flex:1;background:#e5e7eb;border-radius:99px;height:8px;overflow:hidden">
-             <div style="height:100%;width:${max?Math.round(val/max*100):0}%;background:${cor};border-radius:99px"></div>
+      const bar = (val, max, cor='#065f46') => {
+        const pct = max ? Math.round(val/max*100) : 0;
+        const op  = max ? (0.45 + 0.55*(val/max)) : 1;   // mapa de calor: mais valor = mais forte
+        return `<div style="display:flex;align-items:center;gap:.5rem">
+           <div style="flex:1;background:#eef2f6;border-radius:99px;height:9px;overflow:hidden">
+             <div style="height:100%;width:${pct}%;background:${cor};opacity:${op.toFixed(2)};border-radius:99px"></div>
            </div>
            <span style="font-size:.75rem;font-weight:700;min-width:28px;text-align:right">${val}</span>
          </div>`;
+      };
 
       const card2 = (titulo, html) =>
         `<div style="background:#fafbfd;border:1px solid var(--border);border-radius:10px;padding:.9rem 1rem">
