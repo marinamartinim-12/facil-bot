@@ -1008,6 +1008,17 @@
       <!-- ── RELATÓRIOS ── -->
       <div id="viewRelatorios" style="display:none">
         <div class="stats-row" id="relStatsRow"></div>
+
+        <!-- ── CONVERSAS PARADAS (esperando resposta agora) ── -->
+        <div class="rel-card" id="relParadasCard" style="border:1px solid #fecaca">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
+            <h3 style="margin:0">🔴 Conversas paradas — esperando resposta agora</h3>
+            <button onclick="carregarConversasParadas()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
+          </div>
+          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .6rem">Clientes cuja última mensagem foi deles e ainda não houve resposta. Atualiza sozinho a cada 1 min.</p>
+          <div id="relParadasBody"><div style="text-align:center;padding:1.2rem;color:var(--muted)">Carregando…</div></div>
+        </div>
+
         <div class="rel-card">
           <h3>🚗 Leads por Modalidade</h3>
           <table class="rel-table">
@@ -3455,6 +3466,56 @@
     await carregarVolumeApi();
     await carregarLeadsCalendario();
     await carregarIpCompartilhado();
+    await carregarConversasParadas();
+    _iniciarAutoRefreshParadas();
+  }
+
+  let _paradasInterval = null;
+  function _iniciarAutoRefreshParadas() {
+    if (_paradasInterval) clearInterval(_paradasInterval);
+    _paradasInterval = setInterval(() => {
+      if (document.getElementById('viewRelatorios')?.style.display !== 'none') carregarConversasParadas();
+    }, 60000);
+  }
+
+  async function carregarConversasParadas() {
+    const card = document.getElementById('relParadasCard');
+    if (!card) return;
+    if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
+    const body = document.getElementById('relParadasBody');
+    try {
+      const r = await fetch('/api/relatorio/conversas-paradas');
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      if (!d.total) {
+        card.style.borderColor = '#bbf7d0';
+        body.innerHTML = '<div style="text-align:center;padding:1.2rem;color:#16a34a;font-weight:600">✅ Nenhuma conversa parada — tudo respondido! 🎉</div>';
+        return;
+      }
+      card.style.borderColor = '#fecaca';
+      const cor = s => s >= 3600 ? '#dc2626' : s >= 1800 ? '#d97706' : '#64748b';
+      const resumo = d.por_responsavel.map(r =>
+        `<span style="font-size:.76rem;background:#f1f5f9;border-radius:99px;padding:.2rem .6rem;font-weight:600">👤 ${esc(r.nome)}: <b>${r.qtd}</b> (máx ${esc(r.max_espera)})</span>`
+      ).join(' ');
+      const lista = d.leads.map(l => `
+        <div onclick="verLead(${l.lead_id})" title="Abrir conversa" style="display:flex;align-items:center;gap:.6rem;padding:.5rem .65rem;border:1px solid #e2e8f0;border-left:4px solid ${cor(l.espera_s)};border-radius:8px;cursor:pointer;background:#fff">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.85rem;font-weight:700;color:#0d2b4e">${esc(l.nome)}</div>
+            <div style="font-size:.73rem;color:#64748b">👤 ${esc(l.responsavel)} · <span class="badge badge-${l.status}" style="font-size:.62rem;padding:1px 5px">${labSt(l.status)}</span> · desde ${esc(l.desde)}</div>
+          </div>
+          <div style="text-align:right;white-space:nowrap">
+            <div style="font-size:.85rem;font-weight:800;color:${cor(l.espera_s)}">⏳ ${esc(l.espera)}</div>
+          </div>
+        </div>`).join('');
+      body.innerHTML = `
+        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.6rem">
+          <span style="font-size:1.4rem;font-weight:900;color:#dc2626">${d.total}</span>
+          <span style="font-size:.8rem;color:#64748b">esperando · ${resumo}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.4rem;max-height:340px;overflow-y:auto">${lista}</div>`;
+    } catch {
+      body.innerHTML = '<div style="text-align:center;padding:1.2rem;color:#991b1b">Erro ao carregar.</div>';
+    }
   }
 
   // ─── Calendário de leads atendidos ────────────────────────────────────────

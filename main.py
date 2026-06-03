@@ -3867,6 +3867,60 @@ def _segundos_comerciais(ini_utc, fim_utc) -> int:
     return int(total)
 
 
+@app.get("/api/relatorio/conversas-paradas")
+async def relatorio_conversas_paradas(db: Session = Depends(get_db),
+                                      admin: Usuario = Depends(requer_admin)):
+    """Conversas em que a ÚLTIMA mensagem é do cliente (esperando resposta agora)."""
+    from sqlalchemy import func
+    from collections import defaultdict
+    ativos = [StatusLeadEnum.qualificado.value, StatusLeadEnum.assumido.value,
+              StatusLeadEnum.proposta_enviada.value, StatusLeadEnum.proposta_aprovada.value]
+    leads = db.query(Lead).filter(Lead.status.in_(ativos)).all()
+    if not leads:
+        return {"total": 0, "por_responsavel": [], "leads": []}
+
+    # Última mensagem de cada telefone (1 só consulta)
+    sub = (db.query(MensagemConversa.telefone, func.max(MensagemConversa.id).label("mid"))
+           .group_by(MensagemConversa.telefone).subquery())
+    ultimas = db.query(MensagemConversa).join(sub, MensagemConversa.id == sub.c.mid).all()
+    last_by_tel = {m.telefone: m for m in ultimas}
+
+    # Nomes das responsáveis
+    resp_ids = {l.atribuido_para for l in leads if l.atribuido_para}
+    nomes = {u.id: u.nome for u in db.query(Usuario).filter(Usuario.id.in_(resp_ids)).all()} if resp_ids else {}
+
+    agora = datetime.utcnow()
+    paradas = []
+    for l in leads:
+        m = last_by_tel.get(l.telefone)
+        if not m or m.role != "user":
+            continue  # última mensagem não é do cliente → não está esperando
+        espera_s = max(0, int((agora - m.criado_em).total_seconds()))
+        resp = nomes.get(l.atribuido_para) if l.atribuido_para else None
+        paradas.append({
+            "lead_id": l.id,
+            "nome": l.nome if (l.nome and l.nome != "—") else l.telefone,
+            "telefone": l.telefone,
+            "responsavel": resp or "Aguardando atendente",
+            "status": l.status,
+            "espera_s": espera_s,
+            "espera": _duracao_str(espera_s),
+            "desde": _fmt_br(m.criado_em, "%d/%m %H:%M"),
+        })
+    paradas.sort(key=lambda x: x["espera_s"], reverse=True)
+
+    # Resumo por responsável
+    por_resp = defaultdict(lambda: {"qtd": 0, "max_s": 0})
+    for p in paradas:
+        r = por_resp[p["responsavel"]]
+        r["qtd"] += 1
+        r["max_s"] = max(r["max_s"], p["espera_s"])
+    resumo = [{"nome": k, "qtd": v["qtd"], "max_espera": _duracao_str(v["max_s"])}
+              for k, v in sorted(por_resp.items(), key=lambda x: -x[1]["max_s"])]
+
+    return {"total": len(paradas), "por_responsavel": resumo, "leads": paradas}
+
+
 @app.get("/api/relatorio/tempo-resposta")
 async def relatorio_tempo_resposta(
     dias: int = 30,
