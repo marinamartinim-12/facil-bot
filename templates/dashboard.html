@@ -1119,6 +1119,7 @@
                 <span id="calMesLabel" style="font-weight:700;color:var(--navy);min-width:130px;text-align:center;font-size:.85rem">—</span>
                 <button onclick="_calNavMes(1)" class="btn btn-sm btn-outline" style="padding:.3rem .6rem">▶</button>
               </div>
+              <button onclick="baixarLeadsExcel()" class="btn btn-sm btn-outline" style="padding:.3rem .8rem">⬇️ Excel</button>
             </div>
           </div>
           <div id="relLeadsCalBody"><div style="text-align:center;padding:1.5rem;color:var(--muted)">Carregando…</div></div>
@@ -3476,6 +3477,14 @@
   // ─── Calendário de leads atendidos ────────────────────────────────────────
   let _calAno = null, _calMes = null;
   const _MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+  function baixarLeadsExcel() {
+    if (_calAno == null) return;
+    const func = document.getElementById('calFuncFiltro')?.value || '';
+    let qs = `?ano=${_calAno}&mes=${_calMes}`;
+    if (func) qs += `&funcionaria=${func}`;
+    window.location.href = `/api/relatorio/leads-calendario/xlsx${qs}`;
+  }
 
   function _calNavMes(delta) {
     if (_calAno == null) return;

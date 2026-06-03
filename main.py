@@ -4020,6 +4020,103 @@ async def relatorio_leads_calendario(
     }
 
 
+@app.get("/api/relatorio/leads-calendario/xlsx")
+async def relatorio_leads_calendario_xlsx(
+    ano: int = None, mes: int = None, funcionaria: int = None,
+    db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin),
+):
+    """Exporta o relatório de leads do mês (por funcionária) em Excel."""
+    import io
+    from collections import defaultdict
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    from fastapi.responses import StreamingResponse
+
+    hoje = _agora_br().date()
+    ano = ano or hoje.year
+    mes = mes or hoje.month
+    inicio = datetime(ano, mes, 1) + timedelta(hours=3)
+    fim = (datetime(ano + 1, 1, 1) if mes == 12 else datetime(ano, mes + 1, 1)) + timedelta(hours=3)
+    q = db.query(Lead).filter(Lead.atribuido_para.isnot(None),
+                              Lead.assumido_em >= inicio, Lead.assumido_em < fim)
+    if funcionaria:
+        q = q.filter(Lead.atribuido_para == funcionaria)
+    leads = q.all()
+    func_ids = {l.atribuido_para for l in leads}
+    nomes = {u.id: u.nome for u in db.query(Usuario).filter(Usuario.id.in_(func_ids)).all()} if func_ids else {}
+    _virou = {StatusLeadEnum.proposta_enviada.value, StatusLeadEnum.proposta_aprovada.value, StatusLeadEnum.fechado.value}
+
+    resumo = defaultdict(lambda: {"total": 0, "propostas": 0, "fechado": 0, "perdido": 0,
+                                  "andamento": 0, "origens": defaultdict(int)})
+    origens_set = set()
+    for l in leads:
+        nome = nomes.get(l.atribuido_para, "—")
+        r = resumo[nome]
+        r["total"] += 1
+        if l.status in _virou:
+            r["propostas"] += 1
+        if l.status == StatusLeadEnum.fechado.value:
+            r["fechado"] += 1
+        elif l.status == StatusLeadEnum.perdido.value:
+            r["perdido"] += 1
+        else:
+            r["andamento"] += 1
+        ol = _origem_label(l.origem)
+        r["origens"][ol] += 1
+        origens_set.add(ol)
+    origens_cols = sorted(origens_set)
+
+    cor_cab = PatternFill("solid", fgColor="0D2B4E")
+    fonte_cab = Font(bold=True, color="FFFFFF", size=10)
+    fonte_norm = Font(size=9)
+    centro = Alignment(horizontal="center", vertical="center")
+    borda = Border(bottom=Side(style="thin", color="CCCCCC"), top=Side(style="thin", color="CCCCCC"))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Leads por funcionária"
+    _MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+    cols = (["Funcionária", "Total atendidos", "Viraram proposta", "% Proposta",
+             "Fechado", "% Conversão", "Perdido", "Em andamento", "% Prop→Contrato"]
+            + [f"Origem: {o}" for o in origens_cols])
+    for i, larg in enumerate([22, 14, 15, 11, 10, 12, 10, 14, 15] + [12] * len(origens_cols), 1):
+        ws.column_dimensions[get_column_letter(i)].width = larg
+
+    n = len(cols)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n)
+    t = ws.cell(row=1, column=1, value=f"Leads atendidos — {_MESES[mes-1]} {ano}")
+    t.font = Font(bold=True, color="FFFFFF", size=12); t.fill = cor_cab; t.alignment = centro
+    ws.row_dimensions[1].height = 22
+
+    for col, val in enumerate(cols, 1):
+        c = ws.cell(row=2, column=col, value=val)
+        c.font = fonte_cab; c.fill = cor_cab; c.alignment = centro; c.border = borda
+
+    linha = 3
+    def _pct(a, b):
+        return f"{round(a/b*100)}%" if b else "0%"
+    for nome, d in sorted(resumo.items(), key=lambda x: -x[1]["total"]):
+        vals = [nome, d["total"], d["propostas"], _pct(d["propostas"], d["total"]),
+                d["fechado"], _pct(d["fechado"], d["total"]), d["perdido"], d["andamento"],
+                _pct(d["fechado"], d["propostas"])]
+        vals += [d["origens"].get(o, 0) for o in origens_cols]
+        for col, val in enumerate(vals, 1):
+            c = ws.cell(row=linha, column=col, value=val)
+            c.alignment = centro; c.border = borda; c.font = fonte_norm
+        linha += 1
+    if linha == 3:
+        ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=n)
+        ws.cell(row=3, column=1, value="Nenhum lead atendido neste mês.").alignment = centro
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"leads_{ano}_{mes:02d}.xlsx"
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f"attachment; filename={fname}"})
+
+
 @app.get("/api/relatorio/ip-compartilhado")
 async def relatorio_ip_compartilhado(
     dias: int = 30,
