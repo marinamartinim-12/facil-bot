@@ -1871,8 +1871,8 @@
         acoes += `<button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="reativarContato(${leadId})" title="Voltar a permitir mensagens">↩ Reativar contato</button>`;
       }
 
-      // Marcar/desmarcar como conversa interna (fora dos relatórios)
-      if (isAdmin || isResp || !lead.responsavel) {
+      // Marcar/desmarcar como conversa interna (fora dos relatórios) — SÓ admin
+      if (isAdmin) {
         acoes += lead.ignorar_relatorios
           ? `<button class="btn btn-sm btn-outline" onclick="toggleIgnorarRelatorios(${leadId}, false)" title="Voltar a contabilizar nos relatórios">📊 Voltar aos relatórios</button>`
           : `<button class="btn btn-sm" style="background:#64748b;color:#fff" onclick="toggleIgnorarRelatorios(${leadId}, true)" title="Conversa interna/teste — não conta nos relatórios">🚫 Fora dos relatórios</button>`;

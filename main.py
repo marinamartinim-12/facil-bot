@@ -2545,7 +2545,10 @@ async def editar_lead(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     body = await request.json()
-    campos_editaveis = ["nome", "cpf", "data_nascimento", "carro_interesse", "modalidade", "observacoes", "cidade", "renda", "profissao", "tem_cnh", "email", "descadastrado", "ignorar_relatorios"]
+    campos_editaveis = ["nome", "cpf", "data_nascimento", "carro_interesse", "modalidade", "observacoes", "cidade", "renda", "profissao", "tem_cnh", "email", "descadastrado"]
+    # "Fora dos relatórios" só o ADMIN pode mexer (evita esconder conversa malfeita)
+    if "ignorar_relatorios" in body and usuario.role == RoleEnum.admin:
+        lead.ignorar_relatorios = bool(body["ignorar_relatorios"])
     for campo in campos_editaveis:
         if campo in body:
             valor = body[campo]
