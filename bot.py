@@ -346,7 +346,7 @@ def _historico_limpo(historico: list) -> list[dict]:
     """
     msgs = []
     for m in historico[-20:]:
-        conteudo = m.conteudo
+        conteudo = m.conteudo or ""
         if m.role == "assistant":
             # Tenta extrair o texto real das mensagens do bot
             try:
@@ -355,7 +355,16 @@ def _historico_limpo(historico: list) -> list[dict]:
                 conteudo = " | ".join(t for t in textos if t)
             except Exception:
                 pass  # Não era JSON, usa texto puro
+        conteudo = (conteudo or "").strip()
+        # A API da Claude rejeita mensagens com conteúdo vazio (erro 400).
+        # Mensagens de áudio/mídia sem texto entravam aqui e quebravam TODA a conversa.
+        if not conteudo:
+            continue
         msgs.append({"role": m.role, "content": conteudo})
+
+    # A primeira mensagem precisa ser do usuário (regra da API).
+    while msgs and msgs[0]["role"] != "user":
+        msgs.pop(0)
     return msgs
 
 
@@ -447,20 +456,45 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
     )
 
     messages = _historico_limpo(historico)
-    messages.append({"role": "user", "content": mensagem_cliente})
+    # Mensagem atual do cliente (áudio/mídia podem vir vazios → evita erro 400)
+    msg_atual = (mensagem_cliente or "").strip() or "(mensagem sem texto)"
+    messages.append({"role": "user", "content": msg_atual})
 
-    # Chama o Claude
-    try:
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            system=system,
-            messages=messages,
-        )
-        resposta_raw = response.content[0].text.strip()
-    except Exception as e:
-        print(f"❌ Erro Claude: {e}")
-        return ["Desculpe, ocorreu um problema técnico. Tente novamente em instantes. 🙏"]
+    # Chama o Claude — com tentativas (falhas transitórias acontecem)
+    import time as _time
+    resposta_raw = None
+    ultimo_erro = None
+    for _tent in range(3):
+        try:
+            response = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=1024,
+                system=system,
+                messages=messages,
+            )
+            resposta_raw = response.content[0].text.strip()
+            break
+        except Exception as e:
+            ultimo_erro = e
+            print(f"❌ Erro Claude (tentativa {_tent+1}/3): {type(e).__name__}: {e}")
+            _time.sleep(1.2)
+
+    if resposta_raw is None:
+        # IA indisponível de vez → NÃO perde o lead: transfere para uma atendente.
+        print(f"🚨 IA indisponível — transferindo {telefone} para atendimento humano. "
+              f"Último erro: {repr(ultimo_erro)}")
+        try:
+            lead.estado_conversa = EstadoConversaEnum.transferido
+            if lead.status == StatusLeadEnum.em_atendimento:
+                lead.status = StatusLeadEnum.qualificado
+            lead.atualizado_em = datetime.utcnow()
+            db.commit()
+        except Exception:
+            db.rollback()
+        msg = ("Obrigada pelas informações! 😊 Vou te transferir agora para uma de "
+               "nossas especialistas, que vai continuar seu atendimento. Só um instante!")
+        _salvar_mensagem(db, telefone, "assistant", msg)
+        return [msg]
 
     # Parse JSON
     try:
