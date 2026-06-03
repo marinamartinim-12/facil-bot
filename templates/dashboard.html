@@ -4074,13 +4074,27 @@
               `<div style="margin-bottom:.3rem"><div style="font-size:.78rem;margin-bottom:2px">${k}</div>${bar(v,maxCid,'#0891b2')}</div>`
             ).join(''));
 
-      // ── Dia da semana ─────────────────────────────────────────────────────
+      // ── Dia da semana (gráfico de barras + calor) ─────────────────────────
       const dias = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
-      const maxDia = Math.max(...Object.values(d.dias_semana),1);
+      const diasArr = dias.map(d2=>({d2, v:d.dias_semana[d2]||0}));
+      const maxDia = Math.max(...diasArr.map(x=>x.v),1);
+      const diaPico = diasArr.reduce((a,b)=> b.v>a.v?b:a, diasArr[0]);
       const diaHtml = card2('📅 Dia da semana — leads entram',
-        dias.map(d2=>
-          `<div style="margin-bottom:.3rem"><div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:2px"><span>${d2}</span><span>${d.dias_semana[d2]||0}</span></div>${bar(d.dias_semana[d2]||0,maxDia,'#1e40af')}</div>`
-        ).join(''));
+        `<div style="display:flex;align-items:flex-end;gap:5px;height:120px;padding-top:16px">
+           ${diasArr.map(({d2,v})=>{
+             const alt = Math.max(3, Math.round(v/maxDia*92));
+             const intens = v/maxDia;
+             const cor = v===0 ? '#eef2f6' : `rgba(30,64,175,${(0.30+intens*0.70).toFixed(2)})`;
+             return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${d2} — ${v} lead(s)">
+               ${v>0?`<span style="font-size:.6rem;color:#1e40af;font-weight:700;line-height:1;margin-bottom:1px">${v}</span>`:''}
+               <div style="width:100%;height:${alt}px;background:${cor};border-radius:3px 3px 0 0"></div>
+             </div>`;
+           }).join('')}
+         </div>
+         <div style="display:flex;gap:5px;margin-top:3px">
+           ${diasArr.map(({d2})=>`<div style="flex:1;text-align:center;font-size:.6rem;color:var(--muted)">${d2}</div>`).join('')}
+         </div>
+         <div style="font-size:.7rem;color:var(--muted);margin-top:.5rem">📈 Mais leads na <b style="color:#1e40af">${diaPico.d2}</b> (${diaPico.v}).</div>`);
 
       // ── Hora do dia (gráfico de barras + calor) ───────────────────────────
       const horasArr = Array.from({length:24},(_,h)=>({h,v:d.horas[String(h)]||0}));
