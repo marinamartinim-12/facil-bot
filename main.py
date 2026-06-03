@@ -407,6 +407,7 @@ async def startup():
         ("leads",           "tem_cnh",            "BOOLEAN"),
         ("leads",           "oculto_funil",       "BOOLEAN DEFAULT 0"),
         ("leads",           "descadastrado",      "BOOLEAN DEFAULT 0"),
+        ("leads",           "ignorar_relatorios", "BOOLEAN DEFAULT 0"),
         ("leads",           "carros_proposta",    "TEXT"),
         ("leads",           "email",              "VARCHAR(150)"),
         ("parceiros",       "nome_agenda",        "VARCHAR(200)"),
@@ -2544,7 +2545,7 @@ async def editar_lead(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     body = await request.json()
-    campos_editaveis = ["nome", "cpf", "data_nascimento", "carro_interesse", "modalidade", "observacoes", "cidade", "renda", "profissao", "tem_cnh", "email", "descadastrado"]
+    campos_editaveis = ["nome", "cpf", "data_nascimento", "carro_interesse", "modalidade", "observacoes", "cidade", "renda", "profissao", "tem_cnh", "email", "descadastrado", "ignorar_relatorios"]
     for campo in campos_editaveis:
         if campo in body:
             valor = body[campo]
@@ -2757,8 +2758,9 @@ async def dashboard_stats(
     agora = _agora_br()
     inicio_mes_utc = datetime(agora.year, agora.month, 1, tzinfo=_TZ_BR).astimezone(timezone.utc).replace(tzinfo=None)
 
-    # ── Leads do mês por origem ────────────────────────────────────────────
-    leads_mes_q = db.query(Lead).filter(Lead.criado_em >= inicio_mes_utc)
+    # ── Leads do mês por origem (exclui conversas internas) ────────────────
+    leads_mes_q = db.query(Lead).filter(Lead.criado_em >= inicio_mes_utc,
+                                        Lead.ignorar_relatorios.isnot(True))
     total_mes = leads_mes_q.count()
 
     origens_map = {
@@ -2775,17 +2777,18 @@ async def dashboard_stats(
     sem_origem = leads_mes_q.filter(Lead.origem == None).count()
     por_origem["WhatsApp / Bot"] = por_origem.get("WhatsApp / Bot", 0) + sem_origem
 
-    # ── Conversões do mês ──────────────────────────────────────────────────
+    # ── Conversões do mês (exclui conversas internas) ──────────────────────
+    _ign = Lead.ignorar_relatorios.isnot(True)
     propostas_mes = db.query(Lead).filter(
-        Lead.criado_em >= inicio_mes_utc,
+        Lead.criado_em >= inicio_mes_utc, _ign,
         Lead.status.in_([StatusLeadEnum.proposta_enviada, StatusLeadEnum.proposta_aprovada, StatusLeadEnum.fechado])
     ).count()
     aprovadas_mes = db.query(Lead).filter(
-        Lead.criado_em >= inicio_mes_utc,
+        Lead.criado_em >= inicio_mes_utc, _ign,
         Lead.status.in_([StatusLeadEnum.proposta_aprovada, StatusLeadEnum.fechado])
     ).count()
     fechados_mes = db.query(Lead).filter(
-        Lead.fechado_em >= inicio_mes_utc,
+        Lead.fechado_em >= inicio_mes_utc, _ign,
         Lead.status == StatusLeadEnum.fechado
     ).count()
 
@@ -2810,6 +2813,7 @@ async def dashboard_stats(
             Lead.atribuido_para == f.id,
             Lead.status == StatusLeadEnum.fechado,
             Lead.fechado_em >= inicio_mes_utc,
+            _ign,
         ).count()
         ranking.append({"nome": f.nome, "contratos": qtd})
     ranking.sort(key=lambda x: x["contratos"], reverse=True)
@@ -2820,6 +2824,7 @@ async def dashboard_stats(
         leads_fechados_mes = db.query(Lead).filter(
             Lead.fechado_em >= inicio_mes_utc,
             Lead.status == StatusLeadEnum.fechado,
+            _ign,
         ).all()
         def _to_float(v):
             if not v: return 0.0
@@ -3738,10 +3743,11 @@ async def admin_remover_ponto(ponto_id: int, db: Session = Depends(get_db),
 @app.get("/api/relatorios")
 async def relatorios(db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
     usuarios = db.query(Usuario).filter(Usuario.ativo == True, Usuario.role == RoleEnum.funcionario).all()
+    _ign = Lead.ignorar_relatorios.isnot(True)
     por_funcionario = []
     for u in usuarios:
-        total = db.query(Lead).filter(Lead.atribuido_para == u.id).count()
-        fechados = db.query(Lead).filter(Lead.atribuido_para == u.id, Lead.status == StatusLeadEnum.fechado).count()
+        total = db.query(Lead).filter(Lead.atribuido_para == u.id, _ign).count()
+        fechados = db.query(Lead).filter(Lead.atribuido_para == u.id, Lead.status == StatusLeadEnum.fechado, _ign).count()
         por_funcionario.append({
             "nome": u.nome,
             "role": u.role,
@@ -3752,8 +3758,8 @@ async def relatorios(db: Session = Depends(get_db), admin: Usuario = Depends(req
     return {
         "por_funcionario": por_funcionario,
         "por_modalidade": {
-            "financiamento": db.query(Lead).filter(Lead.modalidade == "financiamento").count(),
-            "refinanciamento": db.query(Lead).filter(Lead.modalidade == "refinanciamento").count(),
+            "financiamento": db.query(Lead).filter(Lead.modalidade == "financiamento", _ign).count(),
+            "refinanciamento": db.query(Lead).filter(Lead.modalidade == "refinanciamento", _ign).count(),
         },
     }
 
@@ -3875,8 +3881,11 @@ def _tempos_resposta_por_func(db, desde, ate=None) -> dict:
     if ate:
         q = q.filter(MensagemConversa.criado_em < ate)
     msgs = q.order_by(MensagemConversa.telefone, MensagemConversa.criado_em).all()
+    ignorados = {t for (t,) in db.query(Lead.telefone).filter(Lead.ignorar_relatorios == True).all()}
     grupos = defaultdict(list)
     for m in msgs:
+        if m.telefone in ignorados:
+            continue
         grupos[m.telefone].append(m)
     por_func = defaultdict(list)
     for tel, lst in grupos.items():
@@ -3910,7 +3919,8 @@ async def relatorio_conversas_paradas(db: Session = Depends(get_db),
     from collections import defaultdict
     ativos = [StatusLeadEnum.qualificado.value, StatusLeadEnum.assumido.value,
               StatusLeadEnum.proposta_enviada.value, StatusLeadEnum.proposta_aprovada.value]
-    leads = db.query(Lead).filter(Lead.status.in_(ativos)).all()
+    leads = db.query(Lead).filter(Lead.status.in_(ativos),
+                                  Lead.ignorar_relatorios.isnot(True)).all()
     if not leads:
         return {"total": 0, "por_responsavel": [], "leads": []}
 
@@ -3966,7 +3976,7 @@ async def conversas_paradas_minhas(db: Session = Depends(get_db),
     limite_min = int(cfg.valor) if (cfg and cfg.valor and cfg.valor.isdigit()) else 30
     ativos = [StatusLeadEnum.qualificado.value, StatusLeadEnum.assumido.value,
               StatusLeadEnum.proposta_enviada.value, StatusLeadEnum.proposta_aprovada.value]
-    q = db.query(Lead).filter(Lead.status.in_(ativos))
+    q = db.query(Lead).filter(Lead.status.in_(ativos), Lead.ignorar_relatorios.isnot(True))
     if usuario.role != RoleEnum.admin:
         q = q.filter(Lead.atribuido_para == usuario.id)
     leads = q.all()
@@ -4014,8 +4024,11 @@ async def relatorio_tempo_resposta(
     msgs = (db.query(MensagemConversa)
             .filter(MensagemConversa.criado_em >= desde)
             .order_by(MensagemConversa.telefone, MensagemConversa.criado_em).all())
+    ignorados = {t for (t,) in db.query(Lead.telefone).filter(Lead.ignorar_relatorios == True).all()}
     grupos = defaultdict(list)
     for m in msgs:
+        if m.telefone in ignorados:
+            continue
         grupos[m.telefone].append(m)
 
     tempos = []          # (segundos, nome_funcionaria)
@@ -4035,7 +4048,8 @@ async def relatorio_tempo_resposta(
 
     # Leads qualificados que ainda não tiveram nenhuma 1ª resposta humana
     aguardando = 0
-    quali = db.query(Lead).filter(Lead.status == StatusLeadEnum.qualificado).all()
+    quali = db.query(Lead).filter(Lead.status == StatusLeadEnum.qualificado,
+                                  Lead.ignorar_relatorios.isnot(True)).all()
     for l in quali:
         tem_humano = (db.query(MensagemConversa)
                       .filter(MensagemConversa.telefone == l.telefone,
@@ -4079,8 +4093,11 @@ async def relatorio_volume_api(db: Session = Depends(get_db), admin: Usuario = D
     msgs = (db.query(MensagemConversa)
             .filter(MensagemConversa.criado_em >= desde)
             .order_by(MensagemConversa.telefone, MensagemConversa.criado_em).all())
+    ignorados = {t for (t,) in db.query(Lead.telefone).filter(Lead.ignorar_relatorios == True).all()}
     grupos = defaultdict(list)
     for m in msgs:
+        if m.telefone in ignorados:
+            continue
         grupos[m.telefone].append(m)
 
     conversas_recebidas = recebidas = enviadas = proativas = 0
@@ -4148,6 +4165,7 @@ async def relatorio_leads_calendario(
         Lead.atribuido_para.isnot(None),
         Lead.assumido_em >= inicio,
         Lead.assumido_em < fim,
+        Lead.ignorar_relatorios.isnot(True),
     ))
     if funcionaria:
         q = q.filter(Lead.atribuido_para == funcionaria)
@@ -4224,7 +4242,8 @@ async def relatorio_leads_calendario_xlsx(
     inicio = datetime(ano, mes, 1) + timedelta(hours=3)
     fim = (datetime(ano + 1, 1, 1) if mes == 12 else datetime(ano, mes + 1, 1)) + timedelta(hours=3)
     q = db.query(Lead).filter(Lead.atribuido_para.isnot(None),
-                              Lead.assumido_em >= inicio, Lead.assumido_em < fim)
+                              Lead.assumido_em >= inicio, Lead.assumido_em < fim,
+                              Lead.ignorar_relatorios.isnot(True))
     if funcionaria:
         q = q.filter(Lead.atribuido_para == funcionaria)
     leads = q.all()
@@ -4785,6 +4804,7 @@ def _fila_snapshot(db: Session):
             Lead.assumido_em >= inicio_hoje,
             Lead.assumido_em < fim_hoje,
             Lead.origem.is_(None),  # exclui leads inseridos manualmente
+            Lead.ignorar_relatorios.isnot(True),  # exclui conversas internas
         )
         .all()
     )
@@ -5422,6 +5442,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "tem_cnh":  l.tem_cnh,   # None=não informado | True=sim | False=não
         "oculto_funil": bool(l.oculto_funil),
         "descadastrado": bool(l.descadastrado),
+        "ignorar_relatorios": bool(l.ignorar_relatorios),
         "carros_proposta": _safe_json(l.carros_proposta, []),
     }
 

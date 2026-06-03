@@ -122,6 +122,7 @@ class Lead(Base):
     tem_cnh    = Column(Boolean, nullable=True)            # True=tem CNH | False=não tem | None=não informado
     oculto_funil = Column(Boolean, default=False)   # True = oculto do kanban por inatividade
     descadastrado = Column(Boolean, default=False)  # True = pediu p/ não receber mensagens (opt-out)
+    ignorar_relatorios = Column(Boolean, default=False)  # True = conversa interna/teste, fora dos relatórios
     carros_proposta = Column(Text, nullable=True)   # JSON: lista de carros em proposta [{placa,modelo,ano,chassi,escolhido}]
     observacoes = Column(Text, nullable=True)
     origem = Column(String(50), nullable=True)        # rede_social | parceiro | ex_cliente | indicacao | whatsapp

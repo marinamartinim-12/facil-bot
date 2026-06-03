@@ -1835,7 +1835,8 @@
       const stLabel = labSt(lead.status || '');
       document.getElementById('modalStatusBadge').innerHTML =
         `<span class="badge badge-${lead.status}" style="font-size:.75rem;margin-left:.5rem">${stLabel}</span>` +
-        (lead.descadastrado ? `<span title="Cliente pediu para não receber mensagens" style="font-size:.72rem;margin-left:.4rem;background:#fee2e2;color:#991b1b;padding:.1rem .45rem;border-radius:99px;font-weight:700">🚫 Descadastrado</span>` : '');
+        (lead.descadastrado ? `<span title="Cliente pediu para não receber mensagens" style="font-size:.72rem;margin-left:.4rem;background:#fee2e2;color:#991b1b;padding:.1rem .45rem;border-radius:99px;font-weight:700">🚫 Descadastrado</span>` : '') +
+        (lead.ignorar_relatorios ? `<span title="Conversa interna — não conta nos relatórios" style="font-size:.72rem;margin-left:.4rem;background:#e2e8f0;color:#475569;padding:.1rem .45rem;border-radius:99px;font-weight:700">🚫 Fora dos relatórios</span>` : '');
 
       // Dados do cliente — modo visualização
       window._modalLeadData = lead;
@@ -1868,6 +1869,13 @@
       // Reativar contato (se descadastrado) — admin/responsável
       if (lead.descadastrado && (isAdmin || isResp)) {
         acoes += `<button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="reativarContato(${leadId})" title="Voltar a permitir mensagens">↩ Reativar contato</button>`;
+      }
+
+      // Marcar/desmarcar como conversa interna (fora dos relatórios)
+      if (isAdmin || isResp || !lead.responsavel) {
+        acoes += lead.ignorar_relatorios
+          ? `<button class="btn btn-sm btn-outline" onclick="toggleIgnorarRelatorios(${leadId}, false)" title="Voltar a contabilizar nos relatórios">📊 Voltar aos relatórios</button>`
+          : `<button class="btn btn-sm" style="background:#64748b;color:#fff" onclick="toggleIgnorarRelatorios(${leadId}, true)" title="Conversa interna/teste — não conta nos relatórios">🚫 Fora dos relatórios</button>`;
       }
 
       // Ações exclusivas de admin
@@ -5912,6 +5920,25 @@
         elDeal.style.display = 'none';
       }
     }
+  }
+
+  async function toggleIgnorarRelatorios(leadId, val) {
+    const msg = val
+      ? 'Marcar como conversa interna? Ela deixa de contar em todos os relatórios (leads, conversão, tempo de resposta, conversas paradas…).'
+      : 'Voltar a contabilizar esta conversa nos relatórios?';
+    if (!confirm(msg)) return;
+    try {
+      const r = await fetch(`/api/leads/${leadId}`, {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ ignorar_relatorios: val }),
+      });
+      if (!r.ok) { alert('Erro ao salvar.'); return; }
+      const lead = await r.json();
+      window._modalLeadData = lead;
+      const idx = allLeads.findIndex(l => l.id === leadId);
+      if (idx !== -1) allLeads[idx] = lead;
+      verLead(leadId);
+    } catch { alert('Erro de rede.'); }
   }
 
   async function reativarContato(leadId) {
