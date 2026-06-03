@@ -4426,6 +4426,11 @@ def _fila_snapshot(db: Session):
     for uid, _ in leads_hoje_raw:
         leads_hoje[uid] = leads_hoje.get(uid, 0) + 1
 
+    # ── PRÓXIMA = quem tem MENOS leads hoje (empate: ordem da lista) ──────────
+    # Assim a distribuição se equilibra sozinha — no fim do dia todas com a
+    # mesma quantidade. Não depende mais de "avançar" um ponteiro (que travava).
+    idx_proxima = min(range(len(ordem)), key=lambda i: (leads_hoje.get(ordem[i], 0), i))
+
     alt_por_cfg = db.query(Configuracao).filter(Configuracao.chave == "fila_alterado_por").first()
     alt_em_cfg  = db.query(Configuracao).filter(Configuracao.chave == "fila_alterado_em").first()
     return {
@@ -4433,8 +4438,8 @@ def _fila_snapshot(db: Session):
             {"id": uid, "nome": usuarios[uid].nome, "leads_hoje": leads_hoje.get(uid, 0)}
             for uid in ordem
         ],
-        "posicao": posicao,
-        "proxima": {"id": ordem[posicao], "nome": usuarios[ordem[posicao]].nome, "leads_hoje": leads_hoje.get(ordem[posicao], 0)},
+        "posicao": idx_proxima,
+        "proxima": {"id": ordem[idx_proxima], "nome": usuarios[ordem[idx_proxima]].nome, "leads_hoje": leads_hoje.get(ordem[idx_proxima], 0)},
         "alterado_por": alt_por_cfg.valor if alt_por_cfg else None,
         "alterado_em":  alt_em_cfg.valor  if alt_em_cfg  else None,
     }

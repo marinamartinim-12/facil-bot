@@ -1450,7 +1450,7 @@
   async function refresh() {
     const btn = document.getElementById('btnRefresh');
     btn.classList.add('spinning');
-    await Promise.all([carregarStats(), carregarLeads(), carregarInbox(), carregarMetaMes(), carregarDashboard()]);
+    await Promise.all([carregarStats(), carregarLeads(), carregarInbox(), carregarMetaMes(), carregarDashboard(), carregarFila()]);
     btn.classList.remove('spinning');
     document.getElementById('lastUpdate').textContent = 'Atualizado ' + new Date().toLocaleTimeString('pt-BR');
   }
@@ -4612,13 +4612,9 @@
   }
 
   async function _avancarFila(lead) {
-    // Avança só para leads do bot (origem != parceiro)
-    if (!lead || lead.origem === 'parceiro') return;
-    try {
-      const r = await fetch('/api/fila/avancar', { method: 'POST' });
-      _filaData = await r.json();
-      renderFila();
-    } catch {}
+    // A "próxima" agora é calculada pelo servidor (quem tem menos leads do dia).
+    // Aqui só atualizamos a barra para refletir na hora.
+    await carregarFila();
   }
 
   // ═══════ INBOX / ATENDIMENTO ═══════
