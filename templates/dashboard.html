@@ -946,6 +946,10 @@
             <input id="parceiroBusca" type="text" placeholder="Buscar parceiro…"
               oninput="filtrarParceiros()"
               style="padding:.45rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;min-width:220px">
+            <select id="parceiroOperadora" onchange="filtrarParceiros()"
+              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;outline:none;background:#fff;cursor:pointer">
+              <option value="">👩‍💼 Todas as carteiras</option>
+            </select>
           </div>
           <button class="btn btn-primary btn-sm" onclick="abrirModalParceiro(null)">＋ Novo Parceiro</button>
         </div>
@@ -3008,8 +3012,23 @@
       if (!r.ok) return;
       _todosParceirosBd = await r.json();
       renderCarteiraResumo();
+      _popularFiltroOperadora();
       filtrarParceiros();
     } catch {}
+  }
+
+  function _popularFiltroOperadora() {
+    const sel = document.getElementById('parceiroOperadora');
+    if (!sel) return;
+    const atual = sel.value;
+    const nomes = [...new Set(_todosParceirosBd.filter(p => p.operadora_nome).map(p => p.operadora_nome))]
+      .sort((a, b) => a.localeCompare(b));
+    const temSem = _todosParceirosBd.some(p => !p.operadora_nome);
+    let html = '<option value="">👩‍💼 Todas as carteiras</option>';
+    html += nomes.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    if (temSem) html += '<option value="__sem__">— Sem operadora —</option>';
+    sel.innerHTML = html;
+    if (atual) sel.value = atual;
   }
 
   function renderCarteiraResumo() {
@@ -3043,11 +3062,16 @@
 
   function filtrarParceiros() {
     const q = (document.getElementById('parceiroBusca')?.value || '').toLowerCase();
-    const lista = _todosParceirosBd.filter(p =>
-      p.nome.toLowerCase().includes(q) ||
-      p.telefone.includes(q) ||
-      (p.cpf || '').includes(q)
-    );
+    const op = document.getElementById('parceiroOperadora')?.value || '';
+    const lista = _todosParceirosBd.filter(p => {
+      // Filtro por carteira (operadora)
+      if (op === '__sem__') { if (p.operadora_nome) return false; }
+      else if (op) { if (p.operadora_nome !== op) return false; }
+      // Busca por texto
+      return p.nome.toLowerCase().includes(q) ||
+        p.telefone.includes(q) ||
+        (p.cpf || '').includes(q);
+    });
     renderParceiros(lista);
   }
 
