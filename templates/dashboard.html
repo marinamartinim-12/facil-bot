@@ -4074,48 +4074,63 @@
               `<div style="margin-bottom:.3rem"><div style="font-size:.78rem;margin-bottom:2px">${k}</div>${bar(v,maxCid,'#0891b2')}</div>`
             ).join(''));
 
-      // ── Dia da semana (gráfico de barras + calor) ─────────────────────────
+      // ── Legenda compartilhada (bot × parceiro/inseridos) ──────────────────
+      const legenda = `<div style="display:flex;gap:1rem;font-size:.68rem;color:#475569;margin-bottom:.4rem">
+        <span><span style="display:inline-block;width:10px;height:10px;background:#065f46;border-radius:2px;margin-right:3px"></span>Bot</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:#f97316;border-radius:2px;margin-right:3px"></span>Parceiro / Inseridos</span></div>`;
+
+      // ── Dia da semana (barras empilhadas: bot + parceiro/inseridos) ───────
       const dias = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
-      const diasArr = dias.map(d2=>({d2, v:d.dias_semana[d2]||0}));
+      const diasArr = dias.map(d2=>({d2, bot:(d.dias_semana_bot?.[d2]||0), out:(d.dias_semana_outros?.[d2]||0), v:(d.dias_semana[d2]||0)}));
       const maxDia = Math.max(...diasArr.map(x=>x.v),1);
       const diaPico = diasArr.reduce((a,b)=> b.v>a.v?b:a, diasArr[0]);
       const diaHtml = card2('📅 Dia da semana — leads entram',
+        legenda +
         `<div style="display:flex;align-items:flex-end;gap:5px;height:120px;padding-top:16px">
-           ${diasArr.map(({d2,v})=>{
+           ${diasArr.map(({d2,bot,out,v})=>{
              const alt = Math.max(3, Math.round(v/maxDia*92));
-             const intens = v/maxDia;
-             const cor = v===0 ? '#eef2f6' : `rgba(30,64,175,${(0.30+intens*0.70).toFixed(2)})`;
-             return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${d2} — ${v} lead(s)">
-               ${v>0?`<span style="font-size:.6rem;color:#1e40af;font-weight:700;line-height:1;margin-bottom:1px">${v}</span>`:''}
-               <div style="width:100%;height:${alt}px;background:${cor};border-radius:3px 3px 0 0"></div>
+             const botH = v>0 ? Math.round(bot/v*alt) : 0;
+             const outH = alt - botH;
+             return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${d2} — Bot: ${bot} · Parceiro/Inseridos: ${out}">
+               ${v>0?`<span style="font-size:.6rem;color:#334155;font-weight:700;line-height:1;margin-bottom:1px">${v}</span>`:''}
+               <div style="width:100%;height:${alt}px;display:flex;flex-direction:column;border-radius:3px 3px 0 0;overflow:hidden;background:#eef2f6">
+                 <div style="height:${outH}px;background:#f97316"></div>
+                 <div style="height:${botH}px;background:#065f46"></div>
+               </div>
              </div>`;
            }).join('')}
          </div>
          <div style="display:flex;gap:5px;margin-top:3px">
            ${diasArr.map(({d2})=>`<div style="flex:1;text-align:center;font-size:.6rem;color:var(--muted)">${d2}</div>`).join('')}
          </div>
-         <div style="font-size:.7rem;color:var(--muted);margin-top:.5rem">📈 Mais leads na <b style="color:#1e40af">${diaPico.d2}</b> (${diaPico.v}).</div>`);
+         <div style="font-size:.7rem;color:var(--muted);margin-top:.5rem">📈 Mais leads na <b style="color:#065f46">${diaPico.d2}</b> (${diaPico.v}).</div>`);
 
-      // ── Hora do dia (gráfico de barras + calor) ───────────────────────────
-      const horasArr = Array.from({length:24},(_,h)=>({h,v:d.horas[String(h)]||0}));
+      // ── Hora do dia (barras empilhadas: bot + parceiro/inseridos) ─────────
+      const horasArr = Array.from({length:24},(_,h)=>({
+        h, bot:(d.horas_bot?.[String(h)]||0), out:(d.horas_outros?.[String(h)]||0), v:(d.horas[String(h)]||0)
+      }));
       const maxHora = Math.max(...horasArr.map(x=>x.v),1);
       const horaPico = horasArr.reduce((a,b)=> b.v>a.v?b:a, horasArr[0]);
       const horaHtml = card2('🕐 Horário de contato',
+        legenda +
         `<div style="display:flex;align-items:flex-end;gap:2px;height:120px;padding-top:16px">
-           ${horasArr.map(({h,v})=>{
+           ${horasArr.map(({h,bot,out,v})=>{
              const alt = Math.max(3, Math.round(v/maxHora*92));
-             const intens = v/maxHora;
-             const cor = v===0 ? '#eef2f6' : `rgba(6,95,70,${(0.30+intens*0.70).toFixed(2)})`;
-             return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${String(h).padStart(2,'0')}h — ${v} contato(s)">
-               ${v>0?`<span style="font-size:.55rem;color:#065f46;font-weight:700;line-height:1;margin-bottom:1px">${v}</span>`:''}
-               <div style="width:100%;height:${alt}px;background:${cor};border-radius:3px 3px 0 0"></div>
+             const botH = v>0 ? Math.round(bot/v*alt) : 0;
+             const outH = alt - botH;
+             return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${String(h).padStart(2,'0')}h — Bot: ${bot} · Parceiro/Inseridos: ${out}">
+               ${v>0?`<span style="font-size:.55rem;color:#334155;font-weight:700;line-height:1;margin-bottom:1px">${v}</span>`:''}
+               <div style="width:100%;height:${alt}px;display:flex;flex-direction:column;border-radius:3px 3px 0 0;overflow:hidden;background:#eef2f6">
+                 <div style="height:${outH}px;background:#f97316"></div>
+                 <div style="height:${botH}px;background:#065f46"></div>
+               </div>
              </div>`;
            }).join('')}
          </div>
          <div style="display:flex;gap:2px;margin-top:3px">
            ${horasArr.map(({h})=>`<div style="flex:1;text-align:center;font-size:.5rem;color:var(--muted)">${String(h).padStart(2,'0')}</div>`).join('')}
          </div>
-         <div style="font-size:.7rem;color:var(--muted);margin-top:.5rem">📈 Pico de contatos às <b style="color:#065f46">${String(horaPico.h).padStart(2,'0')}h</b> (${horaPico.v}). Quanto mais alto/escuro, mais contatos — passe o mouse para ver a quantidade.</div>`);
+         <div style="font-size:.7rem;color:var(--muted);margin-top:.5rem">📈 Pico às <b style="color:#065f46">${String(horaPico.h).padStart(2,'0')}h</b> (${horaPico.v}). Horário de Brasília. Passe o mouse para ver bot × parceiro.</div>`);
 
       // ── Layout grid ──────────────────────────────────────────────────────
       el.innerHTML = kpis + `

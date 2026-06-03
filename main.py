@@ -1969,14 +1969,20 @@ async def relatorio_perfil(
     # ── Cidade (top 8) ────────────────────────────────────────────────────────
     cidades = Counter(l.cidade.strip().title() for l in fechados if l.cidade).most_common(8)
 
-    # ── Dia da semana (todos os leads — horário de entrada) ───────────────────
+    # ── Dia da semana / hora (horário BR, separado por origem) ────────────────
     dias = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
-    dia_count = Counter()
-    hora_count = Counter()
+    dia_count = Counter(); hora_count = Counter()
+    dia_bot = Counter(); hora_bot = Counter()
+    dia_out = Counter(); hora_out = Counter()
     for l in todos:
         if l.criado_em:
-            dia_count[dias[l.criado_em.weekday()]] += 1
-            hora_count[l.criado_em.hour] += 1
+            br = l.criado_em.replace(tzinfo=timezone.utc).astimezone(_TZ_BR)
+            wd = dias[br.weekday()]; hr = br.hour
+            dia_count[wd] += 1; hora_count[hr] += 1
+            if (l.origem or "") in ("", "whatsapp"):   # bot
+                dia_bot[wd] += 1; hora_bot[hr] += 1
+            else:                                       # parceiro / inserido manualmente
+                dia_out[wd] += 1; hora_out[hr] += 1
 
     # ── Valor médio financiado ────────────────────────────────────────────────
     def _to_float(v):
@@ -2008,8 +2014,12 @@ async def relatorio_perfil(
         "origens":        origens_conv,
         "top_veiculos":   top_veiculos,
         "cidades":        cidades,
-        "dias_semana":    {d: dia_count.get(d, 0) for d in dias},
+        "dias_semana":        {d: dia_count.get(d, 0) for d in dias},
+        "dias_semana_bot":    {d: dia_bot.get(d, 0) for d in dias},
+        "dias_semana_outros": {d: dia_out.get(d, 0) for d in dias},
         "horas":          {str(h): hora_count.get(h, 0) for h in range(0, 24)},
+        "horas_bot":      {str(h): hora_bot.get(h, 0) for h in range(0, 24)},
+        "horas_outros":   {str(h): hora_out.get(h, 0) for h in range(0, 24)},
     }
 
 
