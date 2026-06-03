@@ -3921,6 +3921,51 @@ async def relatorio_conversas_paradas(db: Session = Depends(get_db),
     return {"total": len(paradas), "por_responsavel": resumo, "leads": paradas}
 
 
+@app.get("/api/conversas-paradas/minhas")
+async def conversas_paradas_minhas(db: Session = Depends(get_db),
+                                   usuario: Usuario = Depends(obter_usuario_atual)):
+    """Conversas paradas (esperando resposta) acima do limite — para o alerta no topo.
+    Funcionária vê as dela; admin vê todas."""
+    from sqlalchemy import func
+    cfg = db.query(Configuracao).filter(Configuracao.chave == "parada_alerta_min").first()
+    limite_min = int(cfg.valor) if (cfg and cfg.valor and cfg.valor.isdigit()) else 30
+    ativos = [StatusLeadEnum.qualificado.value, StatusLeadEnum.assumido.value,
+              StatusLeadEnum.proposta_enviada.value, StatusLeadEnum.proposta_aprovada.value]
+    q = db.query(Lead).filter(Lead.status.in_(ativos))
+    if usuario.role != RoleEnum.admin:
+        q = q.filter(Lead.atribuido_para == usuario.id)
+    leads = q.all()
+    if not leads:
+        return {"limite_min": limite_min, "itens": []}
+    tels = [l.telefone for l in leads]
+    sub = (db.query(MensagemConversa.telefone, func.max(MensagemConversa.id).label("mid"))
+           .filter(MensagemConversa.telefone.in_(tels))
+           .group_by(MensagemConversa.telefone).subquery())
+    ultimas = db.query(MensagemConversa).join(sub, MensagemConversa.id == sub.c.mid).all()
+    last_by_tel = {m.telefone: m for m in ultimas}
+    resp_ids = {l.atribuido_para for l in leads if l.atribuido_para}
+    nomes = {u.id: u.nome for u in db.query(Usuario).filter(Usuario.id.in_(resp_ids)).all()} if resp_ids else {}
+
+    agora = datetime.utcnow()
+    itens = []
+    for l in leads:
+        m = last_by_tel.get(l.telefone)
+        if not m or m.role != "user":
+            continue
+        espera_s = max(0, int((agora - m.criado_em).total_seconds()))
+        if espera_s < limite_min * 60:
+            continue
+        itens.append({
+            "lead_id": l.id,
+            "nome": l.nome if (l.nome and l.nome != "—") else l.telefone,
+            "responsavel": (nomes.get(l.atribuido_para) if l.atribuido_para else "Aguardando atendente"),
+            "espera_s": espera_s,
+            "espera": _duracao_str(espera_s),
+        })
+    itens.sort(key=lambda x: x["espera_s"], reverse=True)
+    return {"limite_min": limite_min, "itens": itens}
+
+
 @app.get("/api/relatorio/tempo-resposta")
 async def relatorio_tempo_resposta(
     dias: int = 30,
@@ -5436,6 +5481,11 @@ def _criar_config_padrao(db: Session):
             "chave": "apiplacas_token",
             "descricao": "Token da API Placas (apiplacas.com.br) para buscar dados do veículo pela placa",
             "valor": "",
+        },
+        {
+            "chave": "parada_alerta_min",
+            "descricao": "Minutos sem resposta para alertar 'conversa parada' no topo do painel. Padrão: 30",
+            "valor": "30",
         },
         {
             "chave": "meta_contratos",

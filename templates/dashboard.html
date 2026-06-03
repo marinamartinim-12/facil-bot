@@ -699,6 +699,12 @@
           </button>
           <div id="sinoDropdown" style="display:none;position:absolute;right:0;top:calc(100% + 6px);width:320px;max-height:420px;overflow-y:auto;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.18);z-index:200;padding:.5rem"></div>
         </div>
+        <div style="position:relative;display:inline-block">
+          <button class="btn btn-sm" id="btnParadas" onclick="toggleParadasDropdown()" title="Conversas esperando resposta" style="gap:.2rem;background:#fff;border:1px solid var(--border);position:relative">
+            💬<span id="paradaBadge" style="display:none;position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;font-size:.62rem;font-weight:800;min-width:16px;height:16px;line-height:16px;border-radius:99px;padding:0 3px">0</span>
+          </button>
+          <div id="paradaDropdown" style="display:none;position:absolute;right:0;top:calc(100% + 6px);width:320px;max-height:420px;overflow-y:auto;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.18);z-index:200;padding:.5rem"></div>
+        </div>
         <button class="btn btn-sm" id="btnPonto" onclick="abrirModalPonto()" style="gap:.3rem;background:#0d2b4e;color:#fff">🕐 Ponto</button>
         <button class="btn btn-outline btn-sm" onclick="refresh()" id="btnRefresh">↻ Atualizar</button>
         <button class="btn btn-primary btn-sm" onclick="abrirNovoLead()" style="gap:.3rem">＋ Novo Lead</button>
@@ -1416,6 +1422,8 @@
     setInterval(_checarAlertasAgendamento, 60000); // a cada 1min
     _checarChamadas();                            // alerta de ligação recebida pelo WhatsApp
     setInterval(_checarChamadas, 20000);          // a cada 20s
+    _checarParadas();                             // alerta de conversas paradas (sem resposta)
+    setInterval(_checarParadas, 60000);           // a cada 1min
   }
 
   document.getElementById('loginSenha').addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); });
@@ -2289,6 +2297,94 @@
     setTimeout(() => ctx.close(), 600);
   }
 
+  // ─── Alerta de conversas paradas (esperando resposta) ────────────────────
+  let _paradasData = [];
+  let _paradasVistas = new Set();
+  let _paradasAberto = false;
+  let _primeiraChecagemParadas = true;
+
+  function toggleParadasDropdown() {
+    _paradasAberto = !_paradasAberto;
+    const dd = document.getElementById('paradaDropdown');
+    if (!_paradasAberto) { dd.style.display = 'none'; return; }
+    _renderParadasDropdown();
+    dd.style.display = 'block';
+  }
+
+  function _renderParadasDropdown() {
+    const dd = document.getElementById('paradaDropdown');
+    if (!_paradasData.length) {
+      dd.innerHTML = '<div style="padding:1rem;text-align:center;color:#16a34a;font-size:.84rem;font-weight:600">✅ Nenhuma conversa parada</div>';
+      return;
+    }
+    const cor = s => s >= 3600 ? '#dc2626' : '#d97706';
+    dd.innerHTML = `<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);padding:.3rem .5rem">Esperando resposta</div>` +
+      _paradasData.map(p => `
+        <div onclick="verLead(${p.lead_id});toggleParadasDropdown()" style="border-bottom:1px solid #f1f5f9;padding:.5rem;cursor:pointer">
+          <div style="display:flex;justify-content:space-between;gap:.5rem">
+            <span style="font-size:.83rem;font-weight:700;color:#1e293b">${esc(p.nome)}</span>
+            <span style="font-size:.78rem;font-weight:800;color:${cor(p.espera_s)}">⏳ ${esc(p.espera)}</span>
+          </div>
+          <div style="font-size:.72rem;color:#64748b">👤 ${esc(p.responsavel)}</div>
+        </div>`).join('');
+  }
+
+  function _atualizarBadgeParadas() {
+    const n = _paradasData.length;
+    const badge = document.getElementById('paradaBadge');
+    if (badge) { badge.style.display = n ? 'block' : 'none'; badge.textContent = n > 99 ? '99+' : n; }
+  }
+
+  async function _checarParadas() {
+    try {
+      const r = await fetch('/api/conversas-paradas/minhas');
+      if (!r.ok) return;
+      const d = await r.json();
+      const lista = d.itens || [];
+      const novas = lista.filter(p => !_paradasVistas.has(p.lead_id));
+      _paradasData = lista;
+      _atualizarBadgeParadas();
+      if (_paradasAberto) _renderParadasDropdown();
+      if (_primeiraChecagemParadas) {
+        lista.forEach(p => _paradasVistas.add(p.lead_id));
+        _primeiraChecagemParadas = false;
+      } else if (novas.length) {
+        novas.forEach(p => _paradasVistas.add(p.lead_id));
+        _mostrarPopupParada(novas);
+      }
+      // limpa as que já foram respondidas (saíram da lista)
+      const idsAtuais = new Set(lista.map(p => p.lead_id));
+      _paradasVistas.forEach(id => { if (!idsAtuais.has(id)) _paradasVistas.delete(id); });
+    } catch {}
+  }
+
+  function _mostrarPopupParada(itens) {
+    let cont = document.getElementById('paradaPopupContainer');
+    if (!cont) {
+      cont = document.createElement('div');
+      cont.id = 'paradaPopupContainer';
+      cont.style.cssText = 'position:fixed;top:70px;right:18px;z-index:9999;display:flex;flex-direction:column;gap:.5rem;max-width:320px';
+      document.body.appendChild(cont);
+    }
+    itens.slice(0,3).forEach(p => {
+      const card = document.createElement('div');
+      card.style.cssText = 'background:#fff;border:1px solid #fca5a5;border-left:4px solid #dc2626;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:.7rem .85rem';
+      card.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:.5rem">
+          <span style="font-size:1.1rem">⏳</span>
+          <div style="flex:1">
+            <div style="font-size:.8rem;font-weight:800;color:#dc2626">Cliente esperando resposta</div>
+            <div style="font-size:.85rem;font-weight:700;color:#1e293b;margin-top:.15rem">${esc(p.nome)}</div>
+            <div style="font-size:.74rem;color:#64748b;margin-top:.1rem">👤 ${esc(p.responsavel)} · há ${esc(p.espera)}</div>
+            <button class="btn btn-sm" style="padding:.15rem .5rem;font-size:.73rem;background:#dc2626;color:#fff;margin-top:.5rem" onclick="verLead(${p.lead_id});this.closest('div[style]').parentElement.remove()">Responder agora</button>
+          </div>
+          <button onclick="this.closest('div[style]').parentElement.remove()" style="background:none;border:none;font-size:1rem;cursor:pointer;color:#94a3b8;line-height:1">×</button>
+        </div>`;
+      cont.appendChild(card);
+      try { _tocarBipAgendamento(); } catch {}
+    });
+  }
+
   // ─── Alerta de ligação recebida pelo WhatsApp ────────────────────────────
   let _chamadasVistas = new Set();
   let _primeiraChecagemChamadas = true;
@@ -2346,6 +2442,12 @@
     if (!_sinoAberto) return;
     const wrap = document.getElementById('btnSino')?.parentElement;
     if (wrap && !wrap.contains(e.target)) { _sinoAberto = false; document.getElementById('sinoDropdown').style.display = 'none'; }
+  });
+  // Fecha o dropdown de conversas paradas ao clicar fora
+  document.addEventListener('click', e => {
+    if (!_paradasAberto) return;
+    const wrap = document.getElementById('btnParadas')?.parentElement;
+    if (wrap && !wrap.contains(e.target)) { _paradasAberto = false; document.getElementById('paradaDropdown').style.display = 'none'; }
   });
 
   // ─── Contratos fechados + pasta de documentos (admin) ─────────────────────
