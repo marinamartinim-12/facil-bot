@@ -3980,8 +3980,13 @@ async def relatorio_leads_calendario(
     nomes = {u.id: u.nome for u in db.query(Usuario).filter(Usuario.id.in_(func_ids)).all()} if func_ids else {}
 
     from collections import defaultdict
+    # Status que indicam que o lead "virou proposta" (chegou a proposta ou além)
+    _virou_proposta = {StatusLeadEnum.proposta_enviada.value,
+                       StatusLeadEnum.proposta_aprovada.value,
+                       StatusLeadEnum.fechado.value}
     dias = defaultdict(lambda: {"total": 0})            # dia -> total
-    resumo = defaultdict(lambda: {"total": 0, "origens": defaultdict(int), "resultados": defaultdict(int)})
+    resumo = defaultdict(lambda: {"total": 0, "propostas": 0,
+                                  "origens": defaultdict(int), "resultados": defaultdict(int)})
 
     for l in leads:
         dia_br = _fmt_br(l.assumido_em, "%d")           # número do dia
@@ -3989,6 +3994,8 @@ async def relatorio_leads_calendario(
         nome = nomes.get(l.atribuido_para, "—")
         r = resumo[nome]
         r["total"] += 1
+        if l.status in _virou_proposta:
+            r["propostas"] += 1
         r["origens"][_origem_label(l.origem)] += 1
         r["resultados"][_resultado_label(l.status)] += 1
 
@@ -3997,6 +4004,7 @@ async def relatorio_leads_calendario(
         resumo_lst.append({
             "funcionaria": nome,
             "total": d["total"],
+            "propostas": d["propostas"],
             "origens": dict(d["origens"]),
             "resultados": dict(d["resultados"]),
         })
