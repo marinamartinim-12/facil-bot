@@ -4150,11 +4150,12 @@ def _resultado_label(status):
 
 @app.get("/api/relatorio/leads-calendario")
 async def relatorio_leads_calendario(
-    ano: int = None, mes: int = None, funcionaria: int = None,
+    ano: int = None, mes: int = None, funcionaria: int = None, escopo: str = "mes",
     db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin),
 ):
-    """Calendário de leads atendidos (assumidos) no mês: total por dia + resumo por
-    funcionária com origem e resultado. Filtro opcional por funcionária."""
+    """Resumo de leads por funcionária. escopo='mes' (atendidos no mês, com calendário)
+    ou 'geral' (todos os tempos — útil porque a venda demora a fechar)."""
+    geral = (escopo == "geral")
     hoje = _agora_br().date()
     ano = ano or hoje.year
     mes = mes or hoje.month
@@ -4164,12 +4165,9 @@ async def relatorio_leads_calendario(
     else:
         fim = datetime(ano, mes + 1, 1) + timedelta(hours=3)
 
-    q = (db.query(Lead).filter(
-        Lead.atribuido_para.isnot(None),
-        Lead.assumido_em >= inicio,
-        Lead.assumido_em < fim,
-        Lead.ignorar_relatorios.isnot(True),
-    ))
+    q = db.query(Lead).filter(Lead.atribuido_para.isnot(None), Lead.ignorar_relatorios.isnot(True))
+    if not geral:
+        q = q.filter(Lead.assumido_em >= inicio, Lead.assumido_em < fim)
     if funcionaria:
         q = q.filter(Lead.atribuido_para == funcionaria)
     leads = q.all()
@@ -4188,8 +4186,8 @@ async def relatorio_leads_calendario(
                                   "origens": defaultdict(int), "resultados": defaultdict(int)})
 
     for l in leads:
-        dia_br = _fmt_br(l.assumido_em, "%d")           # número do dia
-        dias[int(dia_br)]["total"] += 1
+        if not geral and l.assumido_em:
+            dias[int(_fmt_br(l.assumido_em, "%d"))]["total"] += 1
         nome = nomes.get(l.atribuido_para, "—")
         r = resumo[nome]
         r["total"] += 1
@@ -4198,8 +4196,11 @@ async def relatorio_leads_calendario(
         r["origens"][_origem_label(l.origem)] += 1
         r["resultados"][_resultado_label(l.status)] += 1
 
-    # Tempo de 1ª resposta (média/mediana) por funcionária no mesmo mês
-    tempos = _tempos_resposta_por_func(db, inicio, fim)
+    # Tempo de 1ª resposta (média/mediana) por funcionária — do mês ou geral
+    if geral:
+        tempos = _tempos_resposta_por_func(db, datetime(2020, 1, 1), None)
+    else:
+        tempos = _tempos_resposta_por_func(db, inicio, fim)
 
     resumo_lst = []
     for nome, d in sorted(resumo.items(), key=lambda x: -x[1]["total"]):
@@ -4219,6 +4220,7 @@ async def relatorio_leads_calendario(
     todas = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario).order_by(Usuario.nome).all()
     return {
         "ano": ano, "mes": mes,
+        "escopo": "geral" if geral else "mes",
         "dias": {str(k): v for k, v in dias.items()},
         "resumo": resumo_lst,
         "funcionarias": [{"id": u.id, "nome": u.nome} for u in todas],

@@ -1119,12 +1119,16 @@
         <!-- ── CALENDÁRIO DE LEADS ATENDIDOS ── -->
         <div class="rel-card" id="relLeadsCalCard">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;flex-wrap:wrap;gap:.5rem">
-            <h3 style="margin:0">📅 Leads atendidos — por dia</h3>
+            <h3 style="margin:0">📅 Leads por funcionária</h3>
             <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+              <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+                <button id="calEscMes" onclick="_calSetEscopo('mes')" class="btn btn-sm" style="padding:.3rem .7rem;border-radius:0;background:var(--navy);color:#fff">📅 Mês</button>
+                <button id="calEscGeral" onclick="_calSetEscopo('geral')" class="btn btn-sm" style="padding:.3rem .7rem;border-radius:0;background:#fff;color:var(--navy)">🌐 Geral</button>
+              </div>
               <select id="calFuncFiltro" onchange="carregarLeadsCalendario()" style="padding:.35rem .6rem;border:1px solid var(--border);border-radius:8px;font-size:.82rem;outline:none;background:#fff;cursor:pointer">
                 <option value="">👥 Todas as funcionárias</option>
               </select>
-              <div style="display:flex;align-items:center;gap:.25rem">
+              <div id="calNavMes" style="display:flex;align-items:center;gap:.25rem">
                 <button onclick="_calNavMes(-1)" class="btn btn-sm btn-outline" style="padding:.3rem .6rem">◀</button>
                 <span id="calMesLabel" style="font-weight:700;color:var(--navy);min-width:130px;text-align:center;font-size:.85rem">—</span>
                 <button onclick="_calNavMes(1)" class="btn btn-sm btn-outline" style="padding:.3rem .6rem">▶</button>
@@ -3627,7 +3631,23 @@
   }
 
   // ─── Calendário de leads atendidos ────────────────────────────────────────
-  let _calAno = null, _calMes = null;
+  let _calAno = null, _calMes = null, _calEscopo = 'mes';
+
+  function _calSetEscopo(esc) {
+    _calEscopo = esc;
+    const m = document.getElementById('calEscMes'), g = document.getElementById('calEscGeral');
+    const nav = document.getElementById('calNavMes');
+    if (esc === 'geral') {
+      g.style.background = 'var(--navy)'; g.style.color = '#fff';
+      m.style.background = '#fff'; m.style.color = 'var(--navy)';
+      if (nav) nav.style.display = 'none';
+    } else {
+      m.style.background = 'var(--navy)'; m.style.color = '#fff';
+      g.style.background = '#fff'; g.style.color = 'var(--navy)';
+      if (nav) nav.style.display = 'flex';
+    }
+    carregarLeadsCalendario();
+  }
   const _MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
   function baixarLeadsExcel() {
@@ -3652,9 +3672,9 @@
     if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
     const body = document.getElementById('relLeadsCalBody');
     const func = document.getElementById('calFuncFiltro')?.value || '';
-    let qs = '';
-    if (_calAno != null) qs = `?ano=${_calAno}&mes=${_calMes}`;
-    if (func) qs += (qs ? '&' : '?') + `funcionaria=${func}`;
+    let qs = `?escopo=${_calEscopo}`;
+    if (_calAno != null) qs += `&ano=${_calAno}&mes=${_calMes}`;
+    if (func) qs += `&funcionaria=${func}`;
     try {
       const r = await fetch(`/api/relatorio/leads-calendario${qs}`);
       if (!r.ok) throw new Error();
@@ -3676,6 +3696,7 @@
 
   function renderLeadsCalendario(d) {
     const body = document.getElementById('relLeadsCalBody');
+    const ehGeral = d.escopo === 'geral';
     const primeiroDiaSemana = new Date(d.ano, d.mes - 1, 1).getDay(); // 0=Dom
     const diasNoMes = new Date(d.ano, d.mes, 0).getDate();
     const hoje = new Date();
@@ -3696,7 +3717,7 @@
           ${total>0 ? `<span style="margin:auto;font-size:1.15rem;font-weight:800;color:#1d4ed8">${total}</span><span style="font-size:.6rem;color:#64748b;text-align:center">leads</span>` : ''}
         </div>`;
     }
-    const calendario = `
+    const calendario = ehGeral ? '' : `
       <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:.3rem;margin-bottom:1rem">
         ${cabec}${celulas}
       </div>`;
@@ -3738,7 +3759,7 @@
     }
 
     body.innerHTML = calendario +
-      `<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:.5rem 0">Resumo do mês — ${d.total_mes} leads</div>` +
+      `<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:.5rem 0">${ehGeral?'Resumo geral (todos os tempos)':'Resumo do mês'} — ${d.total_mes} leads</div>` +
       resumo;
   }
 
