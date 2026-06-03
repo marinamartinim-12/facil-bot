@@ -29,6 +29,14 @@ def _fmt_br(dt: datetime | None, fmt: str = "%d/%m/%Y %H:%M") -> str | None:
 def _agora_br() -> datetime:
     """Retorna o datetime atual no fuso de Brasília."""
     return datetime.now(_TZ_BR)
+
+def _data_br_para_utc(data_str: str):
+    """'DD/MM/YYYY' (data BR) → datetime UTC naive (meio-dia BR). None se inválida."""
+    try:
+        d = datetime.strptime((data_str or "").strip(), "%d/%m/%Y")
+        return d.replace(hour=12, tzinfo=_TZ_BR).astimezone(timezone.utc).replace(tzinfo=None)
+    except Exception:
+        return None
 from fastapi import FastAPI, Request, Depends, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
 import secrets
@@ -385,6 +393,7 @@ async def startup():
         ("leads",           "deal_data",          "VARCHAR(10)"),
         ("leads",           "deal_veiculo",       "VARCHAR(200)"),
         ("leads",           "deal_placa",         "VARCHAR(10)"),
+        ("leads",           "fechado_em",         "DATETIME"),
         ("leads",           "deal_retorno",       "VARCHAR(5)"),
         ("leads",           "deal_valor",         "VARCHAR(20)"),
         ("leads",           "deal_comissao",      "VARCHAR(20)"),
@@ -412,6 +421,23 @@ async def startup():
             print(f"✅ Migração: {tabela}.{coluna} adicionada")
         except Exception:
             pass  # coluna já existe — ignorar
+
+    # Backfill: define fechado_em dos leads já fechados a partir da data do negócio
+    try:
+        pendentes = db_startup.query(Lead).filter(
+            Lead.status == StatusLeadEnum.fechado, Lead.fechado_em.is_(None)
+        ).all()
+        n = 0
+        for l in pendentes:
+            dt = _data_br_para_utc(l.deal_data) if l.deal_data else None
+            if dt:
+                l.fechado_em = dt
+                n += 1
+        if n:
+            db_startup.commit()
+            print(f"✅ Backfill fechado_em em {n} contrato(s) a partir da data do negócio")
+    except Exception as e:
+        print(f"⚠️ Erro no backfill fechado_em: {e}")
 
     # Configurações padrão do bot
     _criar_config_padrao(db_startup)
@@ -1691,10 +1717,14 @@ async def mover_lead(
     ):
         raise HTTPException(status_code=403, detail="Apenas administradores podem realizar esta ação.")
 
+    era_fechado = lead.status == StatusLeadEnum.fechado.value
     lead.status = novo_status
     if novo_status == StatusLeadEnum.assumido and not lead.atribuido_para:
         lead.atribuido_para = usuario.id
         lead.assumido_em = datetime.utcnow()
+    # Marca a data de fechamento ao virar Fechado (estável p/ relatórios)
+    if novo_status == StatusLeadEnum.fechado.value and not era_fechado and not lead.fechado_em:
+        lead.fechado_em = datetime.utcnow()
     lead.atualizado_em = datetime.utcnow()
     db.commit()
     db.refresh(lead)
@@ -1724,6 +1754,8 @@ async def fechar_contrato_lead(
     lead.deal_conta_pg  = body.get("deal_conta_pg", "").strip() or None
     lead.deal_operadora = body.get("deal_operadora", "").strip() or None
     lead.status        = StatusLeadEnum.fechado
+    # Data estável de fechamento (usa a data do negócio se informada, senão agora)
+    lead.fechado_em    = _data_br_para_utc(lead.deal_data) or lead.fechado_em or datetime.utcnow()
     lead.atualizado_em = datetime.utcnow()
     if not lead.atribuido_para:
         lead.atribuido_para = usuario.id
@@ -1765,20 +1797,22 @@ def _origem_label(origem: str | None, detalhe: str | None) -> str:
 
 
 def _contratos_periodo(db, periodo: str = "mes") -> list:
-    """Retorna leads fechados do período. periodo = 'semana' | 'mes' | 'tudo'."""
+    """Retorna leads fechados do período. periodo = 'semana' | 'mes' | 'tudo'.
+    Usa fechado_em (data estável) — não atualizado_em, que muda a cada edição."""
     hoje = _agora_br()
     if periodo == "semana":
         dia_semana = hoje.weekday()  # 0=seg
-        inicio = datetime(hoje.year, hoje.month, hoje.day, tzinfo=_TZ_BR) - timedelta(days=dia_semana)
+        inicio_br = datetime(hoje.year, hoje.month, hoje.day, tzinfo=_TZ_BR) - timedelta(days=dia_semana)
+        inicio = inicio_br.astimezone(timezone.utc).replace(tzinfo=None)
     elif periodo == "mes":
-        inicio = datetime(hoje.year, hoje.month, 1, tzinfo=_TZ_BR)
+        inicio = datetime(hoje.year, hoje.month, 1, tzinfo=_TZ_BR).astimezone(timezone.utc).replace(tzinfo=None)
     else:
         inicio = None
 
     q = db.query(Lead).filter(Lead.status == StatusLeadEnum.fechado)
     if inicio:
-        q = q.filter(Lead.atualizado_em >= inicio)
-    return q.order_by(Lead.atualizado_em.desc()).all()
+        q = q.filter(Lead.fechado_em >= inicio)
+    return q.order_by(Lead.fechado_em.desc().nullslast()).all()
 
 
 @app.get("/api/relatorio/contratos-mes")
@@ -2741,7 +2775,7 @@ async def dashboard_stats(
         Lead.status.in_([StatusLeadEnum.proposta_aprovada, StatusLeadEnum.fechado])
     ).count()
     fechados_mes = db.query(Lead).filter(
-        Lead.atualizado_em >= inicio_mes_utc,
+        Lead.fechado_em >= inicio_mes_utc,
         Lead.status == StatusLeadEnum.fechado
     ).count()
 

@@ -104,6 +104,7 @@ class Lead(Base):
     followup_em = Column(DateTime, nullable=True)
     followup_tentativa = Column(Integer, default=0)   # 0=nenhum 1=1º enviado 2=2º enviado 3=3º enviado
     # ── Dados do contrato fechado ─────────────────────────────────────────
+    fechado_em     = Column(DateTime, nullable=True)      # quando o lead virou Fechado (estável p/ relatórios)
     deal_data      = Column(String(10),  nullable=True)   # DD/MM/YYYY
     deal_veiculo   = Column(String(200), nullable=True)
     deal_placa     = Column(String(10),  nullable=True)   # placa do veículo
