@@ -4082,22 +4082,26 @@
           `<div style="margin-bottom:.3rem"><div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:2px"><span>${d2}</span><span>${d.dias_semana[d2]||0}</span></div>${bar(d.dias_semana[d2]||0,maxDia,'#1e40af')}</div>`
         ).join(''));
 
-      // ── Hora do dia ───────────────────────────────────────────────────────
+      // ── Hora do dia (gráfico de barras + calor) ───────────────────────────
       const horasArr = Array.from({length:24},(_,h)=>({h,v:d.horas[String(h)]||0}));
       const maxHora = Math.max(...horasArr.map(x=>x.v),1);
-      const comerciais = [7,8,9,10,11,12,13,14,15,16,17,18,19,20];
+      const horaPico = horasArr.reduce((a,b)=> b.v>a.v?b:a, horasArr[0]);
       const horaHtml = card2('🕐 Horário de contato',
-        `<div style="display:grid;grid-template-columns:repeat(8,1fr);gap:3px">
+        `<div style="display:flex;align-items:flex-end;gap:2px;height:120px;padding-top:16px">
            ${horasArr.map(({h,v})=>{
-             const pct = Math.round(v/maxHora*100);
-             const destaque = comerciais.includes(h) && pct > 20;
-             return `<div style="text-align:center">
-               <div style="background:${destaque?'#065f46':'#e5e7eb'};height:${Math.max(4,pct*0.4)}px;border-radius:3px 3px 0 0;margin-bottom:2px"></div>
-               <div style="font-size:.6rem;color:var(--muted)">${String(h).padStart(2,'0')}h</div>
+             const alt = Math.max(3, Math.round(v/maxHora*92));
+             const intens = v/maxHora;
+             const cor = v===0 ? '#eef2f6' : `rgba(6,95,70,${(0.30+intens*0.70).toFixed(2)})`;
+             return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${String(h).padStart(2,'0')}h — ${v} contato(s)">
+               ${v>0?`<span style="font-size:.55rem;color:#065f46;font-weight:700;line-height:1;margin-bottom:1px">${v}</span>`:''}
+               <div style="width:100%;height:${alt}px;background:${cor};border-radius:3px 3px 0 0"></div>
              </div>`;
            }).join('')}
          </div>
-         <div style="font-size:.7rem;color:var(--muted);margin-top:.4rem">Verde escuro = horário de pico em horário comercial</div>`);
+         <div style="display:flex;gap:2px;margin-top:3px">
+           ${horasArr.map(({h})=>`<div style="flex:1;text-align:center;font-size:.5rem;color:var(--muted)">${String(h).padStart(2,'0')}</div>`).join('')}
+         </div>
+         <div style="font-size:.7rem;color:var(--muted);margin-top:.5rem">📈 Pico de contatos às <b style="color:#065f46">${String(horaPico.h).padStart(2,'0')}h</b> (${horaPico.v}). Quanto mais alto/escuro, mais contatos — passe o mouse para ver a quantidade.</div>`);
 
       // ── Layout grid ──────────────────────────────────────────────────────
       el.innerHTML = kpis + `
