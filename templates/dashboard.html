@@ -3723,6 +3723,7 @@
             <span style="color:#b91c1c">❌ Perdido: <b>${perd}</b></span>
             <span style="color:#64748b">⏳ Em andamento: <b>${and}</b></span>
           </div>
+          <div style="font-size:.74rem;color:#475569;margin-top:.25rem">⏱️ Tempo de resposta — média <b>${esc(f.tempo_media||'—')}</b> · mediana <b>${esc(f.tempo_mediana||'—')}</b></div>
           <div style="font-size:.72rem;color:#94a3b8;margin-top:.2rem">💡 ${taxaPF}% das propostas viraram contrato</div>
         </div>`;
       }).join('');

@@ -3867,6 +3867,41 @@ def _segundos_comerciais(ini_utc, fim_utc) -> int:
     return int(total)
 
 
+def _tempos_resposta_por_func(db, desde, ate=None) -> dict:
+    """Tempo de 1ª resposta humana por funcionária no período (horário comercial).
+    Retorna {nome: {qtd, media, mediana}}. Atribui pela 1ª resposta '[Nome]:'."""
+    from collections import defaultdict
+    q = db.query(MensagemConversa).filter(MensagemConversa.criado_em >= desde)
+    if ate:
+        q = q.filter(MensagemConversa.criado_em < ate)
+    msgs = q.order_by(MensagemConversa.telefone, MensagemConversa.criado_em).all()
+    grupos = defaultdict(list)
+    for m in msgs:
+        grupos[m.telefone].append(m)
+    por_func = defaultdict(list)
+    for tel, lst in grupos.items():
+        idx_h = next((i for i, m in enumerate(lst)
+                      if m.role == "assistant" and (m.conteudo or "").startswith("[")), None)
+        if idx_h is None:
+            continue
+        h = lst[idx_h]
+        cli = next((lst[j] for j in range(idx_h - 1, -1, -1) if lst[j].role == "user"), None)
+        if cli is None:
+            continue
+        seg = _segundos_comerciais(cli.criado_em, h.criado_em)
+        mobj = re.match(r"^\[([^\]]+)\]:", h.conteudo or "")
+        por_func[mobj.group(1) if mobj else "—"].append(seg)
+
+    def _ag(segs):
+        if not segs:
+            return {"qtd": 0, "media": "—", "mediana": "—"}
+        o = sorted(segs); n = len(o)
+        media = sum(o) // n
+        mediana = o[n // 2] if n % 2 else (o[n // 2 - 1] + o[n // 2]) // 2
+        return {"qtd": n, "media": _duracao_str(media), "mediana": _duracao_str(mediana)}
+    return {nome: _ag(segs) for nome, segs in por_func.items()}
+
+
 @app.get("/api/relatorio/conversas-paradas")
 async def relatorio_conversas_paradas(db: Session = Depends(get_db),
                                       admin: Usuario = Depends(requer_admin)):
@@ -4142,14 +4177,21 @@ async def relatorio_leads_calendario(
         r["origens"][_origem_label(l.origem)] += 1
         r["resultados"][_resultado_label(l.status)] += 1
 
+    # Tempo de 1ª resposta (média/mediana) por funcionária no mesmo mês
+    tempos = _tempos_resposta_por_func(db, inicio, fim)
+
     resumo_lst = []
     for nome, d in sorted(resumo.items(), key=lambda x: -x[1]["total"]):
+        t = tempos.get(nome, {"media": "—", "mediana": "—", "qtd": 0})
         resumo_lst.append({
             "funcionaria": nome,
             "total": d["total"],
             "propostas": d["propostas"],
             "origens": dict(d["origens"]),
             "resultados": dict(d["resultados"]),
+            "tempo_media": t["media"],
+            "tempo_mediana": t["mediana"],
+            "tempo_qtd": t["qtd"],
         })
 
     # Lista de funcionárias para o filtro
