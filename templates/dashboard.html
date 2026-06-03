@@ -724,6 +724,16 @@
         <div style="display:flex;flex-direction:column;gap:.75rem">
           <!-- Tarja admin -->
           <div id="dashTarjaAdmin" style="display:none"></div>
+
+          <!-- Conversas paradas (esperando resposta agora) -->
+          <div class="form-card" id="relParadasCard" style="padding:.85rem 1rem;border:1px solid #fecaca">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
+              <div style="font-size:.95rem;font-weight:800;color:var(--navy)">🔴 Conversas paradas — esperando resposta agora</div>
+              <button onclick="carregarConversasParadas()" class="btn btn-sm btn-outline" style="padding:.3rem .8rem">🔄 Atualizar</button>
+            </div>
+            <p style="font-size:.76rem;color:var(--muted);margin:0 0 .6rem">Clientes cuja última mensagem foi deles e ainda não houve resposta. Atualiza sozinho a cada 1 min.</p>
+            <div id="relParadasBody"><div style="text-align:center;padding:1.2rem;color:var(--muted)">Carregando…</div></div>
+          </div>
           <!-- Leads por origem -->
           <div class="form-card" style="padding:.85rem 1rem">
             <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:.65rem">📥 Leads recebidos no mês — por origem</div>
@@ -1014,16 +1024,6 @@
       <!-- ── RELATÓRIOS ── -->
       <div id="viewRelatorios" style="display:none">
         <div class="stats-row" id="relStatsRow"></div>
-
-        <!-- ── CONVERSAS PARADAS (esperando resposta agora) ── -->
-        <div class="rel-card" id="relParadasCard" style="border:1px solid #fecaca">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
-            <h3 style="margin:0">🔴 Conversas paradas — esperando resposta agora</h3>
-            <button onclick="carregarConversasParadas()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
-          </div>
-          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .6rem">Clientes cuja última mensagem foi deles e ainda não houve resposta. Atualiza sozinho a cada 1 min.</p>
-          <div id="relParadasBody"><div style="text-align:center;padding:1.2rem;color:var(--muted)">Carregando…</div></div>
-        </div>
 
         <div class="rel-card">
           <h3>🚗 Leads por Modalidade</h3>
@@ -3568,15 +3568,13 @@
     await carregarVolumeApi();
     await carregarLeadsCalendario();
     await carregarIpCompartilhado();
-    await carregarConversasParadas();
-    _iniciarAutoRefreshParadas();
   }
 
   let _paradasInterval = null;
   function _iniciarAutoRefreshParadas() {
     if (_paradasInterval) clearInterval(_paradasInterval);
     _paradasInterval = setInterval(() => {
-      if (document.getElementById('viewRelatorios')?.style.display !== 'none') carregarConversasParadas();
+      if (document.getElementById('viewDashboard')?.style.display !== 'none') carregarConversasParadas();
     }, 60000);
   }
 
@@ -4605,6 +4603,8 @@
       renderFunilStats();
     } catch {}
     if (currentUser?.role === 'admin') carregarDashRelatorios();
+    carregarConversasParadas();
+    _iniciarAutoRefreshParadas();
   }
 
   function _dashTile(icone, valor, label, cor, view) {
