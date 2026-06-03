@@ -3546,19 +3546,29 @@
       resumo = d.resumo.map(f => {
         const ori = Object.entries(f.origens).map(([k,v]) => `${esc(k)}: <b>${v}</b>`).join(' · ');
         const fech = f.resultados['Fechado']||0, perd = f.resultados['Perdido']||0, and = f.resultados['Em andamento']||0;
+        const prop = f.propostas||0;
+        const pct = (n, base) => base > 0 ? Math.round(n/base*100) : 0;
+        const taxaProp = pct(prop, f.total);     // % que virou proposta
+        const taxaFech = pct(fech, f.total);     // % de conversão (fechou)
+        const taxaPF   = pct(fech, prop);        // % das propostas que fecharam
+        const corConv = taxaFech >= 30 ? '#16a34a' : taxaFech >= 15 ? '#d97706' : '#dc2626';
         return `
         <div style="border:1px solid #e2e8f0;border-radius:10px;padding:.6rem .8rem;margin-bottom:.5rem">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.4rem">
             <strong style="color:#0d2b4e">👤 ${esc(f.funcionaria)}</strong>
-            <span style="font-size:.85rem;font-weight:800;color:#1d4ed8">${f.total} leads</span>
+            <div style="display:flex;align-items:center;gap:.5rem">
+              <span style="font-size:.85rem;font-weight:800;color:#1d4ed8">${f.total} leads</span>
+              <span title="Conversão: fechados ÷ atendidos" style="font-size:.72rem;font-weight:800;color:#fff;background:${corConv};padding:.15rem .5rem;border-radius:99px">Conversão ${taxaFech}%</span>
+            </div>
           </div>
           <div style="font-size:.76rem;color:#475569;margin-top:.3rem">📥 ${ori || '—'}</div>
           <div style="font-size:.76rem;margin-top:.25rem;display:flex;gap:.5rem;flex-wrap:wrap">
-            <span style="color:#9a3412">📄 Viraram proposta: <b>${f.propostas||0}</b></span>
-            <span style="color:#15803d">🏁 Fechado: <b>${fech}</b></span>
+            <span style="color:#9a3412">📄 Proposta: <b>${prop}</b> (${taxaProp}%)</span>
+            <span style="color:#15803d">🏁 Fechado: <b>${fech}</b> (${taxaFech}%)</span>
             <span style="color:#b91c1c">❌ Perdido: <b>${perd}</b></span>
             <span style="color:#64748b">⏳ Em andamento: <b>${and}</b></span>
           </div>
+          <div style="font-size:.72rem;color:#94a3b8;margin-top:.2rem">💡 ${taxaPF}% das propostas viraram contrato</div>
         </div>`;
       }).join('');
     } else {
