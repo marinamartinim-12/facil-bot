@@ -4559,15 +4559,18 @@
       <div style="font-size:.72rem;color:var(--muted)">${d.pct_meta}% da meta — ${d.mes}</div>
       ${(d.faixas_meta && d.faixas_meta.length) ? `<div style="font-size:.7rem;color:#475569;margin-top:.4rem;display:flex;flex-direction:column;gap:.15rem">${d.faixas_meta.map(f=>`<span style="${d.fechados_mes>=f.contratos?'color:#16a34a;font-weight:700':''}">${d.fechados_mes>=f.contratos?'✅':'🎯'} ${f.contratos} contratos → R$ ${Number(f.bonus).toLocaleString('pt-BR')}</span>`).join('')}</div>` : ''}`;
 
-    // ── Ranking ──
+    // ── Ranking (empate compartilha posição) ──
     const medalhas = ['🥇','🥈','🥉'];
+    const _pos = [];
+    d.ranking.forEach((f,i) => { _pos[i] = (i>0 && f.contratos === d.ranking[i-1].contratos) ? _pos[i-1] : i+1; });
     document.getElementById('dashRanking').innerHTML = d.ranking.length
-      ? d.ranking.map((f,i) => `
-          <div class="dash-ranking-row">
-            <span style="font-size:1rem">${medalhas[i] || `${i+1}.`}</span>
+      ? d.ranking.map((f,i) => {
+          const p = _pos[i];
+          return `<div class="dash-ranking-row">
+            <span style="font-size:1rem">${medalhas[p-1] || `${p}º`}</span>
             <span style="flex:1;font-size:.82rem;font-weight:600;color:#1e293b">${esc(f.nome)}</span>
             <span style="font-size:.82rem;font-weight:800;color:#0d2b4e">${f.contratos} <span style="font-weight:400;color:var(--muted)">contratos</span></span>
-          </div>`).join('')
+          </div>`; }).join('')
       : '<p style="font-size:.8rem;color:var(--muted)">Nenhum contrato no mês.</p>';
   }
 
@@ -4598,8 +4601,10 @@
     const pct = Math.min(d.pct_meta, 100);
     const corMeta = pct >= 100 ? '#16a34a' : pct >= 60 ? '#f97316' : '#3b82f6';
     const medalhas = ['🥇','🥈','🥉'];
+    const _posF = [];
+    d.ranking.forEach((f,i) => { _posF[i] = (i>0 && f.contratos === d.ranking[i-1].contratos) ? _posF[i-1] : i+1; });
     const rankCards = d.ranking.slice(0,3).map((f,i) =>
-      _card(f.nome.split(' ')[0], medalhas[i], f.contratos, i === 0)
+      _card(f.nome.split(' ')[0], medalhas[_posF[i]-1] || `${_posF[i]}º`, f.contratos, _posF[i] === 1)
     ).join('');
 
     const faixasTxt = (d.faixas_meta||[]).map(f =>
