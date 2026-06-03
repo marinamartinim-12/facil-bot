@@ -3737,7 +3737,7 @@ async def admin_remover_ponto(ponto_id: int, db: Session = Depends(get_db),
 
 @app.get("/api/relatorios")
 async def relatorios(db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
-    usuarios = db.query(Usuario).filter(Usuario.ativo == True).all()
+    usuarios = db.query(Usuario).filter(Usuario.ativo == True, Usuario.role == RoleEnum.funcionario).all()
     por_funcionario = []
     for u in usuarios:
         total = db.query(Lead).filter(Lead.atribuido_para == u.id).count()
