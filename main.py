@@ -2799,7 +2799,7 @@ async def dashboard_stats(
         qtd = db.query(Lead).filter(
             Lead.atribuido_para == f.id,
             Lead.status == StatusLeadEnum.fechado,
-            Lead.atualizado_em >= inicio_mes_utc,
+            Lead.fechado_em >= inicio_mes_utc,
         ).count()
         ranking.append({"nome": f.nome, "contratos": qtd})
     ranking.sort(key=lambda x: x["contratos"], reverse=True)
@@ -2808,7 +2808,7 @@ async def dashboard_stats(
     tarja = None
     if usuario.role == RoleEnum.admin:
         leads_fechados_mes = db.query(Lead).filter(
-            Lead.atualizado_em >= inicio_mes_utc,
+            Lead.fechado_em >= inicio_mes_utc,
             Lead.status == StatusLeadEnum.fechado,
         ).all()
         def _to_float(v):
@@ -2876,7 +2876,7 @@ async def estatisticas(
         qtd = db.query(Lead).filter(
             Lead.atribuido_para == f.id,
             Lead.status == StatusLeadEnum.fechado,
-            Lead.atualizado_em >= inicio_mes_utc,
+            Lead.fechado_em >= inicio_mes_utc,
         ).count()
         ranking_mes.append({"nome": f.nome, "contratos": qtd})
     ranking_mes.sort(key=lambda x: x["contratos"], reverse=True)
