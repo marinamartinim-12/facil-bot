@@ -1106,6 +1106,24 @@
           </div>
         </div>
 
+        <!-- ── CALENDÁRIO DE LEADS ATENDIDOS ── -->
+        <div class="rel-card" id="relLeadsCalCard">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;flex-wrap:wrap;gap:.5rem">
+            <h3 style="margin:0">📅 Leads atendidos — por dia</h3>
+            <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+              <select id="calFuncFiltro" onchange="carregarLeadsCalendario()" style="padding:.35rem .6rem;border:1px solid var(--border);border-radius:8px;font-size:.82rem;outline:none;background:#fff;cursor:pointer">
+                <option value="">👥 Todas as funcionárias</option>
+              </select>
+              <div style="display:flex;align-items:center;gap:.25rem">
+                <button onclick="_calNavMes(-1)" class="btn btn-sm btn-outline" style="padding:.3rem .6rem">◀</button>
+                <span id="calMesLabel" style="font-weight:700;color:var(--navy);min-width:130px;text-align:center;font-size:.85rem">—</span>
+                <button onclick="_calNavMes(1)" class="btn btn-sm btn-outline" style="padding:.3rem .6rem">▶</button>
+              </div>
+            </div>
+          </div>
+          <div id="relLeadsCalBody"><div style="text-align:center;padding:1.5rem;color:var(--muted)">Carregando…</div></div>
+        </div>
+
         <!-- ── MEDIDOR DE VOLUME / ESTIMATIVA API OFICIAL ── -->
         <div class="rel-card" id="relVolumeCard">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem;flex-wrap:wrap;gap:.5rem">
@@ -3451,7 +3469,104 @@
     await carregarRelatorioPonto();
     await carregarTempoResposta();
     await carregarVolumeApi();
+    await carregarLeadsCalendario();
     await carregarIpCompartilhado();
+  }
+
+  // ─── Calendário de leads atendidos ────────────────────────────────────────
+  let _calAno = null, _calMes = null;
+  const _MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+  function _calNavMes(delta) {
+    if (_calAno == null) return;
+    let m = _calMes + delta, a = _calAno;
+    if (m < 1) { m = 12; a--; } else if (m > 12) { m = 1; a++; }
+    _calMes = m; _calAno = a;
+    carregarLeadsCalendario();
+  }
+
+  async function carregarLeadsCalendario() {
+    const card = document.getElementById('relLeadsCalCard');
+    if (!card) return;
+    if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
+    const body = document.getElementById('relLeadsCalBody');
+    const func = document.getElementById('calFuncFiltro')?.value || '';
+    let qs = '';
+    if (_calAno != null) qs = `?ano=${_calAno}&mes=${_calMes}`;
+    if (func) qs += (qs ? '&' : '?') + `funcionaria=${func}`;
+    try {
+      const r = await fetch(`/api/relatorio/leads-calendario${qs}`);
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      _calAno = d.ano; _calMes = d.mes;
+      // popular filtro de funcionária (preservando seleção)
+      const sel = document.getElementById('calFuncFiltro');
+      if (sel && sel.options.length <= 1) {
+        sel.innerHTML = '<option value="">👥 Todas as funcionárias</option>' +
+          (d.funcionarias||[]).map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('');
+        if (func) sel.value = func;
+      }
+      document.getElementById('calMesLabel').textContent = `${_MESES_PT[_calMes-1]} ${_calAno}`;
+      renderLeadsCalendario(d);
+    } catch {
+      body.innerHTML = '<div style="text-align:center;padding:1.5rem;color:#991b1b">Erro ao carregar.</div>';
+    }
+  }
+
+  function renderLeadsCalendario(d) {
+    const body = document.getElementById('relLeadsCalBody');
+    const primeiroDiaSemana = new Date(d.ano, d.mes - 1, 1).getDay(); // 0=Dom
+    const diasNoMes = new Date(d.ano, d.mes, 0).getDate();
+    const hoje = new Date();
+    const ehMesAtual = (hoje.getFullYear() === d.ano && (hoje.getMonth()+1) === d.mes);
+    const cabec = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
+      .map(x => `<div style="text-align:center;font-size:.66rem;font-weight:700;color:var(--muted);padding:.2rem 0">${x}</div>`).join('');
+    let celulas = '';
+    for (let i = 0; i < primeiroDiaSemana; i++) celulas += '<div></div>';
+    for (let dia = 1; dia <= diasNoMes; dia++) {
+      const info = d.dias[String(dia)];
+      const total = info ? info.total : 0;
+      const ehHoje = ehMesAtual && hoje.getDate() === dia;
+      const bg = total > 0 ? '#eff6ff' : '#fff';
+      const bord = ehHoje ? '2px solid #1d4ed8' : '1px solid #e2e8f0';
+      celulas += `
+        <div style="border:${bord};border-radius:8px;min-height:54px;padding:.25rem .35rem;background:${bg};display:flex;flex-direction:column">
+          <span style="font-size:.7rem;color:#64748b;font-weight:${ehHoje?'800':'600'}">${dia}</span>
+          ${total>0 ? `<span style="margin:auto;font-size:1.15rem;font-weight:800;color:#1d4ed8">${total}</span><span style="font-size:.6rem;color:#64748b;text-align:center">leads</span>` : ''}
+        </div>`;
+    }
+    const calendario = `
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:.3rem;margin-bottom:1rem">
+        ${cabec}${celulas}
+      </div>`;
+
+    // Resumo por funcionária
+    let resumo = '';
+    if (d.resumo && d.resumo.length) {
+      resumo = d.resumo.map(f => {
+        const ori = Object.entries(f.origens).map(([k,v]) => `${esc(k)}: <b>${v}</b>`).join(' · ');
+        const fech = f.resultados['Fechado']||0, perd = f.resultados['Perdido']||0, and = f.resultados['Em andamento']||0;
+        return `
+        <div style="border:1px solid #e2e8f0;border-radius:10px;padding:.6rem .8rem;margin-bottom:.5rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.4rem">
+            <strong style="color:#0d2b4e">👤 ${esc(f.funcionaria)}</strong>
+            <span style="font-size:.85rem;font-weight:800;color:#1d4ed8">${f.total} leads</span>
+          </div>
+          <div style="font-size:.76rem;color:#475569;margin-top:.3rem">📥 ${ori || '—'}</div>
+          <div style="font-size:.76rem;margin-top:.25rem;display:flex;gap:.5rem;flex-wrap:wrap">
+            <span style="color:#15803d">🏁 Fechado: <b>${fech}</b></span>
+            <span style="color:#b91c1c">❌ Perdido: <b>${perd}</b></span>
+            <span style="color:#64748b">⏳ Em andamento: <b>${and}</b></span>
+          </div>
+        </div>`;
+      }).join('');
+    } else {
+      resumo = '<div style="text-align:center;padding:1rem;color:var(--muted);font-size:.85rem">Nenhum lead atendido neste mês.</div>';
+    }
+
+    body.innerHTML = calendario +
+      `<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:.5rem 0">Resumo do mês — ${d.total_mes} leads</div>` +
+      resumo;
   }
 
   async function carregarVolumeApi() {

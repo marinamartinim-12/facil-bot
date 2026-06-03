@@ -3936,6 +3936,82 @@ async def relatorio_volume_api(db: Session = Depends(get_db), admin: Usuario = D
     }
 
 
+def _origem_label(o):
+    return {None: "Bot", "": "Bot", "whatsapp": "Bot",
+            "parceiro": "Parceiro", "rede_social": "Rede Social",
+            "indicacao": "Indicação", "ex_cliente": "Ex-cliente"}.get(o, o or "Bot")
+
+
+def _resultado_label(status):
+    if status == StatusLeadEnum.fechado.value:
+        return "Fechado"
+    if status == StatusLeadEnum.perdido.value:
+        return "Perdido"
+    return "Em andamento"
+
+
+@app.get("/api/relatorio/leads-calendario")
+async def relatorio_leads_calendario(
+    ano: int = None, mes: int = None, funcionaria: int = None,
+    db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin),
+):
+    """Calendário de leads atendidos (assumidos) no mês: total por dia + resumo por
+    funcionária com origem e resultado. Filtro opcional por funcionária."""
+    hoje = _agora_br().date()
+    ano = ano or hoje.year
+    mes = mes or hoje.month
+    inicio = datetime(ano, mes, 1) + timedelta(hours=3)            # meia-noite BR em UTC naive
+    if mes == 12:
+        fim = datetime(ano + 1, 1, 1) + timedelta(hours=3)
+    else:
+        fim = datetime(ano, mes + 1, 1) + timedelta(hours=3)
+
+    q = (db.query(Lead).filter(
+        Lead.atribuido_para.isnot(None),
+        Lead.assumido_em >= inicio,
+        Lead.assumido_em < fim,
+    ))
+    if funcionaria:
+        q = q.filter(Lead.atribuido_para == funcionaria)
+    leads = q.all()
+
+    # Mapa de nomes das funcionárias
+    func_ids = {l.atribuido_para for l in leads}
+    nomes = {u.id: u.nome for u in db.query(Usuario).filter(Usuario.id.in_(func_ids)).all()} if func_ids else {}
+
+    from collections import defaultdict
+    dias = defaultdict(lambda: {"total": 0})            # dia -> total
+    resumo = defaultdict(lambda: {"total": 0, "origens": defaultdict(int), "resultados": defaultdict(int)})
+
+    for l in leads:
+        dia_br = _fmt_br(l.assumido_em, "%d")           # número do dia
+        dias[int(dia_br)]["total"] += 1
+        nome = nomes.get(l.atribuido_para, "—")
+        r = resumo[nome]
+        r["total"] += 1
+        r["origens"][_origem_label(l.origem)] += 1
+        r["resultados"][_resultado_label(l.status)] += 1
+
+    resumo_lst = []
+    for nome, d in sorted(resumo.items(), key=lambda x: -x[1]["total"]):
+        resumo_lst.append({
+            "funcionaria": nome,
+            "total": d["total"],
+            "origens": dict(d["origens"]),
+            "resultados": dict(d["resultados"]),
+        })
+
+    # Lista de funcionárias para o filtro
+    todas = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario).order_by(Usuario.nome).all()
+    return {
+        "ano": ano, "mes": mes,
+        "dias": {str(k): v for k, v in dias.items()},
+        "resumo": resumo_lst,
+        "funcionarias": [{"id": u.id, "nome": u.nome} for u in todas],
+        "total_mes": len(leads),
+    }
+
+
 @app.get("/api/relatorio/ip-compartilhado")
 async def relatorio_ip_compartilhado(
     dias: int = 30,
