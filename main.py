@@ -1234,8 +1234,9 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
                 _salvar_msg_webhook(db, telefone, aviso, role="assistant")
             return JSONResponse({"status": "aguardando_humano"})
 
-        # Bot qualificando
-        respostas = processar_mensagem(telefone, texto, db)
+        # Bot qualificando — roda em thread separada p/ NÃO travar o servidor
+        # (a chamada à IA é bloqueante; sem isso o app cai sob carga / IA lenta)
+        respostas = await asyncio.to_thread(processar_mensagem, telefone, texto, db)
         for i, msg in enumerate(respostas):
             if i > 0:
                 await asyncio.sleep(0.8)
@@ -1306,7 +1307,7 @@ async def receber_webhook_meta(request: Request, db: Session = Depends(get_db)):
                     _salvar_msg_webhook(db, telefone, aviso, role="assistant")
                 continue
 
-            respostas = processar_mensagem(telefone, texto, db)
+            respostas = await asyncio.to_thread(processar_mensagem, telefone, texto, db)
             for i, msg in enumerate(respostas):
                 if i > 0:
                     await asyncio.sleep(0.8)

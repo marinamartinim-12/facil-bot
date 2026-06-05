@@ -16,7 +16,14 @@ from models import (
 )
 
 settings = get_settings()
-client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+# timeout: nenhuma chamada à IA pode travar o servidor indefinidamente.
+# max_retries=0: o SDK NÃO faz re-tentativas próprias (com backoff longo) —
+# nós controlamos as tentativas abaixo, sem bloquear o app por dezenas de segundos.
+client = anthropic.Anthropic(
+    api_key=settings.ANTHROPIC_API_KEY,
+    timeout=15.0,
+    max_retries=0,
+)
 
 MODELO_IA = "claude-sonnet-4-6"
 
@@ -486,11 +493,11 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
     msg_atual = (mensagem_cliente or "").strip() or "(mensagem sem texto)"
     messages.append({"role": "user", "content": msg_atual})
 
-    # Chama o Claude — com tentativas (falhas transitórias acontecem)
+    # Chama o Claude — 2 tentativas para falhas transitórias (cada uma com timeout de 15s)
     import time as _time
     resposta_raw = None
     ultimo_erro = None
-    for _tent in range(3):
+    for _tent in range(2):
         try:
             response = client.messages.create(
                 model=MODELO_IA,
@@ -502,8 +509,8 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
             break
         except Exception as e:
             ultimo_erro = e
-            print(f"❌ Erro Claude (tentativa {_tent+1}/3): {type(e).__name__}: {e}")
-            _time.sleep(1.2)
+            print(f"❌ Erro Claude (tentativa {_tent+1}/2): {type(e).__name__}: {e}")
+            _time.sleep(0.5)
 
     if resposta_raw is None:
         # IA indisponível de vez → NÃO perde o lead: transfere para uma atendente.
