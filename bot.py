@@ -473,8 +473,8 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
             )
 
     # System com contexto do estado atual
-    system = (
-        f"{SYSTEM_PROMPT}"
+    # Estado do lead — muda a cada mensagem, fica FORA do cache
+    estado_dinamico = (
         f"\n\n══════════════════════════════════════════════════"
         f"\nESTADO ATUAL: {lead.estado_conversa}"
         f"\nNome: {lead.nome or '(ainda não informado)'}"
@@ -487,6 +487,14 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
         f"\nExecute EXATAMENTE a etapa do estado '{lead.estado_conversa}'."
         f"{aviso_horario}"
     )
+
+    # CACHE DE PROMPT: o roteiro fixo (grande) é marcado p/ a IA "lembrar" por
+    # alguns minutos — nas mensagens seguintes da mesma conversa ele custa ~10%.
+    # Reduz bastante o gasto de créditos por lead.
+    system = [
+        {"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": estado_dinamico},
+    ]
 
     messages = _historico_limpo(historico)
     # Mensagem atual do cliente (áudio/mídia podem vir vazios → evita erro 400)
@@ -506,6 +514,13 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
                 messages=messages,
             )
             resposta_raw = response.content[0].text.strip()
+            try:
+                u = response.usage
+                print(f"💾 IA cache — criado:{getattr(u,'cache_creation_input_tokens',0)} "
+                      f"lido:{getattr(u,'cache_read_input_tokens',0)} "
+                      f"entrada:{u.input_tokens} saída:{u.output_tokens}")
+            except Exception:
+                pass
             break
         except Exception as e:
             ultimo_erro = e
