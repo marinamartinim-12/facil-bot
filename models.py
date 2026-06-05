@@ -306,6 +306,35 @@ class JustificativaPonto(Base):
     aprovador = relationship("Usuario", foreign_keys=[aprovado_por])
 
 
+class CorrecaoPonto(Base):
+    """Correção de ponto — solicitação E trilha de auditoria (conformidade trabalhista).
+    A funcionária SOLICITA (status 'pendente'); o admin APLICA (status 'aplicada') ou REJEITA.
+    Toda correção feita direto pelo admin também é gravada aqui (origem 'admin', já 'aplicada').
+    Nada é editado de forma silenciosa: o antes/depois fica sempre registrado."""
+    __tablename__ = "correcoes_ponto"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    usuario_id    = Column(Integer, ForeignKey("usuarios.id"), nullable=False, index=True)  # dono do ponto
+    solicitante_id= Column(Integer, ForeignKey("usuarios.id"), nullable=True)               # quem pediu/fez
+    data          = Column(String(10), nullable=False, index=True)   # YYYY-MM-DD do ponto
+    acao          = Column(String(20), nullable=False)               # adicionar | editar | remover
+    tipo_ponto    = Column(String(20), nullable=True)                # entrada | saida_almoco | volta_almoco | saida
+    hora_anterior = Column(String(5), nullable=True)                 # HH:MM antes da mudança
+    hora_nova     = Column(String(5), nullable=True)                 # HH:MM depois da mudança
+    registro_id   = Column(Integer, nullable=True)                   # id do RegistroPonto afetado
+    motivo        = Column(Text, nullable=True)                      # justificativa da correção
+    status        = Column(String(20), default="pendente")           # pendente | aplicada | rejeitada
+    origem        = Column(String(20), default="funcionaria")        # funcionaria | admin
+    obs_admin     = Column(String(400), nullable=True)               # observação/motivo da rejeição
+    resolvido_por = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    resolvido_em  = Column(DateTime, nullable=True)
+    criado_em     = Column(DateTime, default=datetime.utcnow)
+
+    usuario     = relationship("Usuario", foreign_keys=[usuario_id])
+    solicitante = relationship("Usuario", foreign_keys=[solicitante_id])
+    resolvedor  = relationship("Usuario", foreign_keys=[resolvido_por])
+
+
 class AtividadePing(Base):
     """Registro com horário de cada minuto realmente ativo no painel (admin only).
     Permite calcular o tempo ativo dentro de cada janela de ponto."""

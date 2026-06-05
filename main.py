@@ -44,7 +44,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, JustificativaPonto, AtividadePing, Agendamento, MidiaArquivo, DocumentoCliente, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, JustificativaPonto, CorrecaoPonto, AtividadePing, Agendamento, MidiaArquivo, DocumentoCliente, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento, diagnostico_ia
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
@@ -3801,9 +3801,17 @@ async def ponto_relatorio(data: str = None, db: Session = Depends(get_db),
                     .filter(Usuario.role == RoleEnum.funcionario)
                     .order_by(Usuario.nome).all())
     resultado = []
+    _dia_iso = d.strftime("%Y-%m-%d")
     for u in funcionarias:
         pontos = _pontos_do_dia(db, u.id, d)
-        if not pontos:
+        _justs_dia = db.query(JustificativaPonto).filter(
+            JustificativaPonto.usuario_id == u.id, JustificativaPonto.data == _dia_iso
+        ).order_by(JustificativaPonto.id.desc()).all()
+        _corrs_dia = db.query(CorrecaoPonto).filter(
+            CorrecaoPonto.usuario_id == u.id, CorrecaoPonto.data == _dia_iso
+        ).order_by(CorrecaoPonto.criado_em.desc()).all()
+        # Mostra a funcionária se tem ponto OU justificativa OU correção no dia
+        if not pontos and not _justs_dia and not _corrs_dia:
             continue
         intervalos = _jornadas_de_pontos(pontos, agora_utc)
         jornada_s = sum(int((f - ini).total_seconds()) for ini, f, _ in intervalos)
@@ -3817,13 +3825,8 @@ async def ponto_relatorio(data: str = None, db: Session = Depends(get_db),
                  "hora": _fmt_br(p.timestamp, "%H:%M"), "foto": p.foto_filename}
                 for p in pontos
             ],
-            "justificativas": [
-                _serial_justificativa(j) for j in
-                db.query(JustificativaPonto).filter(
-                    JustificativaPonto.usuario_id == u.id,
-                    JustificativaPonto.data == d.strftime("%Y-%m-%d"),
-                ).order_by(JustificativaPonto.id.desc()).all()
-            ],
+            "justificativas": [_serial_justificativa(j) for j in _justs_dia],
+            "correcoes": [_serial_correcao(c) for c in _corrs_dia],
             "jornada": _duracao_str(jornada_s),
             "jornada_s": jornada_s,
             "ativo": _duracao_str(ativo_s),
@@ -3843,6 +3846,45 @@ async def ponto_relatorio(data: str = None, db: Session = Depends(get_db),
 # ─── Ponto: correções pelo admin (criar / editar / remover) ───────────────────
 
 _PONTO_TIPOS_VALIDOS = set(_PONTO_LABELS.keys())
+
+
+def _serial_correcao(c: CorrecaoPonto) -> dict:
+    return {
+        "id": c.id,
+        "usuario_id": c.usuario_id,
+        "funcionaria": (c.usuario.nome if c.usuario else "—"),
+        "solicitante": (c.solicitante.nome if c.solicitante else "—"),
+        "data": c.data,
+        "data_br": _iso_para_br(c.data),
+        "acao": c.acao,
+        "tipo_ponto": c.tipo_ponto,
+        "tipo_label": _PONTO_LABELS.get(c.tipo_ponto, c.tipo_ponto or "—"),
+        "hora_anterior": c.hora_anterior,
+        "hora_nova": c.hora_nova,
+        "registro_id": c.registro_id,
+        "motivo": c.motivo or "",
+        "status": c.status,
+        "origem": c.origem,
+        "obs_admin": c.obs_admin or "",
+        "resolvido_por": (c.resolvedor.nome if c.resolvedor else None),
+        "criado_em": _fmt_br(c.criado_em, "%d/%m/%Y %H:%M") or "",
+        "resolvido_em": _fmt_br(c.resolvido_em, "%d/%m/%Y %H:%M") or "",
+    }
+
+
+def _registrar_correcao(db, *, usuario_id, solicitante_id, data, acao, tipo_ponto,
+                        hora_anterior, hora_nova, registro_id, motivo, status,
+                        origem, resolvido_por=None):
+    """Grava a trilha de auditoria de uma correção de ponto."""
+    c = CorrecaoPonto(
+        usuario_id=usuario_id, solicitante_id=solicitante_id, data=data, acao=acao,
+        tipo_ponto=tipo_ponto, hora_anterior=hora_anterior, hora_nova=hora_nova,
+        registro_id=registro_id, motivo=(motivo or None), status=status, origem=origem,
+        resolvido_por=resolvido_por,
+        resolvido_em=(datetime.utcnow() if status in ("aplicada", "rejeitada") else None),
+    )
+    db.add(c)
+    return c
 
 
 @app.post("/api/ponto/admin")
@@ -3867,6 +3909,12 @@ async def admin_criar_ponto(request: Request, db: Session = Depends(get_db),
         raise HTTPException(400, "Data ou hora inválida")
     reg = RegistroPonto(usuario_id=usuario_id, tipo=tipo, timestamp=ts, ip="admin")
     db.add(reg)
+    db.flush()
+    _registrar_correcao(db, usuario_id=usuario_id, solicitante_id=admin.id,
+                        data=data, acao="adicionar", tipo_ponto=tipo,
+                        hora_anterior=None, hora_nova=hora, registro_id=reg.id,
+                        motivo=(body.get("motivo") or "").strip(), status="aplicada",
+                        origem="admin", resolvido_por=admin.id)
     db.commit()
     return {"status": "ok"}
 
@@ -3879,6 +3927,10 @@ async def admin_editar_ponto(ponto_id: int, request: Request, db: Session = Depe
     if not reg:
         raise HTTPException(404, "Registro não encontrado")
     body = await request.json()
+    # Valores ANTES da correção (para a trilha de auditoria)
+    data_antes = _fmt_br(reg.timestamp, "%Y-%m-%d")
+    hora_antes = _fmt_br(reg.timestamp, "%H:%M")
+    tipo_antes = reg.tipo
     tipo = (body.get("tipo") or "").strip()
     if tipo:
         if tipo not in _PONTO_TIPOS_VALIDOS:
@@ -3891,20 +3943,184 @@ async def admin_editar_ponto(ponto_id: int, request: Request, db: Session = Depe
             reg.timestamp = _br_para_utc_naive(data, hora)
         except ValueError:
             raise HTTPException(400, "Data ou hora inválida")
+    _registrar_correcao(db, usuario_id=reg.usuario_id, solicitante_id=admin.id,
+                        data=(data or data_antes), acao="editar", tipo_ponto=reg.tipo,
+                        hora_anterior=hora_antes, hora_nova=(hora or hora_antes),
+                        registro_id=reg.id,
+                        motivo=(body.get("motivo") or "").strip(), status="aplicada",
+                        origem="admin", resolvido_por=admin.id)
     db.commit()
     return {"status": "ok"}
 
 
 @app.delete("/api/ponto/{ponto_id}")
-async def admin_remover_ponto(ponto_id: int, db: Session = Depends(get_db),
+async def admin_remover_ponto(ponto_id: int, motivo: str = "", db: Session = Depends(get_db),
                               admin: Usuario = Depends(requer_admin)):
-    """Admin remove um ponto registrado por engano."""
+    """Admin remove um ponto registrado por engano (fica registrado na auditoria)."""
     reg = db.query(RegistroPonto).filter(RegistroPonto.id == ponto_id).first()
     if not reg:
         raise HTTPException(404, "Registro não encontrado")
+    _registrar_correcao(db, usuario_id=reg.usuario_id, solicitante_id=admin.id,
+                        data=_fmt_br(reg.timestamp, "%Y-%m-%d"), acao="remover",
+                        tipo_ponto=reg.tipo, hora_anterior=_fmt_br(reg.timestamp, "%H:%M"),
+                        hora_nova=None, registro_id=reg.id, motivo=(motivo or "").strip(),
+                        status="aplicada", origem="admin", resolvido_por=admin.id)
     db.delete(reg)
     db.commit()
     return {"status": "ok"}
+
+
+# ─── Ponto: solicitação de correção pela funcionária + aprovação do admin ─────
+
+@app.post("/api/ponto/correcao")
+async def solicitar_correcao(request: Request, db: Session = Depends(get_db),
+                             usuario: Usuario = Depends(obter_usuario_atual)):
+    """A funcionária SOLICITA uma correção (não altera o ponto). Fica pendente para o admin."""
+    body = await request.json()
+    data = (body.get("data") or "").strip()
+    acao = (body.get("acao") or "").strip()
+    tipo_ponto = (body.get("tipo_ponto") or "").strip() or None
+    hora = (body.get("hora") or "").strip() or None
+    motivo = (body.get("motivo") or "").strip()
+    registro_id = body.get("registro_id")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", data):
+        raise HTTPException(400, "Data inválida.")
+    if acao not in ("adicionar", "editar", "remover"):
+        raise HTTPException(400, "Ação inválida.")
+    if not motivo:
+        raise HTTPException(400, "Descreva o motivo da correção.")
+    if acao in ("adicionar", "editar"):
+        if tipo_ponto and tipo_ponto not in _PONTO_TIPOS_VALIDOS:
+            raise HTTPException(400, "Tipo de ponto inválido.")
+        if not hora or not re.match(r"^\d{2}:\d{2}$", hora):
+            raise HTTPException(400, "Informe o horário (HH:MM).")
+    # Para editar/remover, o registro precisa ser da própria funcionária
+    if registro_id is not None:
+        try:
+            registro_id = int(registro_id)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "Registro inválido.")
+        alvo = db.query(RegistroPonto).filter(RegistroPonto.id == registro_id).first()
+        if not alvo or alvo.usuario_id != usuario.id:
+            raise HTTPException(404, "Ponto não encontrado.")
+    hora_anterior = None
+    if registro_id is not None and acao in ("editar", "remover"):
+        alvo = db.query(RegistroPonto).filter(RegistroPonto.id == registro_id).first()
+        if alvo:
+            hora_anterior = _fmt_br(alvo.timestamp, "%H:%M")
+            if not tipo_ponto:
+                tipo_ponto = alvo.tipo
+    c = CorrecaoPonto(
+        usuario_id=usuario.id, solicitante_id=usuario.id, data=data, acao=acao,
+        tipo_ponto=tipo_ponto, hora_anterior=hora_anterior,
+        hora_nova=(hora if acao in ("adicionar", "editar") else None),
+        registro_id=registro_id, motivo=motivo, status="pendente", origem="funcionaria",
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return _serial_correcao(c)
+
+
+@app.get("/api/ponto/correcao/minhas")
+async def minhas_correcoes(db: Session = Depends(get_db),
+                           usuario: Usuario = Depends(obter_usuario_atual)):
+    cs = (db.query(CorrecaoPonto)
+          .filter(CorrecaoPonto.usuario_id == usuario.id)
+          .order_by(CorrecaoPonto.criado_em.desc()).all())
+    return [_serial_correcao(c) for c in cs]
+
+
+@app.get("/api/ponto/meus")
+async def meus_pontos_do_dia(data: str = "", db: Session = Depends(get_db),
+                             usuario: Usuario = Depends(obter_usuario_atual)):
+    """Pontos da própria funcionária num dia (para escolher qual corrigir/remover)."""
+    try:
+        d = datetime.strptime(data, "%Y-%m-%d").date() if data else _agora_br().date()
+    except ValueError:
+        raise HTTPException(400, "Data inválida")
+    pontos = _pontos_do_dia(db, usuario.id, d)
+    return [{"id": p.id, "tipo": p.tipo, "label": _PONTO_LABELS[p.tipo],
+             "hora": _fmt_br(p.timestamp, "%H:%M")} for p in pontos]
+
+
+@app.get("/api/ponto/correcoes")
+async def listar_correcoes(status: str = "", db: Session = Depends(get_db),
+                           admin: Usuario = Depends(requer_admin)):
+    q = db.query(CorrecaoPonto)
+    if status in ("pendente", "aplicada", "rejeitada"):
+        q = q.filter(CorrecaoPonto.status == status)
+    cs = q.order_by(CorrecaoPonto.criado_em.desc()).all()
+    return [_serial_correcao(c) for c in cs]
+
+
+@app.get("/api/ponto/correcoes/pendentes-count")
+async def correcoes_pendentes_count(db: Session = Depends(get_db),
+                                    admin: Usuario = Depends(requer_admin)):
+    n = db.query(CorrecaoPonto).filter(CorrecaoPonto.status == "pendente",
+                                       CorrecaoPonto.origem == "funcionaria").count()
+    return {"pendentes": n}
+
+
+@app.post("/api/ponto/correcao/{cid}/aplicar")
+async def aplicar_correcao(cid: int, db: Session = Depends(get_db),
+                           admin: Usuario = Depends(requer_admin)):
+    """Admin aprova a solicitação E aplica a mudança no ponto (com trilha de auditoria)."""
+    c = db.query(CorrecaoPonto).filter(CorrecaoPonto.id == cid).first()
+    if not c:
+        raise HTTPException(404, "Solicitação não encontrada.")
+    if c.status != "pendente":
+        raise HTTPException(400, "Esta solicitação já foi resolvida.")
+    if c.acao == "adicionar":
+        if not c.tipo_ponto or not c.hora_nova:
+            raise HTTPException(400, "Solicitação incompleta para adicionar.")
+        try:
+            ts = _br_para_utc_naive(c.data, c.hora_nova)
+        except ValueError:
+            raise HTTPException(400, "Data/hora inválida na solicitação.")
+        reg = RegistroPonto(usuario_id=c.usuario_id, tipo=c.tipo_ponto, timestamp=ts, ip="correcao")
+        db.add(reg)
+        db.flush()
+        c.registro_id = reg.id
+    elif c.acao == "editar":
+        reg = db.query(RegistroPonto).filter(RegistroPonto.id == c.registro_id).first()
+        if not reg:
+            raise HTTPException(404, "O ponto a corrigir não existe mais.")
+        if c.tipo_ponto:
+            reg.tipo = c.tipo_ponto
+        if c.hora_nova:
+            try:
+                reg.timestamp = _br_para_utc_naive(c.data, c.hora_nova)
+            except ValueError:
+                raise HTTPException(400, "Data/hora inválida na solicitação.")
+    elif c.acao == "remover":
+        reg = db.query(RegistroPonto).filter(RegistroPonto.id == c.registro_id).first()
+        if reg:
+            db.delete(reg)
+    c.status = "aplicada"
+    c.resolvido_por = admin.id
+    c.resolvido_em = datetime.utcnow()
+    db.commit()
+    db.refresh(c)
+    return _serial_correcao(c)
+
+
+@app.post("/api/ponto/correcao/{cid}/rejeitar")
+async def rejeitar_correcao(cid: int, request: Request, db: Session = Depends(get_db),
+                            admin: Usuario = Depends(requer_admin)):
+    body = await request.json()
+    c = db.query(CorrecaoPonto).filter(CorrecaoPonto.id == cid).first()
+    if not c:
+        raise HTTPException(404, "Solicitação não encontrada.")
+    if c.status != "pendente":
+        raise HTTPException(400, "Esta solicitação já foi resolvida.")
+    c.status = "rejeitada"
+    c.obs_admin = (body.get("obs") or "").strip()[:400] or None
+    c.resolvido_por = admin.id
+    c.resolvido_em = datetime.utcnow()
+    db.commit()
+    db.refresh(c)
+    return _serial_correcao(c)
 
 
 @app.get("/api/relatorios")
@@ -4923,6 +5139,69 @@ async def relatorio_ponto_xlsx(
     if linha == 3:
         wsd.merge_cells("A3:J3")
         wsd.cell(row=3, column=1, value="Nenhum ponto registrado no período.").alignment = centro
+
+    # ── Aba Correções de ponto (trilha de auditoria) ───────────────────────────
+    _ini_iso, _fim_iso = d_ini.strftime("%Y-%m-%d"), d_fim.strftime("%Y-%m-%d")
+    _acao_lbl = {"adicionar": "Adicionar", "editar": "Editar", "remover": "Remover"}
+    _st_lbl = {"pendente": "Pendente", "aplicada": "Aplicada", "aprovada": "Aprovada", "rejeitada": "Rejeitada"}
+    corrs = (db.query(CorrecaoPonto)
+             .filter(CorrecaoPonto.data >= _ini_iso, CorrecaoPonto.data <= _fim_iso)
+             .order_by(CorrecaoPonto.data, CorrecaoPonto.criado_em).all())
+    wsc = wb.create_sheet(title="Correções (auditoria)")
+    for i, larg in enumerate([20, 12, 11, 14, 9, 9, 30, 12, 11, 18], 1):
+        wsc.column_dimensions[get_column_letter(i)].width = larg
+    wsc.merge_cells("A1:J1")
+    t = wsc.cell(row=1, column=1, value=f"Correções de ponto — {periodo_label}")
+    t.font = Font(bold=True, color="FFFFFF", size=12); t.fill = cor_cab; t.alignment = centro
+    wsc.row_dimensions[1].height = 22
+    _set(wsc, 2, ["Funcionária", "Data", "Ação", "Tipo", "De", "Para", "Motivo",
+                  "Origem", "Status", "Resolvido por"], fill=cor_cab, font=fonte_cab)
+    linha = 3
+    for c in corrs:
+        _set(wsc, linha, [
+            (c.usuario.nome if c.usuario else "—"),
+            _iso_para_br(c.data),
+            _acao_lbl.get(c.acao, c.acao),
+            _PONTO_LABELS.get(c.tipo_ponto, c.tipo_ponto or "—"),
+            c.hora_anterior or "—",
+            c.hora_nova or "—",
+            c.motivo or "—",
+            ("Funcionária" if c.origem == "funcionaria" else "Admin"),
+            _st_lbl.get(c.status, c.status),
+            (c.resolvedor.nome if c.resolvedor else "—"),
+        ])
+        linha += 1
+    if linha == 3:
+        wsc.merge_cells("A3:J3")
+        wsc.cell(row=3, column=1, value="Nenhuma correção no período.").alignment = centro
+
+    # ── Aba Justificativas de horário ──────────────────────────────────────────
+    justs = (db.query(JustificativaPonto)
+             .filter(JustificativaPonto.data >= _ini_iso, JustificativaPonto.data <= _fim_iso)
+             .order_by(JustificativaPonto.data, JustificativaPonto.criado_em).all())
+    wsj = wb.create_sheet(title="Justificativas")
+    for i, larg in enumerate([20, 12, 42, 11, 11, 18], 1):
+        wsj.column_dimensions[get_column_letter(i)].width = larg
+    wsj.merge_cells("A1:F1")
+    t = wsj.cell(row=1, column=1, value=f"Justificativas de horário — {periodo_label}")
+    t.font = Font(bold=True, color="FFFFFF", size=12); t.fill = cor_cab; t.alignment = centro
+    wsj.row_dimensions[1].height = 22
+    _set(wsj, 2, ["Funcionária", "Data", "Motivo", "Atestado", "Status", "Aprovado por"],
+         fill=cor_cab, font=fonte_cab)
+    linha = 3
+    for j in justs:
+        _set(wsj, linha, [
+            (j.usuario.nome if j.usuario else "—"),
+            _iso_para_br(j.data),
+            j.texto or "—",
+            ("Sim" if j.filename else "Não"),
+            _st_lbl.get(j.status, j.status),
+            (j.aprovador.nome if j.aprovador else "—"),
+        ])
+        linha += 1
+    if linha == 3:
+        wsj.merge_cells("A3:F3")
+        wsj.cell(row=3, column=1, value="Nenhuma justificativa no período.").alignment = centro
 
     buf = io.BytesIO()
     wb.save(buf)

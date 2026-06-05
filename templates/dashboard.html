@@ -1199,7 +1199,7 @@
           </div>
           <!-- Justificativas pendentes (todas as datas) -->
           <div id="justPendentesBox" style="display:none;margin-bottom:.75rem;padding:.7rem .9rem;background:#fffbeb;border:1px solid #fde68a;border-radius:10px">
-            <div style="font-size:.8rem;font-weight:800;color:#92400e;margin-bottom:.5rem">⚠️ Justificativas aguardando aprovação</div>
+            <div style="font-size:.8rem;font-weight:800;color:#92400e;margin-bottom:.5rem">⚠️ Pendências aguardando sua aprovação</div>
             <div id="justPendentesLista" style="display:flex;flex-direction:column;gap:.5rem"></div>
           </div>
           <div id="relPontoBody" style="display:flex;flex-direction:column;gap:.7rem">
@@ -3924,16 +3924,73 @@
     </div>`;
   }
 
-  async function carregarJustPendentes() {
+  function _descCorrecao(c) {
+    const t = c.tipo_label || 'ponto';
+    if (c.acao === 'adicionar') return `Adicionar “${t}” às ${c.hora_nova || '--:--'}`;
+    if (c.acao === 'remover')   return `Remover “${t}” das ${c.hora_anterior || '--:--'}`;
+    return `Alterar “${t}”: ${c.hora_anterior || '--:--'} → ${c.hora_nova || '--:--'}`;
+  }
+
+  function _renderCorrecaoAdmin(c, mostrarFunc) {
+    const cor = c.status === 'aplicada' ? '#16a34a' : (c.status === 'rejeitada' ? '#dc2626' : '#d97706');
+    const lab = c.status === 'aplicada' ? 'Aplicada' : (c.status === 'rejeitada' ? 'Rejeitada' : 'Pendente');
+    const orig = c.origem === 'funcionaria' ? '👩 Solicitado pela funcionária' : '🛡️ Correção do admin';
+    const quem = mostrarFunc ? `<strong style="color:#0d2b4e">${esc(c.funcionaria)}</strong> · ${esc(c.data_br)} — ` : '';
+    const obs = (c.status === 'rejeitada' && c.obs_admin) ? `<div style="font-size:.72rem;color:#dc2626">Motivo da recusa: ${esc(c.obs_admin)}</div>` : '';
+    const resolv = c.resolvido_por ? `<div style="font-size:.68rem;color:var(--muted)">por ${esc(c.resolvido_por)} · ${esc(c.resolvido_em || '')}</div>` : '';
+    const acoes = (c.status === 'pendente' && c.origem === 'funcionaria')
+      ? `<div style="display:flex;gap:.4rem;margin-top:.35rem">
+           <button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:.2rem .6rem;font-size:.74rem" onclick="aplicarCorrecao(${c.id})">✓ Aprovar e aplicar</button>
+           <button class="btn btn-sm" style="background:#dc2626;color:#fff;padding:.2rem .6rem;font-size:.74rem" onclick="rejeitarCorrecao(${c.id})">✕ Rejeitar</button>
+         </div>` : '';
+    return `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:.5rem .65rem;background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem">
+        <span style="font-size:.8rem;color:#1e293b;font-weight:600">${quem}${esc(_descCorrecao(c))}</span>
+        <span style="font-size:.68rem;font-weight:800;color:${cor};white-space:nowrap">${lab}</span>
+      </div>
+      <div style="font-size:.74rem;color:#64748b">${orig}${c.motivo ? ' · ' + esc(c.motivo) : ''}</div>
+      ${obs}${resolv}${acoes}
+    </div>`;
+  }
+
+  async function aplicarCorrecao(id) {
+    if (!confirm('Aprovar e aplicar esta correção no ponto da funcionária?')) return;
+    try {
+      const r = await fetch(`/api/ponto/correcao/${id}/aplicar`, { method: 'POST' });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.detail || 'Erro ao aplicar.'); return; }
+      await carregarRelatorioPonto();
+    } catch (e) { alert('Erro de conexão.'); }
+  }
+
+  async function rejeitarCorrecao(id) {
+    const obs = prompt('Motivo da recusa (opcional):');
+    if (obs === null) return;
+    try {
+      const r = await fetch(`/api/ponto/correcao/${id}/rejeitar`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ obs }),
+      });
+      if (!r.ok) { alert('Erro ao rejeitar.'); return; }
+      await carregarRelatorioPonto();
+    } catch (e) { alert('Erro de conexão.'); }
+  }
+
+  async function carregarPendenciasPonto() {
     const box = document.getElementById('justPendentesBox');
     const lista = document.getElementById('justPendentesLista');
     if (!box || !lista) return;
     try {
-      const r = await fetch('/api/ponto/justificativas?status=pendente');
-      if (!r.ok) { box.style.display = 'none'; return; }
-      const js = await r.json();
-      if (!js.length) { box.style.display = 'none'; return; }
-      lista.innerHTML = js.map(j => _renderJustAdmin(j, true)).join('');
+      const [rj, rc] = await Promise.all([
+        fetch('/api/ponto/justificativas?status=pendente'),
+        fetch('/api/ponto/correcoes?status=pendente'),
+      ]);
+      const js = rj.ok ? await rj.json() : [];
+      const cs = rc.ok ? await rc.json() : [];
+      const corrPend = cs.filter(c => c.origem === 'funcionaria');
+      let html = '';
+      if (js.length) html += '<div style="font-size:.7rem;font-weight:800;color:#92400e">Justificativas</div>' + js.map(j => _renderJustAdmin(j, true)).join('');
+      if (corrPend.length) html += '<div style="font-size:.7rem;font-weight:800;color:#92400e;margin-top:.4rem">Solicitações de correção de ponto</div>' + corrPend.map(c => _renderCorrecaoAdmin(c, true)).join('');
+      if (!html) { box.style.display = 'none'; return; }
+      lista.innerHTML = html;
       box.style.display = 'block';
     } catch (e) { box.style.display = 'none'; }
   }
@@ -3962,7 +4019,7 @@
     const card = document.getElementById('relPontoCard');
     if (!card) return;
     if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
-    carregarJustPendentes();
+    carregarPendenciasPonto();
     const body = document.getElementById('relPontoBody');
     const dataInput = document.getElementById('filtroDataPonto');
     let qs = '';
@@ -3992,6 +4049,7 @@
           </span>`
         ).join(' ');
         const justs = (f.justificativas || []).map(j => _renderJustAdmin(j)).join('');
+        const corrs = (f.correcoes || []).map(c => _renderCorrecaoAdmin(c)).join('');
         return `
         <div style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.6rem .9rem;background:#f8fafc;flex-wrap:wrap">
@@ -4022,6 +4080,7 @@
             <div style="font-size:.74rem;color:${corPct};font-weight:700;margin-top:.25rem">${f.perc_ativo}% do tempo ativo</div>
           </div>
           ${justs ? `<div style="padding:0 .9rem .8rem;display:flex;flex-direction:column;gap:.4rem"><div style="font-size:.66rem;text-transform:uppercase;color:var(--muted);font-weight:700">Justificativas do dia</div>${justs}</div>` : ''}
+          ${corrs ? `<div style="padding:0 .9rem .8rem;display:flex;flex-direction:column;gap:.4rem"><div style="font-size:.66rem;text-transform:uppercase;color:var(--muted);font-weight:700">Correções de ponto (auditoria)</div>${corrs}</div>` : ''}
         </div>`;
       }).join('');
     } catch (e) {
@@ -4069,6 +4128,7 @@
     document.getElementById('epTipo').value = 'entrada';
     document.getElementById('epData').value = _pontoRelData.dataIso || '';
     document.getElementById('epHora').value = '';
+    document.getElementById('epMotivo').value = '';
     _epMsg('', true);
     document.getElementById('modalEditarPonto').classList.add('open');
   }
@@ -4080,6 +4140,7 @@
     document.getElementById('epTipo').value = tipo;
     document.getElementById('epData').value = _pontoRelData.dataIso || '';
     document.getElementById('epHora').value = hora || '';
+    document.getElementById('epMotivo').value = '';
     _epMsg('', true);
     document.getElementById('modalEditarPonto').classList.add('open');
   }
@@ -4092,7 +4153,9 @@
     const tipo = document.getElementById('epTipo').value;
     const data = document.getElementById('epData').value;
     const hora = document.getElementById('epHora').value;
+    const motivo = document.getElementById('epMotivo').value.trim();
     if (!data || !hora) { _epMsg('Preencha data e hora.', false); return; }
+    if (!motivo) { _epMsg('Informe o motivo da correção (fica registrado).', false); return; }
     const btn = document.getElementById('epSalvar');
     btn.disabled = true;
     try {
@@ -4102,12 +4165,12 @@
         if (!usuario_id) { _epMsg('Selecione a funcionária.', false); btn.disabled = false; return; }
         r = await fetch('/api/ponto/admin', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ usuario_id, tipo, data, hora }),
+          body: JSON.stringify({ usuario_id, tipo, data, hora, motivo }),
         });
       } else {
         r = await fetch(`/api/ponto/${_epPontoId}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tipo, data, hora }),
+          body: JSON.stringify({ tipo, data, hora, motivo }),
         });
       }
       const d = await r.json();
@@ -4122,9 +4185,11 @@
   }
 
   async function removerPonto(id) {
-    if (!confirm('Remover este registro de ponto? Esta ação não pode ser desfeita.')) return;
+    const motivo = prompt('Motivo da remoção (fica registrado na auditoria):');
+    if (motivo === null) return;
+    if (!motivo.trim()) { alert('Informe o motivo da remoção.'); return; }
     try {
-      const r = await fetch(`/api/ponto/${id}`, { method: 'DELETE' });
+      const r = await fetch(`/api/ponto/${id}?motivo=${encodeURIComponent(motivo.trim())}`, { method: 'DELETE' });
       if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Não foi possível remover.'); return; }
       await carregarRelatorioPonto();
     } catch (e) {
@@ -6851,6 +6916,64 @@
       <button class="btn btn-sm btn-outline" onclick="togglePontoHistorico()" id="btnPontoHist" style="width:100%">📋 Ver histórico</button>
       <div id="pontoHistorico" style="display:none;flex-direction:column;gap:.5rem"></div>
       <button class="btn btn-sm btn-outline" onclick="abrirJustificativa()" style="width:100%">📄 Justificar horário / Atestado</button>
+      <button class="btn btn-sm btn-outline" onclick="abrirSolicitarCorrecao()" style="width:100%">✋ Solicitar correção de ponto</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: Solicitar correção de ponto (funcionária) ── -->
+<div class="overlay" id="modalCorrecao" onclick="if(event.target===this)fecharCorrecao()">
+  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:480px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">
+    <div class="modal-hd">
+      <span style="font-size:1.15rem">✋</span>
+      <h3>Solicitar correção de ponto</h3>
+      <button class="modal-close" onclick="fecharCorrecao()">×</button>
+    </div>
+    <div style="padding:1.1rem 1.4rem;display:flex;flex-direction:column;gap:.75rem;overflow-y:auto">
+      <div style="font-size:.78rem;color:var(--muted)">Você não altera o ponto — o pedido vai para o admin aprovar. Tudo fica registrado.</div>
+      <div style="display:flex;flex-direction:column;gap:.25rem">
+        <label style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Dia</label>
+        <input id="corrData" type="date" onchange="_corrCarregarPontos()" style="border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.25rem">
+        <label style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">O que precisa?</label>
+        <select id="corrAcao" onchange="_corrAtualizarCampos()" style="border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none">
+          <option value="adicionar">Adicionar um ponto que faltou</option>
+          <option value="editar">Corrigir o horário de um ponto</option>
+          <option value="remover">Remover um ponto errado</option>
+        </select>
+      </div>
+      <div id="corrWrapRegistro" style="display:none;flex-direction:column;gap:.25rem">
+        <label style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Qual ponto?</label>
+        <select id="corrRegistro" style="border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none"></select>
+      </div>
+      <div id="corrWrapTipo" style="display:flex;flex-direction:column;gap:.25rem">
+        <label style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Tipo de ponto</label>
+        <select id="corrTipo" style="border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none">
+          <option value="entrada">Entrada</option>
+          <option value="saida_almoco">Saída p/ almoço</option>
+          <option value="volta_almoco">Volta do almoço</option>
+          <option value="saida">Saída</option>
+        </select>
+      </div>
+      <div id="corrWrapHora" style="display:flex;flex-direction:column;gap:.25rem">
+        <label style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Horário correto</label>
+        <input id="corrHora" type="time" style="border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.25rem">
+        <label style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Motivo</label>
+        <textarea id="corrMotivo" rows="2" placeholder="Ex: Esqueci de bater a saída ontem, sai às 18h."
+          style="width:100%;border:1px solid var(--border);border-radius:8px;padding:.6rem;font-size:.88rem;outline:none;resize:vertical"></textarea>
+      </div>
+      <div id="corrMsg" style="display:none;padding:.5rem .8rem;border-radius:8px;font-size:.82rem;font-weight:600;text-align:center"></div>
+      <div style="display:flex;justify-content:flex-end;gap:.5rem">
+        <button class="btn btn-sm btn-outline" onclick="fecharCorrecao()">Cancelar</button>
+        <button class="btn btn-sm" id="corrBtnEnviar" onclick="enviarCorrecao()" style="background:#0d2b4e;color:#fff;font-weight:700">Enviar pedido</button>
+      </div>
+      <div>
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:.4rem 0 .35rem">Meus pedidos</div>
+        <div id="corrMinhas" style="display:flex;flex-direction:column;gap:.4rem"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -6990,6 +7113,11 @@
           <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Hora</label>
           <input type="time" id="epHora" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none">
         </div>
+      </div>
+      <div>
+        <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Motivo da correção (fica registrado)</label>
+        <input type="text" id="epMotivo" placeholder="Ex: funcionária esqueceu de bater a saída; ajustado conforme atestado."
+          style="width:100%;border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.88rem;outline:none">
       </div>
       <button class="btn" id="epSalvar" onclick="salvarEditarPonto()" style="background:var(--navy);color:#fff;font-weight:700;justify-content:center">Salvar</button>
     </div>
@@ -7309,6 +7437,100 @@
           </div>
           <div style="font-size:.8rem;color:#475569">${esc(j.texto || '—')}${arq}</div>
           ${obs}
+        </div>`;
+      }).join('');
+    } catch (e) { box.innerHTML = '<div style="color:#991b1b;font-size:.82rem">Erro ao carregar.</div>'; }
+  }
+
+  // ─── Solicitar correção de ponto (funcionária) ──────────────────────────
+  function abrirSolicitarCorrecao() {
+    const iso = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    document.getElementById('corrData').value = iso;
+    document.getElementById('corrAcao').value = 'adicionar';
+    document.getElementById('corrTipo').value = 'entrada';
+    document.getElementById('corrHora').value = '';
+    document.getElementById('corrMotivo').value = '';
+    _corrMsg('', true);
+    document.getElementById('modalCorrecao').classList.add('open');
+    _corrAtualizarCampos();
+    _corrCarregarPontos();
+    carregarMinhasCorrecoes();
+  }
+
+  function fecharCorrecao() { document.getElementById('modalCorrecao').classList.remove('open'); }
+
+  function _corrMsg(t, ok) {
+    const m = document.getElementById('corrMsg');
+    if (!t) { m.style.display = 'none'; return; }
+    m.style.display = 'block'; m.textContent = t;
+    m.style.background = ok ? '#dcfce7' : '#fee2e2';
+    m.style.color = ok ? '#166534' : '#991b1b';
+  }
+
+  function _corrAtualizarCampos() {
+    const acao = document.getElementById('corrAcao').value;
+    document.getElementById('corrWrapRegistro').style.display = (acao === 'editar' || acao === 'remover') ? 'flex' : 'none';
+    document.getElementById('corrWrapTipo').style.display = (acao === 'adicionar') ? 'flex' : 'none';
+    document.getElementById('corrWrapHora').style.display = (acao === 'adicionar' || acao === 'editar') ? 'flex' : 'none';
+  }
+
+  async function _corrCarregarPontos() {
+    const data = document.getElementById('corrData').value;
+    const sel = document.getElementById('corrRegistro');
+    sel.innerHTML = '<option value="">Carregando…</option>';
+    try {
+      const r = await fetch('/api/ponto/meus?data=' + encodeURIComponent(data));
+      const ps = r.ok ? await r.json() : [];
+      if (!ps.length) { sel.innerHTML = '<option value="">— nenhum ponto neste dia —</option>'; return; }
+      sel.innerHTML = ps.map(p => `<option value="${p.id}">${esc(p.label)} — ${esc(p.hora)}</option>`).join('');
+    } catch (e) { sel.innerHTML = '<option value="">erro ao carregar</option>'; }
+  }
+
+  async function enviarCorrecao() {
+    const data = document.getElementById('corrData').value;
+    const acao = document.getElementById('corrAcao').value;
+    const motivo = document.getElementById('corrMotivo').value.trim();
+    const hora = document.getElementById('corrHora').value;
+    const tipo = document.getElementById('corrTipo').value;
+    const registro_id = document.getElementById('corrRegistro').value;
+    if (!data) { _corrMsg('Escolha o dia.', false); return; }
+    if (!motivo) { _corrMsg('Descreva o motivo.', false); return; }
+    if ((acao === 'adicionar' || acao === 'editar') && !hora) { _corrMsg('Informe o horário correto.', false); return; }
+    if ((acao === 'editar' || acao === 'remover') && !registro_id) { _corrMsg('Selecione o ponto.', false); return; }
+    const body = { data, acao, motivo };
+    if (acao === 'adicionar') { body.tipo_ponto = tipo; body.hora = hora; }
+    if (acao === 'editar') { body.registro_id = Number(registro_id); body.hora = hora; }
+    if (acao === 'remover') { body.registro_id = Number(registro_id); }
+    const btn = document.getElementById('corrBtnEnviar'); btn.disabled = true;
+    try {
+      const r = await fetch('/api/ponto/correcao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const d = await r.json();
+      if (!r.ok) { _corrMsg(d.detail || 'Erro ao enviar.', false); btn.disabled = false; return; }
+      _corrMsg('Pedido enviado! Aguardando aprovação do admin. ✓', true);
+      document.getElementById('corrMotivo').value = '';
+      await carregarMinhasCorrecoes();
+    } catch (e) { _corrMsg('Erro de conexão.', false); }
+    btn.disabled = false;
+  }
+
+  async function carregarMinhasCorrecoes() {
+    const box = document.getElementById('corrMinhas');
+    box.innerHTML = '<div style="color:var(--muted);font-size:.82rem">Carregando…</div>';
+    try {
+      const r = await fetch('/api/ponto/correcao/minhas');
+      const cs = await r.json();
+      if (!cs.length) { box.innerHTML = '<div style="color:var(--muted);font-size:.82rem">Nenhum pedido ainda.</div>'; return; }
+      box.innerHTML = cs.map(c => {
+        const cor = c.status === 'aplicada' ? '#16a34a' : (c.status === 'rejeitada' ? '#dc2626' : '#d97706');
+        const lab = c.status === 'aplicada' ? 'Aplicada' : (c.status === 'rejeitada' ? 'Rejeitada' : 'Pendente');
+        const obs = (c.status === 'rejeitada' && c.obs_admin) ? `<div style="font-size:.72rem;color:#dc2626">Motivo: ${esc(c.obs_admin)}</div>` : '';
+        return `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:.5rem .65rem">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:.8rem;font-weight:700;color:#0d2b4e">${esc(c.data_br)}</span>
+            <span style="font-size:.7rem;font-weight:800;color:${cor}">${lab}</span>
+          </div>
+          <div style="font-size:.8rem;color:#475569">${esc(_descCorrecao(c))}</div>
+          <div style="font-size:.74rem;color:#64748b">${esc(c.motivo || '')}</div>${obs}
         </div>`;
       }).join('');
     } catch (e) { box.innerHTML = '<div style="color:#991b1b;font-size:.82rem">Erro ao carregar.</div>'; }
