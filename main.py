@@ -1209,9 +1209,11 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
         # Se está sendo atendido por humano, salva a mensagem e avisa se fora do horário
         if lead and lead.status in [
             StatusLeadEnum.assumido,
+            StatusLeadEnum.pre_analise,
             StatusLeadEnum.proposta_enviada,
             StatusLeadEnum.proposta_aprovada,
             StatusLeadEnum.fechado,
+            StatusLeadEnum.parceiro,
         ]:
             # Cliente voltou → reexibe no funil se estava oculto
             if lead.oculto_funil:
@@ -1284,9 +1286,11 @@ async def receber_webhook_meta(request: Request, db: Session = Depends(get_db)):
             # Humano atendendo → salva e avisa se fora do horário
             if lead and lead.status in [
                 StatusLeadEnum.assumido,
+                StatusLeadEnum.pre_analise,
                 StatusLeadEnum.proposta_enviada,
                 StatusLeadEnum.proposta_aprovada,
                 StatusLeadEnum.fechado,
+                StatusLeadEnum.parceiro,
             ]:
                 _salvar_msg_webhook(db, telefone, texto)
                 prox = _proximo_horario_atendimento()
