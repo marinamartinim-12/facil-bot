@@ -279,8 +279,31 @@ class RegistroPonto(Base):
     tipo        = Column(String(20), nullable=False)   # entrada | saida_almoco | volta_almoco | saida
     timestamp   = Column(DateTime, default=datetime.utcnow, index=True)
     ip          = Column(String(50), nullable=True)
+    foto_filename = Column(String(64), nullable=True)  # selfie tirada na hora de bater o ponto
 
     usuario = relationship("Usuario")
+
+
+class JustificativaPonto(Base):
+    """Justificativa de horário da funcionária (ex.: foi ao médico) com atestado anexado.
+    Fica como 'pendente' até o admin aprovar ou rejeitar."""
+    __tablename__ = "justificativas_ponto"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    usuario_id    = Column(Integer, ForeignKey("usuarios.id"), nullable=False, index=True)
+    data          = Column(String(10), nullable=False, index=True)  # YYYY-MM-DD do dia justificado
+    texto         = Column(Text, nullable=True)                     # motivo
+    filename      = Column(String(64), nullable=True)               # atestado anexado (no banco)
+    nome_arquivo  = Column(String(200), nullable=True)              # nome original do atestado
+    status        = Column(String(20), default="pendente")         # pendente | aprovada | rejeitada
+    obs_admin     = Column(String(400), nullable=True)             # observação/motivo da rejeição
+    aprovado_por  = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    aprovado_em   = Column(DateTime, nullable=True)
+    criado_em     = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    usuario   = relationship("Usuario", foreign_keys=[usuario_id])
+    aprovador = relationship("Usuario", foreign_keys=[aprovado_por])
 
 
 class AtividadePing(Base):

@@ -37,14 +37,14 @@ def _data_br_para_utc(data_str: str):
         return d.replace(hour=12, tzinfo=_TZ_BR).astimezone(timezone.utc).replace(tzinfo=None)
     except Exception:
         return None
-from fastapi import FastAPI, Request, Depends, HTTPException, Query, Response, UploadFile, File
+from fastapi import FastAPI, Request, Depends, HTTPException, Query, Response, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
 import secrets
 from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, AtividadePing, Agendamento, MidiaArquivo, DocumentoCliente, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, JustificativaPonto, AtividadePing, Agendamento, MidiaArquivo, DocumentoCliente, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento, diagnostico_ia
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
@@ -413,6 +413,7 @@ async def startup():
         ("parceiros",       "nome_agenda",        "VARCHAR(200)"),
         ("parceiros",       "operadora_id",       "INTEGER"),
         ("agendamentos",    "resultado",          "TEXT"),
+        ("registros_ponto", "foto_filename",      "VARCHAR(64)"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -3578,10 +3579,10 @@ def _tempo_ativo_intervalos(db, usuario_id, intervalos):
 
 
 @app.post("/api/ponto")
-async def bater_ponto(request: Request, db: Session = Depends(get_db),
+async def bater_ponto(request: Request, tipo: str = Form(...), foto: UploadFile = File(...),
+                      db: Session = Depends(get_db),
                       usuario: Usuario = Depends(obter_usuario_atual)):
-    body = await request.json()
-    tipo = (body.get("tipo") or "").strip()
+    tipo = (tipo or "").strip()
     if tipo not in _PONTO_LABELS:
         raise HTTPException(400, "Tipo de ponto inválido")
     hoje = _agora_br().date()
@@ -3589,12 +3590,156 @@ async def bater_ponto(request: Request, db: Session = Depends(get_db),
     validos = _proximas_acoes_ponto(pontos)
     if tipo not in validos:
         raise HTTPException(400, "Ação não permitida agora.")
-    reg = RegistroPonto(usuario_id=usuario.id, tipo=tipo, ip=_ip_da_requisicao(request))
+    # Foto obrigatória — comprova presença no momento da batida
+    dados = await foto.read()
+    if not dados:
+        raise HTTPException(400, "É obrigatório tirar uma foto para bater o ponto.")
+    if len(dados) > 8 * 1024 * 1024:
+        raise HTTPException(400, "Foto muito grande (máx. 8 MB).")
+    foto_filename = f"{uuid.uuid4().hex}.jpg"
+    _guardar_blob(db, foto_filename, "imagem", dados, mime="image/jpeg", subdir="imagens")
+    reg = RegistroPonto(usuario_id=usuario.id, tipo=tipo, ip=_ip_da_requisicao(request),
+                        foto_filename=foto_filename)
     db.add(reg)
     db.commit()
     db.refresh(reg)
     return {"status": "ok", "tipo": tipo, "label": _PONTO_LABELS[tipo],
             "hora": _fmt_br(reg.timestamp, "%H:%M")}
+
+
+# ─── Justificativas de horário (atestado) com aprovação do admin ──────────────
+
+_MAX_ATESTADO_BYTES = 15 * 1024 * 1024
+
+
+def _iso_para_br(s: str) -> str:
+    try:
+        a, m, d = s.split("-")
+        return f"{d}/{m}/{a}"
+    except Exception:
+        return s or ""
+
+
+def _serial_justificativa(j: JustificativaPonto) -> dict:
+    return {
+        "id": j.id,
+        "usuario_id": j.usuario_id,
+        "funcionaria": (j.usuario.nome if j.usuario else "—"),
+        "data": j.data,
+        "data_br": _iso_para_br(j.data),
+        "texto": j.texto or "",
+        "filename": j.filename,
+        "nome_arquivo": j.nome_arquivo,
+        "status": j.status,
+        "obs_admin": j.obs_admin or "",
+        "aprovador": (j.aprovador.nome if j.aprovador else None),
+        "criado_em": _fmt_br(j.criado_em, "%d/%m/%Y %H:%M") or "",
+    }
+
+
+@app.post("/api/ponto/justificativa")
+async def criar_justificativa(
+    data: str = Form(...), texto: str = Form(""),
+    arquivo: UploadFile = File(None),
+    db: Session = Depends(get_db), usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """A funcionária lança a justificativa do dia (com atestado). Fica 'pendente' até o admin aprovar."""
+    data = (data or "").strip()
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", data):
+        raise HTTPException(400, "Data inválida.")
+    texto = (texto or "").strip()
+    filename = None
+    nome_arq = None
+    if arquivo is not None and arquivo.filename:
+        dados = await arquivo.read()
+        if dados:
+            if len(dados) > _MAX_ATESTADO_BYTES:
+                raise HTTPException(400, "Arquivo muito grande (máx. 15 MB).")
+            nome_arq = (arquivo.filename or "atestado")[:200]
+            ext = (nome_arq.rsplit(".", 1)[-1][:5].lower() if "." in nome_arq else "bin")
+            ext = re.sub(r"[^a-z0-9]", "", ext) or "bin"
+            filename = f"{uuid.uuid4().hex}.{ext}"
+            _guardar_blob(db, filename, "documento", dados, nome_original=nome_arq,
+                          mime=(arquivo.content_type or "application/octet-stream"), subdir="documentos")
+    if not texto and not filename:
+        raise HTTPException(400, "Escreva o motivo ou anexe o atestado.")
+    # Reaproveita uma justificativa não aprovada do mesmo dia (reenvio); senão cria nova
+    j = (db.query(JustificativaPonto)
+         .filter(JustificativaPonto.usuario_id == usuario.id,
+                 JustificativaPonto.data == data,
+                 JustificativaPonto.status != "aprovada")
+         .order_by(JustificativaPonto.id.desc()).first())
+    if not j:
+        j = JustificativaPonto(usuario_id=usuario.id, data=data)
+        db.add(j)
+    j.texto = texto
+    if filename:
+        j.filename = filename
+        j.nome_arquivo = nome_arq
+    j.status = "pendente"
+    j.obs_admin = None
+    j.aprovado_por = None
+    j.aprovado_em = None
+    db.commit()
+    db.refresh(j)
+    return _serial_justificativa(j)
+
+
+@app.get("/api/ponto/justificativa/minhas")
+async def minhas_justificativas(db: Session = Depends(get_db),
+                                usuario: Usuario = Depends(obter_usuario_atual)):
+    js = (db.query(JustificativaPonto)
+          .filter(JustificativaPonto.usuario_id == usuario.id)
+          .order_by(JustificativaPonto.data.desc(), JustificativaPonto.id.desc()).all())
+    return [_serial_justificativa(j) for j in js]
+
+
+@app.get("/api/ponto/justificativas")
+async def listar_justificativas(status: str = "", db: Session = Depends(get_db),
+                                usuario: Usuario = Depends(requer_admin)):
+    q = db.query(JustificativaPonto)
+    if status in ("pendente", "aprovada", "rejeitada"):
+        q = q.filter(JustificativaPonto.status == status)
+    js = q.order_by(JustificativaPonto.criado_em.desc()).all()
+    return [_serial_justificativa(j) for j in js]
+
+
+@app.get("/api/ponto/justificativas/pendentes-count")
+async def justificativas_pendentes_count(db: Session = Depends(get_db),
+                                         usuario: Usuario = Depends(requer_admin)):
+    n = db.query(JustificativaPonto).filter(JustificativaPonto.status == "pendente").count()
+    return {"pendentes": n}
+
+
+@app.post("/api/ponto/justificativa/{jid}/aprovar")
+async def aprovar_justificativa(jid: int, db: Session = Depends(get_db),
+                                usuario: Usuario = Depends(requer_admin)):
+    j = db.query(JustificativaPonto).filter(JustificativaPonto.id == jid).first()
+    if not j:
+        raise HTTPException(404, "Justificativa não encontrada.")
+    j.status = "aprovada"
+    j.aprovado_por = usuario.id
+    j.aprovado_em = datetime.utcnow()
+    j.obs_admin = None
+    db.commit()
+    db.refresh(j)
+    return _serial_justificativa(j)
+
+
+@app.post("/api/ponto/justificativa/{jid}/rejeitar")
+async def rejeitar_justificativa(jid: int, request: Request, db: Session = Depends(get_db),
+                                 usuario: Usuario = Depends(requer_admin)):
+    body = await request.json()
+    j = db.query(JustificativaPonto).filter(JustificativaPonto.id == jid).first()
+    if not j:
+        raise HTTPException(404, "Justificativa não encontrada.")
+    j.status = "rejeitada"
+    j.aprovado_por = usuario.id
+    j.aprovado_em = datetime.utcnow()
+    j.obs_admin = (body.get("obs") or "").strip()[:400] or None
+    db.commit()
+    db.refresh(j)
+    return _serial_justificativa(j)
 
 
 @app.get("/api/ponto/hoje")
@@ -3668,8 +3813,16 @@ async def ponto_relatorio(data: str = None, db: Session = Depends(get_db),
             "usuario": u.nome,
             "usuario_id": u.id,
             "registros": [
-                {"id": p.id, "tipo": p.tipo, "label": _PONTO_LABELS[p.tipo], "hora": _fmt_br(p.timestamp, "%H:%M")}
+                {"id": p.id, "tipo": p.tipo, "label": _PONTO_LABELS[p.tipo],
+                 "hora": _fmt_br(p.timestamp, "%H:%M"), "foto": p.foto_filename}
                 for p in pontos
+            ],
+            "justificativas": [
+                _serial_justificativa(j) for j in
+                db.query(JustificativaPonto).filter(
+                    JustificativaPonto.usuario_id == u.id,
+                    JustificativaPonto.data == d.strftime("%Y-%m-%d"),
+                ).order_by(JustificativaPonto.id.desc()).all()
             ],
             "jornada": _duracao_str(jornada_s),
             "jornada_s": jornada_s,
