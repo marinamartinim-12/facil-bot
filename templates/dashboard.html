@@ -706,6 +706,12 @@
           </button>
           <div id="paradaDropdown" style="display:none;position:absolute;right:0;top:calc(100% + 6px);width:320px;max-height:420px;overflow-y:auto;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.18);z-index:200;padding:.5rem"></div>
         </div>
+        <div style="position:relative;display:inline-block">
+          <button class="btn btn-sm" id="btnPendPonto" onclick="togglePendPontoDropdown()" title="Pendências de ponto (justificativas e correções)" style="gap:.2rem;background:#fff;border:1px solid var(--border);position:relative;display:none">
+            🧾<span id="pendPontoBadge" style="display:none;position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;font-size:.62rem;font-weight:800;min-width:16px;height:16px;line-height:16px;border-radius:99px;padding:0 3px">0</span>
+          </button>
+          <div id="pendPontoDropdown" style="display:none;position:absolute;right:0;top:calc(100% + 6px);width:340px;max-height:440px;overflow-y:auto;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.18);z-index:200;padding:.5rem"></div>
+        </div>
         <button class="btn btn-sm" id="btnPonto" onclick="abrirModalPonto()" style="gap:.3rem;background:#0d2b4e;color:#fff">🕐 Ponto</button>
         <button class="btn btn-outline btn-sm" onclick="refresh()" id="btnRefresh">↻ Atualizar</button>
         <button class="btn btn-primary btn-sm" onclick="abrirNovoLead()" style="gap:.3rem">＋ Novo Lead</button>
@@ -1437,6 +1443,8 @@
     setInterval(_checarChamadas, 20000);          // a cada 20s
     _checarParadas();                             // alerta de conversas paradas (sem resposta)
     setInterval(_checarParadas, 60000);           // a cada 1min
+    atualizarPendPonto();                         // sininho de pendências de ponto (admin)
+    setInterval(atualizarPendPonto, 60000);       // a cada 1min
   }
 
   document.getElementById('loginSenha').addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); });
@@ -2476,6 +2484,12 @@
     if (!_paradasAberto) return;
     const wrap = document.getElementById('btnParadas')?.parentElement;
     if (wrap && !wrap.contains(e.target)) { _paradasAberto = false; document.getElementById('paradaDropdown').style.display = 'none'; }
+  });
+  // Fecha o dropdown de pendências de ponto ao clicar fora
+  document.addEventListener('click', e => {
+    if (!_pendPontoAberto) return;
+    const wrap = document.getElementById('btnPendPonto')?.parentElement;
+    if (wrap && !wrap.contains(e.target)) { _pendPontoAberto = false; document.getElementById('pendPontoDropdown').style.display = 'none'; }
   });
 
   // ─── Contratos fechados + pasta de documentos (admin) ─────────────────────
@@ -3995,6 +4009,55 @@
     } catch (e) { box.style.display = 'none'; }
   }
 
+  // ─── Sininho de pendências de ponto no topo (admin) ─────────────────────
+  let _pendPontoAberto = false;
+
+  async function _pendPontoDados() {
+    const [rj, rc] = await Promise.all([
+      fetch('/api/ponto/justificativas?status=pendente'),
+      fetch('/api/ponto/correcoes?status=pendente'),
+    ]);
+    const js = rj.ok ? await rj.json() : [];
+    const cs = rc.ok ? await rc.json() : [];
+    return { js, corr: cs.filter(c => c.origem === 'funcionaria') };
+  }
+
+  function _renderPendPontoDropdown(js, corr) {
+    const dd = document.getElementById('pendPontoDropdown');
+    let html = '<div style="font-weight:800;color:#0d2b4e;font-size:.85rem;padding:.2rem .3rem .4rem">🧾 Pendências de ponto</div>';
+    if (!js.length && !corr.length) {
+      html += '<div style="color:var(--muted);font-size:.82rem;padding:.5rem">Nada pendente. ✓</div>';
+    } else {
+      if (js.length) html += '<div style="font-size:.7rem;font-weight:800;color:#92400e;margin:.2rem .3rem">Justificativas</div>' + js.map(j => _renderJustAdmin(j, true)).join('');
+      if (corr.length) html += '<div style="font-size:.7rem;font-weight:800;color:#92400e;margin:.4rem .3rem .2rem">Solicitações de correção</div>' + corr.map(c => _renderCorrecaoAdmin(c, true)).join('');
+    }
+    dd.innerHTML = html;
+  }
+
+  async function atualizarPendPonto() {
+    if (currentUser?.role !== 'admin') return;
+    const btn = document.getElementById('btnPendPonto');
+    const badge = document.getElementById('pendPontoBadge');
+    if (!btn) return;
+    btn.style.display = 'inline-flex';
+    try {
+      const { js, corr } = await _pendPontoDados();
+      const n = js.length + corr.length;
+      if (n > 0) { badge.style.display = 'block'; badge.textContent = n > 99 ? '99+' : n; }
+      else { badge.style.display = 'none'; }
+      if (_pendPontoAberto) _renderPendPontoDropdown(js, corr);
+    } catch (e) {}
+  }
+
+  async function togglePendPontoDropdown() {
+    const dd = document.getElementById('pendPontoDropdown');
+    _pendPontoAberto = !_pendPontoAberto;
+    if (!_pendPontoAberto) { dd.style.display = 'none'; return; }
+    dd.style.display = 'block';
+    dd.innerHTML = '<div style="color:var(--muted);font-size:.82rem;padding:.5rem">Carregando…</div>';
+    try { const { js, corr } = await _pendPontoDados(); _renderPendPontoDropdown(js, corr); } catch (e) {}
+  }
+
   async function aprovarJust(id) {
     try {
       const r = await fetch(`/api/ponto/justificativa/${id}/aprovar`, { method: 'POST' });
@@ -4020,6 +4083,7 @@
     if (!card) return;
     if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
     carregarPendenciasPonto();
+    atualizarPendPonto();
     const body = document.getElementById('relPontoBody');
     const dataInput = document.getElementById('filtroDataPonto');
     let qs = '';
@@ -4043,9 +4107,8 @@
         const corPct = f.perc_ativo >= 75 ? '#16a34a' : f.perc_ativo >= 50 ? '#d97706' : '#dc2626';
         const regs = f.registros.map(r =>
           `<span style="display:inline-flex;align-items:center;gap:.25rem;white-space:nowrap;font-size:.78rem;color:#475569;background:#f1f5f9;border-radius:6px;padding:.1rem .35rem">
-            <span style="cursor:pointer" title="Editar" onclick="abrirEditarPonto(${r.id},'${r.tipo}','${esc(r.hora)}')">${_PONTO_ICONES[r.tipo] || '•'} ${esc(r.hora)} ✏️</span>
+            <span style="cursor:pointer" title="Corrigir horário/tipo" onclick="abrirEditarPonto(${r.id},'${r.tipo}','${esc(r.hora)}')">${_PONTO_ICONES[r.tipo] || '•'} ${esc(r.hora)} ✏️</span>
             ${r.foto ? `<a href="/api/imagem/${r.foto}" target="_blank" title="Ver foto do ponto" style="text-decoration:none">📷</a>` : '<span title="Sem foto" style="opacity:.4">🚫</span>'}
-            <span style="cursor:pointer;color:#b91c1c" title="Remover" onclick="removerPonto(${r.id})">✕</span>
           </span>`
         ).join(' ');
         const justs = (f.justificativas || []).map(j => _renderJustAdmin(j)).join('');
