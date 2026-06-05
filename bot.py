@@ -18,6 +18,32 @@ from models import (
 settings = get_settings()
 client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
+MODELO_IA = "claude-sonnet-4-6"
+
+
+def diagnostico_ia() -> dict:
+    """Faz uma chamada mínima à IA e devolve o resultado real (ok ou erro exato).
+    Usado pelo painel admin para descobrir por que a Maria pode estar falhando."""
+    chave = settings.ANTHROPIC_API_KEY or ""
+    info = {
+        "modelo": MODELO_IA,
+        "tem_chave": bool(chave),
+        "chave_prefixo": (chave[:14] + "…") if chave else "(vazia)",
+    }
+    try:
+        resp = client.messages.create(
+            model=MODELO_IA,
+            max_tokens=10,
+            messages=[{"role": "user", "content": "responda apenas: ok"}],
+        )
+        info["ok"] = True
+        info["resposta"] = resp.content[0].text.strip()
+    except Exception as e:
+        info["ok"] = False
+        info["tipo_erro"] = type(e).__name__
+        info["erro"] = str(e)
+    return info
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SYSTEM PROMPT
@@ -467,7 +493,7 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
     for _tent in range(3):
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-6",
+                model=MODELO_IA,
                 max_tokens=1024,
                 system=system,
                 messages=messages,

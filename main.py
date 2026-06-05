@@ -45,7 +45,7 @@ from sqlalchemy.orm import Session
 
 from config import get_settings
 from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, AtividadePing, Agendamento, MidiaArquivo, DocumentoCliente, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
-from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento
+from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento, diagnostico_ia
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
 settings = get_settings()
@@ -1319,6 +1319,12 @@ async def receber_webhook_meta(request: Request, db: Session = Depends(get_db)):
 
 
 # ─── Teste ───────────────────────────────────────────────────────────────────────
+
+@app.get("/api/diagnostico-ia")
+async def diagnostico_ia_endpoint(usuario: Usuario = Depends(requer_admin)):
+    """Testa a IA (Maria) e devolve o erro exato, se houver. Só admin."""
+    return JSONResponse(diagnostico_ia())
+
 
 @app.post("/testar")
 async def testar_bot(request: Request, db: Session = Depends(get_db)):
