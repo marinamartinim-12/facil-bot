@@ -277,6 +277,7 @@
     .badge-em_atendimento { background: #dbeafe; color: #1e40af; }
     .badge-qualificado { background: #dcfce7; color: #166534; }
     .badge-assumido { background: #fef9c3; color: #854d0e; }
+    .badge-pre_analise { background: #ccfbf1; color: #115e51; }
     .badge-proposta_enviada { background: #ffedd5; color: #9a3412; }
     .badge-proposta_aprovada { background: #d1fae5; color: #065f46; }
     .badge-fechado { background: #ede9fe; color: #5b21b6; }
@@ -814,6 +815,7 @@
               <option value="em_atendimento">Atendimento IA</option>
               <option value="qualificado">Qualificado</option>
               <option value="assumido">Assumido</option>
+              <option value="pre_analise">Pré-análise</option>
               <option value="proposta_enviada">Proposta Enviada</option>
               <option value="proposta_aprovada">Proposta Aprovada</option>
               <option value="fechado">Fechado</option>
@@ -1616,6 +1618,7 @@
     { key:'em_atendimento',  label:'Atendimento IA',  icon:'🤖', color:'#3b82f6' },
     { key:'qualificado',     label:'Qualificado',      icon:'✅', color:'#22c55e' },
     { key:'assumido',        label:'Assumido',         icon:'👤', color:'#F5C400' },
+    { key:'pre_analise',     label:'Pré-análise',      icon:'🔎', color:'#14b8a6' },
     { key:'proposta_enviada', label:'Proposta Enviada',  icon:'📄', color:'#f97316' },
     { key:'parceiro',        label:'Parceiro',         icon:'🤝', color:'#0ea5e9' },
     { key:'proposta_aprovada',label:'Proposta Aprovada', icon:'✅', color:'#10b981' },
@@ -1701,6 +1704,10 @@
 
     // Botões de progressão — qualquer funcionária pode mover cards no funil
     if (l.status === 'assumido') {
+      acoes += ` <button class="btn btn-sm" style="background:#14b8a6;color:#fff" onclick="moverLead(${l.id},'pre_analise',true)" title="Pré-análise">🔎</button>`;
+      acoes += ` <button class="btn btn-sm" style="background:#f97316;color:#fff" onclick="moverLead(${l.id},'proposta_enviada',true)" title="Proposta enviada">📄</button>`;
+      acoes += ` <button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLead(${l.id},'perdido',true)" title="Marcar como perdido">❌</button>`;
+    } else if (l.status === 'pre_analise') {
       acoes += ` <button class="btn btn-sm" style="background:#f97316;color:#fff" onclick="moverLead(${l.id},'proposta_enviada',true)" title="Proposta enviada">📄</button>`;
       acoes += ` <button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLead(${l.id},'perdido',true)" title="Marcar como perdido">❌</button>`;
     } else if (l.status === 'proposta_enviada') {
@@ -1789,7 +1796,7 @@
     }
     if (confirmar) {
       const labels = {
-        assumido:'Assumir este lead?', proposta_enviada:'Marcar proposta como enviada?',
+        assumido:'Assumir este lead?', pre_analise:'Mover para Pré-análise?', proposta_enviada:'Marcar proposta como enviada?',
         perdido:'Marcar como perdido?',
         qualificado:'Mover para Qualificado?', em_atendimento:'Devolver para Atendimento IA?'
       };
@@ -1861,9 +1868,11 @@
 
       if (!jaAssumido && lead.status !== 'fechado' && lead.status !== 'perdido')
         acoes += `<button class="btn btn-gold btn-sm" onclick="moverLeadModal(${leadId},'assumido')">👤 Assumir</button>`;
-      if (['qualificado','assumido','proposta_enviada','proposta_aprovada'].includes(lead.status))
+      if (['qualificado','assumido','pre_analise','proposta_enviada','proposta_aprovada'].includes(lead.status))
         acoes += `<button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="moverLeadModal(${leadId},'perdido')">❌ Perdido</button>`;
       if (lead.status === 'assumido')
+        acoes += `<button class="btn btn-sm" style="background:#14b8a6;color:#fff" onclick="moverLeadModal(${leadId},'pre_analise')">🔎 Pré-análise</button>`;
+      if (lead.status === 'assumido' || lead.status === 'pre_analise')
         acoes += `<button class="btn btn-sm" style="background:#f97316;color:#fff" onclick="moverLeadModal(${leadId},'proposta_enviada')">📄 Proposta</button>`;
       if (lead.status === 'proposta_enviada')
         acoes += `<button class="btn btn-sm" style="background:#10b981;color:#fff" onclick="moverLeadModal(${leadId},'proposta_aprovada')">✅ Aprovada</button>`;
@@ -4984,11 +4993,11 @@
 
   const statusCorInbox = {
     em_atendimento: '#3b82f6', qualificado: '#22c55e', assumido: '#F5C400',
-    proposta_enviada: '#f97316', proposta_aprovada: '#10b981', fechado: '#8b5cf6', perdido: '#ef4444'
+    pre_analise: '#14b8a6', proposta_enviada: '#f97316', proposta_aprovada: '#10b981', fechado: '#8b5cf6', perdido: '#ef4444'
   };
   const statusIconInbox = {
     em_atendimento: '🤖', qualificado: '✅', assumido: '👤',
-    proposta_enviada: '📄', proposta_aprovada: '✅', fechado: '🏁', perdido: '❌'
+    pre_analise: '🔎', proposta_enviada: '📄', proposta_aprovada: '✅', fechado: '🏁', perdido: '❌'
   };
 
   // Som de notificação (Web Audio API)
@@ -5740,7 +5749,7 @@
     return html;
   }
   function labMod(m) { return {financiamento:'Financiamento',refinanciamento:'Refinanciamento',indefinido:'Indefinido'}[m]||m; }
-  function labSt(s) { return {em_atendimento:'Atend. IA',qualificado:'Qualificado',assumido:'Assumido',proposta_enviada:'Proposta',proposta_aprovada:'Prop. Aprovada',fechado:'Fechado',perdido:'Perdido',desqualificado:'Fora escopo',parceiro:'Parceiro'}[s]||s; }
+  function labSt(s) { return {em_atendimento:'Atend. IA',qualificado:'Qualificado',assumido:'Assumido',pre_analise:'Pré-análise',proposta_enviada:'Proposta',proposta_aprovada:'Prop. Aprovada',fechado:'Fechado',perdido:'Perdido',desqualificado:'Fora escopo',parceiro:'Parceiro'}[s]||s; }
 
   // Paleta de cores distintas por atendente — sempre a mesma cor para o mesmo ID
   const _CORES_ATENDENTE = [

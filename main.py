@@ -1703,6 +1703,7 @@ async def mover_lead(
         StatusLeadEnum.em_atendimento,
         StatusLeadEnum.qualificado,
         StatusLeadEnum.assumido,
+        StatusLeadEnum.pre_analise,
         StatusLeadEnum.proposta_enviada,
         StatusLeadEnum.proposta_aprovada,
         StatusLeadEnum.fechado,
@@ -2053,7 +2054,7 @@ async def iniciar_conversa(
         db.add(lead)
         db.commit()
         db.refresh(lead)
-    elif lead.status not in [StatusLeadEnum.assumido, StatusLeadEnum.proposta_enviada, StatusLeadEnum.proposta_aprovada]:
+    elif lead.status not in [StatusLeadEnum.assumido, StatusLeadEnum.pre_analise, StatusLeadEnum.proposta_enviada, StatusLeadEnum.proposta_aprovada]:
         lead.status = StatusLeadEnum.assumido
         lead.estado_conversa = EstadoConversaEnum.transferido
         lead.atribuido_para = usuario.id
@@ -3779,7 +3780,7 @@ async def relatorio_parceiros(
         leads = db.query(Lead).filter(Lead.parceiro_id == p.id).all()
         total        = len(leads)
         assumidos    = sum(1 for l in leads if l.status in (
-            StatusLeadEnum.assumido, StatusLeadEnum.proposta_enviada,
+            StatusLeadEnum.assumido, StatusLeadEnum.pre_analise, StatusLeadEnum.proposta_enviada,
             StatusLeadEnum.fechado, StatusLeadEnum.perdido))
         propostas    = sum(1 for l in leads if l.status in (
             StatusLeadEnum.proposta_enviada, StatusLeadEnum.fechado))

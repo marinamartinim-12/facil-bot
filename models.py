@@ -52,6 +52,7 @@ class StatusLeadEnum(str, enum.Enum):
     em_atendimento = "em_atendimento"
     qualificado = "qualificado"
     assumido = "assumido"
+    pre_analise = "pre_analise"
     proposta_enviada = "proposta_enviada"
     proposta_aprovada = "proposta_aprovada"
     fechado = "fechado"
