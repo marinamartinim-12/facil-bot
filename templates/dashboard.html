@@ -5208,8 +5208,12 @@
     } catch {}
   }
 
-  // IDs de conversas com mensagens não lidas (persiste entre polls)
+  // IDs de conversas com mensagens não lidas (vem do servidor — compartilhado)
   const conversasNaoLidas = new Set();
+
+  function marcarLidaServidor(id) {
+    fetch(`/api/leads/${id}/marcar-lida`, { method: 'POST' }).catch(() => {});
+  }
 
   async function carregarInbox() {
     try {
@@ -5217,17 +5221,20 @@
       const novosLeads = await r.json();
 
       let temNovo = false;
+      // "Não lido" agora é COMPARTILHADO (vem do servidor): abriu numa máquina, lê em todas.
+      conversasNaoLidas.clear();
       novosLeads.forEach(l => {
-        const ultimaConhecida = ultimasMensagensConhecidas[l.id];
-        const ultimaAtual = l.ultima_msg_ts || l.ultima_hora || '';
-        if (ultimaConhecida !== undefined && ultimaAtual !== ultimaConhecida) {
-          // Mensagem nova — marca como não lida se não for a conversa aberta agora
-          if (!chatLeadAtivo || chatLeadAtivo.id !== l.id) {
-            conversasNaoLidas.add(l.id);
-            temNovo = true;
-          }
+        const ehAtivo = chatLeadAtivo && chatLeadAtivo.id === l.id;
+        if (l.nao_lido && !ehAtivo) {
+          conversasNaoLidas.add(l.id);
+          // Toca o som só quando é realmente uma mensagem nova (mudou desde o último poll)
+          const ultimaConhecida = ultimasMensagensConhecidas[l.id];
+          const ultimaAtual = l.ultima_msg_ts || '';
+          if (ultimaConhecida !== undefined && ultimaAtual !== ultimaConhecida) temNovo = true;
         }
-        ultimasMensagensConhecidas[l.id] = ultimaAtual;
+        // Chegou mensagem nova na conversa que está aberta → marca lida pra todos
+        if (ehAtivo && l.nao_lido) marcarLidaServidor(l.id);
+        ultimasMensagensConhecidas[l.id] = l.ultima_msg_ts || '';
       });
 
       if (temNovo) {
@@ -5298,8 +5305,9 @@
   async function abrirChat(leadId) {
     chatLeadAtivo = inboxLeads.find(l => l.id === leadId);
     if (!chatLeadAtivo) return;
-    // Marca como lida e atualiza badge
+    // Marca como lida pra TODOS (servidor) e atualiza badge
     conversasNaoLidas.delete(leadId);
+    marcarLidaServidor(leadId);
     const badge = document.getElementById('badgeInbox');
     if (conversasNaoLidas.size > 0) { badge.textContent = conversasNaoLidas.size; badge.style.display = ''; }
     else { badge.style.display = 'none'; }

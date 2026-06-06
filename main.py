@@ -414,6 +414,7 @@ async def startup():
         ("parceiros",       "operadora_id",       "INTEGER"),
         ("agendamentos",    "resultado",          "TEXT"),
         ("registros_ponto", "foto_filename",      "VARCHAR(64)"),
+        ("leads",           "lido_em",            "DATETIME"),
     ]
     for tabela, coluna, tipo in _migracoes:
         try:
@@ -2534,16 +2535,31 @@ async def inbox(
             continue  # ignora leads sem nenhuma mensagem
         import re
         conteudo_limpo = re.sub(r'^\[[^\]]+\]:\s*', '', ultima.conteudo)
+        # Não lido (compartilhado): última msg é do cliente E chegou depois da última leitura
+        nao_lido = (ultima.role == "user") and (l.lido_em is None or ultima.criado_em > l.lido_em)
         resultado.append({
             **_serial_lead(l, db),
             "ultima_mensagem": conteudo_limpo[:60],
             "ultima_hora": _fmt_br(ultima.criado_em, "%H:%M") if ultima and ultima.criado_em else "",
             "ultima_msg_ts": ultima.criado_em.timestamp() if ultima and ultima.criado_em else 0,
+            "nao_lido": nao_lido,
         })
 
     # Ordena pelo timestamp da última mensagem (mais recente primeiro)
     resultado.sort(key=lambda x: x.get("ultima_msg_ts", 0), reverse=True)
     return resultado
+
+
+@app.post("/api/leads/{lead_id}/marcar-lida")
+async def marcar_conversa_lida(lead_id: int, db: Session = Depends(get_db),
+                               usuario: Usuario = Depends(obter_usuario_atual)):
+    """Marca a conversa como lida para TODOS (leitura compartilhada)."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead não encontrado")
+    lead.lido_em = datetime.utcnow()
+    db.commit()
+    return {"status": "ok"}
 
 
 @app.patch("/api/leads/{lead_id}")
