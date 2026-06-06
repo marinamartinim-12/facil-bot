@@ -4560,7 +4560,10 @@ async def relatorio_leads_calendario(
     else:
         fim = datetime(ano, mes + 1, 1) + timedelta(hours=3)
 
-    q = db.query(Lead).filter(Lead.atribuido_para.isnot(None), Lead.ignorar_relatorios.isnot(True))
+    # Só funcionárias entram neste relatório (exclui leads atribuídos a admins)
+    _ids_func = [u.id for u in db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario).all()]
+    q = db.query(Lead).filter(Lead.atribuido_para.isnot(None), Lead.ignorar_relatorios.isnot(True),
+                              Lead.atribuido_para.in_(_ids_func))
     if not geral:
         q = q.filter(Lead.assumido_em >= inicio, Lead.assumido_em < fim)
     if funcionaria:
@@ -4642,7 +4645,10 @@ async def relatorio_leads_calendario_xlsx(
     mes = mes or hoje.month
     inicio = datetime(ano, mes, 1) + timedelta(hours=3)
     fim = (datetime(ano + 1, 1, 1) if mes == 12 else datetime(ano, mes + 1, 1)) + timedelta(hours=3)
-    q = db.query(Lead).filter(Lead.atribuido_para.isnot(None), Lead.ignorar_relatorios.isnot(True))
+    # Só funcionárias entram neste relatório (exclui leads atribuídos a admins)
+    _ids_func = [u.id for u in db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario).all()]
+    q = db.query(Lead).filter(Lead.atribuido_para.isnot(None), Lead.ignorar_relatorios.isnot(True),
+                              Lead.atribuido_para.in_(_ids_func))
     if not geral:
         q = q.filter(Lead.assumido_em >= inicio, Lead.assumido_em < fim)
     if funcionaria:
