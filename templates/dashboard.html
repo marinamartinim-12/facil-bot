@@ -1034,18 +1034,6 @@
       <div id="viewRelatorios" style="display:none">
         <div class="stats-row" id="relStatsRow"></div>
 
-        <!-- ── VOLUME DE CONSULTAS (planejamento de APIs) — admin ── -->
-        <div class="rel-card" id="relVolConsultasCard" style="display:none">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
-            <h3 style="margin:0">📊 Volume de consultas por mês</h3>
-            <button onclick="carregarVolumeConsultas()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
-          </div>
-          <p style="font-size:.8rem;color:var(--muted);margin:.35rem 0 .6rem">
-            CPFs coletados (≈ consultas de restrição) e contratos fechados (≈ buscas de localização). Útil pra dimensionar custo de APIs.
-          </p>
-          <div id="relVolConsultasBody"></div>
-        </div>
-
         <div class="rel-card">
           <h3>🚗 Leads por Modalidade</h3>
           <table class="rel-table">
@@ -3620,7 +3608,6 @@
     await carregarRelatorioPonto();
     await carregarTempoResposta();
     await carregarVolumeApi();
-    await carregarVolumeConsultas();
     await carregarLeadsCalendario();
     await carregarIpCompartilhado();
   }
@@ -3837,44 +3824,6 @@
         </div>`;
     } catch {
       body.innerHTML = '<div style="text-align:center;padding:1.2rem;color:#991b1b">Erro ao carregar.</div>';
-    }
-  }
-
-  function _volMesLabel(ym) {
-    const partes = (ym || '').split('-');
-    const nomes = ['', 'jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-    return `${nomes[parseInt(partes[1], 10)] || partes[1] || ''}/${partes[0] || ''}`;
-  }
-
-  async function carregarVolumeConsultas() {
-    const card = document.getElementById('relVolConsultasCard');
-    if (!card) return;
-    if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
-    card.style.display = '';
-    const body = document.getElementById('relVolConsultasBody');
-    body.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--muted)">Carregando…</div>';
-    try {
-      const r = await fetch('/api/relatorio/volume-consultas');
-      if (!r.ok) throw new Error();
-      const d = await r.json();
-      const linhas = (d.meses || []).map(m => `
-        <tr>
-          <td>${esc(_volMesLabel(m.mes))}</td>
-          <td style="text-align:center;font-weight:700;color:#1d4ed8">${m.cpfs_coletados}</td>
-          <td style="text-align:center;font-weight:700;color:#7c3aed">${m.contratos_fechados}</td>
-        </tr>`).join('');
-      body.innerHTML = `
-        <table class="rel-table">
-          <thead><tr><th>Mês</th><th style="text-align:center">CPFs coletados</th><th style="text-align:center">Contratos fechados</th></tr></thead>
-          <tbody>${linhas}</tbody>
-          <tfoot><tr style="border-top:2px solid #e2e8f0">
-            <td style="font-weight:800">Média/mês</td>
-            <td style="text-align:center;font-weight:800;color:#0d2b4e">${d.media_cpf_mes}</td>
-            <td style="text-align:center;font-weight:800;color:#0d2b4e">${d.media_contratos_mes}</td>
-          </tr></tfoot>
-        </table>`;
-    } catch {
-      body.innerHTML = '<div style="text-align:center;padding:1rem;color:#991b1b">Erro ao carregar.</div>';
     }
   }
 

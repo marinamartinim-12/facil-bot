@@ -1337,57 +1337,6 @@ async def diagnostico_ia_endpoint(usuario: Usuario = Depends(requer_admin)):
     return JSONResponse(diagnostico_ia())
 
 
-@app.get("/api/relatorio/volume-consultas")
-async def volume_consultas(meses: int = 6, db: Session = Depends(get_db),
-                           admin: Usuario = Depends(requer_admin)):
-    """Volume mensal para dimensionar APIs: CPFs coletados (restrição) e contratos
-    fechados (busca por localização). Só admin."""
-    from collections import defaultdict
-    meses = max(1, min(meses, 24))
-
-    def _ym_br(dt):
-        if not dt:
-            return None
-        d = dt.replace(tzinfo=timezone.utc).astimezone(_TZ_BR)
-        return f"{d.year:04d}-{d.month:02d}"
-
-    cpf_mes = defaultdict(int)
-    for (criado_em,) in db.query(Lead.criado_em).filter(
-            Lead.cpf.isnot(None), Lead.cpf != "").all():
-        k = _ym_br(criado_em)
-        if k:
-            cpf_mes[k] += 1
-
-    contr_mes = defaultdict(int)
-    for (fechado_em,) in db.query(Lead.fechado_em).filter(Lead.fechado_em.isnot(None)).all():
-        k = _ym_br(fechado_em)
-        if k:
-            contr_mes[k] += 1
-
-    hoje = _agora_br().date()
-    y, m = hoje.year, hoje.month
-    linhas = []
-    for _ in range(meses):
-        k = f"{y:04d}-{m:02d}"
-        linhas.append({"mes": k, "cpfs_coletados": cpf_mes.get(k, 0),
-                       "contratos_fechados": contr_mes.get(k, 0)})
-        m -= 1
-        if m == 0:
-            m, y = 12, y - 1
-    linhas.reverse()
-
-    n = len(linhas)
-    tot_cpf = sum(l["cpfs_coletados"] for l in linhas)
-    tot_contr = sum(l["contratos_fechados"] for l in linhas)
-    return {
-        "meses": linhas,
-        "media_cpf_mes": round(tot_cpf / n, 1),
-        "media_contratos_mes": round(tot_contr / n, 1),
-        "total_cpfs_periodo": tot_cpf,
-        "total_contratos_periodo": tot_contr,
-    }
-
-
 @app.post("/testar")
 async def testar_bot(request: Request, db: Session = Depends(get_db)):
     body = await request.json()
