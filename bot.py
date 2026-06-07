@@ -465,19 +465,9 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
         .all()
     )
 
-    # Aviso de horário — injetado SOMENTE quando o bot está prestes a transferir
-    # (estado coletando_carro → próximo passo é transferido).
-    # Em todos os outros estados, nada é dito sobre horário.
+    # O aviso de "fora do horário" NÃO é mais responsabilidade da IA — ele é
+    # anexado pelo próprio código ao transferir (determinístico, sempre igual).
     aviso_horario = ""
-    if lead.estado_conversa == EstadoConversaEnum.coletando_carro:
-        prox = _proximo_horario_atendimento()
-        if prox:
-            aviso_horario = (
-                f"\n\nATENÇÃO: Estamos fora do horário agora. "
-                f"Após a mensagem 'Ótimo! Já tenho os dados...', acrescente UMA mensagem adicional: "
-                f"'No momento estamos fora do horário. Funcionamos seg-sex das 09h às 18h e sáb das 09h às 13h. "
-                f"Entraremos em contato assim que possível! 🕘'"
-            )
 
     # System com contexto do estado atual
     # Estado do lead — muda a cada mensagem, fica FORA do cache
@@ -571,17 +561,18 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
 
         _atualizar_lead(db, lead, dados_coletados, proximo_estado, qualificado)
 
-        # Aviso de fora de horário para "outros assuntos" (aguardando_modalidade → transferido)
+        # Ao TRANSFERIR para o atendente (qualquer caminho), se estiver fora do
+        # horário, o código acrescenta a mensagem padrão — com o nome do cliente.
         if (proximo_estado == "transferido"
-                and estado_antes == EstadoConversaEnum.aguardando_modalidade):
+                and estado_antes != EstadoConversaEnum.transferido):
             prox = _proximo_horario_atendimento()
             if prox:
-                aviso = (
-                    "No momento estamos fora do horário de atendimento. "
+                nome = f" {lead.nome}" if lead.nome else ""
+                mensagens_bot.append(
+                    f"Olá{nome}! 😊 No momento estamos fora do horário de atendimento. "
                     "Funcionamos seg–sex das 09h às 18h e sábado das 09h às 13h. "
                     "Retornaremos seu contato no primeiro horário disponível! 🕘"
                 )
-                mensagens_bot.append(aviso)
 
     except Exception as ex:
         print(f"⚠️  Falha no parse JSON: {ex}\nResposta raw: {resposta_raw}")

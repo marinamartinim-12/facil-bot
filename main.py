@@ -629,33 +629,33 @@ async def enviar_meta(telefone: str, mensagem: str):
 # ─── Webhooks ────────────────────────────────────────────────────────────────────
 
 def _montar_msg_recontato(lead) -> list[str]:
-    """Monta mensagem de boas-vindas personalizada para lead que voltou após ser marcado como perdido."""
+    """Mensagem para um cliente que JÁ existe e volta a falar.
+    - Fora do horário: manda só a mensagem de horário (com o nome), igual à preferida.
+    - Dentro do horário: boas-vindas personalizada + 'em breve uma consultora'."""
     nome = lead.nome or ""
-    saudacao = f"Olá{' ' + nome if nome else ''}! Que bom ter você de volta! 😊"
+    saud_nome = f" {nome}" if nome else ""
 
-    # Resumo dos dados já coletados
+    # FORA do expediente → a mensagem que o proprietário aprovou, com o nome do cliente
+    if _proximo_horario_atendimento():   # != "" → estamos FORA do horário
+        return [
+            f"Olá{saud_nome}! 😊 No momento estamos fora do horário de atendimento. "
+            "Funcionamos seg–sex das 09h às 18h e sábado das 09h às 13h. "
+            "Retornaremos seu contato no primeiro horário disponível! 🕘"
+        ]
+
+    # DENTRO do expediente → boas-vindas personalizada + dados + consultora
+    saudacao = f"Olá{saud_nome}! Que bom ter você de volta! 😊"
     linhas = []
     mod_map = {"financiamento": "Financiamento", "refinanciamento": "Refinanciamento"}
     if lead.modalidade and lead.modalidade != "indefinido":
         linhas.append(f"📋 Modalidade: {mod_map.get(lead.modalidade, lead.modalidade)}")
     if lead.carro_interesse:
         linhas.append(f"🚗 Veículo de interesse: {lead.carro_interesse}")
-
     if linhas:
-        resumo = "Encontrei seus dados cadastrados aqui:\n" + "\n".join(linhas)
-        msg1 = f"{saudacao}\n\n{resumo}"
+        msg1 = f"{saudacao}\n\nEncontrei seus dados cadastrados aqui:\n" + "\n".join(linhas)
     else:
         msg1 = f"{saudacao}\nSeus dados estão registrados no nosso sistema."
-
-    # Mensagem 2 ciente do horário: não promete contato imediato fora do expediente
-    if _proximo_horario_atendimento():   # != "" → estamos FORA do horário
-        msg2 = (
-            "No momento estamos fora do horário de atendimento. "
-            "Funcionamos seg–sex das 09h às 18h e sábado das 09h às 13h. "
-            "Retornaremos seu contato no primeiro horário disponível! 🕘"
-        )
-    else:
-        msg2 = "Em breve uma de nossas consultoras entrará em contato. Tem alguma informação que mudou desde nossa última conversa? 😊"
+    msg2 = "Em breve uma de nossas consultoras entrará em contato. Tem alguma informação que mudou desde nossa última conversa? 😊"
     return [msg1, msg2]
 
 
