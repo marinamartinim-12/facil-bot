@@ -432,10 +432,17 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
         db.commit()
         db.refresh(lead)
 
-    # Conversa já encerrada
+    # Conversa já encerrada — resposta ciente do horário (não promete contato fora do expediente)
     if lead.estado_conversa in (EstadoConversaEnum.finalizado, EstadoConversaEnum.transferido):
         nome = f" {lead.nome}" if lead.nome else ""
-        resposta = f"Olá{nome}! Em breve uma atendente entrará em contato. 😊"
+        if _proximo_horario_atendimento():   # != "" → estamos FORA do horário
+            resposta = (
+                f"Olá{nome}! No momento estamos fora do horário de atendimento. "
+                "Funcionamos seg–sex das 09h às 18h e sábado das 09h às 13h. "
+                "Retornaremos seu contato no primeiro horário disponível! 🕘"
+            )
+        else:
+            resposta = f"Olá{nome}! Em breve uma atendente entrará em contato. 😊"
         _salvar_mensagem(db, telefone, "user", mensagem_cliente)
         _salvar_mensagem(db, telefone, "assistant", resposta)
         return [resposta]

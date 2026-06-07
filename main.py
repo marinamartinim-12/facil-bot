@@ -647,7 +647,15 @@ def _montar_msg_recontato(lead) -> list[str]:
     else:
         msg1 = f"{saudacao}\nSeus dados estão registrados no nosso sistema."
 
-    msg2 = "Em breve uma de nossas consultoras entrará em contato. Tem alguma informação que mudou desde nossa última conversa? 😊"
+    # Mensagem 2 ciente do horário: não promete contato imediato fora do expediente
+    if _proximo_horario_atendimento():   # != "" → estamos FORA do horário
+        msg2 = (
+            "No momento estamos fora do horário de atendimento. "
+            "Funcionamos seg–sex das 09h às 18h e sábado das 09h às 13h. "
+            "Retornaremos seu contato no primeiro horário disponível! 🕘"
+        )
+    else:
+        msg2 = "Em breve uma de nossas consultoras entrará em contato. Tem alguma informação que mudou desde nossa última conversa? 😊"
     return [msg1, msg2]
 
 
