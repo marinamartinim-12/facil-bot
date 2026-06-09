@@ -672,6 +672,9 @@
       <button class="nav-item admin-only" onclick="showView('relatorios')" id="nav-relatorios" style="display:none">
         <span class="nav-icon">📈</span> Relatórios
       </button>
+      <button class="nav-item admin-only" onclick="showView('rh')" id="nav-rh" style="display:none">
+        <span class="nav-icon">👥</span> RH
+      </button>
       <button class="nav-item admin-only" onclick="showView('configuracoes')" id="nav-configuracoes" style="display:none">
         <span class="nav-icon">⚙️</span> Config. do Bot
       </button>
@@ -1031,6 +1034,14 @@
       </div>
 
       <!-- ── RELATÓRIOS ── -->
+      <!-- ═══════════ RH (admin) ═══════════ -->
+      <div id="viewRh" style="display:none">
+        <div style="margin-bottom:.8rem">
+          <p style="font-size:.85rem;color:var(--muted);margin:0">Gestão das funcionárias — ponto, jornada/atividade e acessos. As justificativas e correções de ponto aparecem no próprio card de Ponto.</p>
+        </div>
+        <div id="viewRHBody"></div>
+      </div>
+
       <div id="viewRelatorios" style="display:none">
         <div class="stats-row" id="relStatsRow"></div>
 
@@ -1100,7 +1111,7 @@
         </div>
 
         <!-- ── SESSÕES / LOGINS ── -->
-        <div class="rel-card">
+        <div class="rel-card" id="relAtividadeCard">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
             <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
               <h3 style="margin:0">🔐 Atividade das Funcionárias</h3>
@@ -1431,6 +1442,7 @@
     _iniciarHeartbeat();   // Registra atividade a cada 60s
     carregarFila();        // Fila rotativa de atendimento
     carregarDashboard();   // Métricas da aba Dashboard
+    _moverCardsRH();       // tira os cards de RH de Relatórios e leva pra aba RH (antes de renderizar)
     const ultimaView = localStorage.getItem('ultimaView') || 'funil';
     showView(ultimaView);
     refresh();
@@ -1450,8 +1462,8 @@
   document.getElementById('loginSenha').addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); });
 
   // ═══════ VIEWS ═══════
-  const views = ['dashboard','funil','lista','atendimento','agenda','parceiros','contratos','usuarios','relatorios','configuracoes'];
-  const adminViews = ['contratos', 'usuarios', 'relatorios', 'configuracoes'];
+  const views = ['dashboard','funil','lista','atendimento','agenda','parceiros','contratos','usuarios','relatorios','rh','configuracoes'];
+  const adminViews = ['contratos', 'usuarios', 'relatorios', 'rh', 'configuracoes'];
   function showView(v) {
     if (adminViews.includes(v) && currentUser?.role !== 'admin') return;
     localStorage.setItem('ultimaView', v);
@@ -1460,13 +1472,14 @@
       const n = document.getElementById('nav-'+x);
       if (n) n.classList.toggle('active', x === v);
     });
-    const titles = {dashboard:'Dashboard', funil:'Funil de Leads', lista:'Lista de Leads', usuarios:'Usuários', relatorios:'Relatórios', atendimento:'Atendimentos', agenda:'Agenda', contratos:'Contratos Fechados', configuracoes:'Config. do Bot', parceiros:'Parceiros'};
+    const titles = {dashboard:'Dashboard', funil:'Funil de Leads', lista:'Lista de Leads', usuarios:'Usuários', relatorios:'Relatórios', rh:'RH — Funcionárias', atendimento:'Atendimentos', agenda:'Agenda', contratos:'Contratos Fechados', configuracoes:'Config. do Bot', parceiros:'Parceiros'};
     document.getElementById('pageTitle').textContent = titles[v] || v;
     document.getElementById('mainContent').classList.toggle('funil-mode', v === 'funil');
     if (v === 'contratos') carregarContratosFechados();
     if (v === 'dashboard') carregarDashboard();
     if (v === 'usuarios') carregarUsuarios();
     if (v === 'relatorios') carregarRelatorios();
+    if (v === 'rh') carregarRH();
     if (v === 'lista') renderLista();
     if (v === 'atendimento') carregarInbox();
     if (v === 'agenda') carregarAgenda();
@@ -3601,15 +3614,33 @@
       `;
     } catch {}
     await carregarRelatorioParceiros();
-    await carregarSessoes();
-    _iniciarAutoRefreshSessoes(); // atualiza silenciosamente a cada 60s
     await carregarRelatorioContratosMes();
     await carregarRelatorioPerfil();
-    await carregarRelatorioPonto();
     await carregarTempoResposta();
     await carregarVolumeApi();
     await carregarLeadsCalendario();
-    await carregarIpCompartilhado();
+  }
+
+  // ═══════ RH (Ponto, Atividade, Acessos) ═══════
+  let _rhCardsMovidos = false;
+  function _moverCardsRH() {
+    // Reparenteia os cards de RH (declarados dentro de Relatórios no HTML) para a aba RH
+    if (_rhCardsMovidos) return;
+    const dest = document.getElementById('viewRHBody');
+    if (!dest) return;
+    ['relPontoCard', 'relAtividadeCard', 'relIpCard'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) dest.appendChild(el);
+    });
+    _rhCardsMovidos = true;
+  }
+  function carregarRH() {
+    if (currentUser?.role !== 'admin') return;
+    _moverCardsRH();
+    carregarRelatorioPonto();
+    carregarSessoes();
+    _iniciarAutoRefreshSessoes();
+    carregarIpCompartilhado();
   }
 
   let _paradasInterval = null;
@@ -4872,17 +4903,17 @@
       // Online agora
       if (Array.isArray(sess)) {
         const online = sess.filter(s => s.ativa).length;
-        tiles += _dashTile('🟢', online, 'Online agora', '#16a34a', 'relatorios');
+        tiles += _dashTile('🟢', online, 'Online agora', '#16a34a', 'rh');
       }
       // Em jornada agora (ponto)
       if (ponto && Array.isArray(ponto.funcionarias)) {
         const emJornada = ponto.funcionarias.filter(f => f.em_andamento).length;
-        tiles += _dashTile('🕐', emJornada, 'Em jornada agora', '#0d2b4e', 'relatorios');
+        tiles += _dashTile('🕐', emJornada, 'Em jornada agora', '#0d2b4e', 'rh');
       }
       // Alertas de IP (concomitantes = vermelho)
       if (ip && Array.isArray(ip.itens)) {
         const alertas = ip.itens.filter(i => i.concomitante).length;
-        tiles += _dashTile('🕵️', alertas, 'Mesmo IP (alerta)', alertas ? '#dc2626' : '#94a3b8', 'relatorios');
+        tiles += _dashTile('🕵️', alertas, 'Mesmo IP (alerta)', alertas ? '#dc2626' : '#94a3b8', 'rh');
       }
       el.innerHTML = tiles || '<span style="font-size:.8rem;color:var(--muted)">Sem dados ainda.</span>';
     } catch {
