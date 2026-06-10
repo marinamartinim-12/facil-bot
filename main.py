@@ -354,25 +354,12 @@ async def startup():
         print(f"⚠️ Erro ao criar tabelas: {e}")
         raise
 
-    # Cria admin padrão se não existir nenhum usuário
+    # Conexão usada nas migrações e no setup
     db_startup = next(get_db())
     db = db_startup
-    try:
-        if db.query(Usuario).count() == 0:
-            admin = Usuario(
-                nome=settings.ADMIN_NOME,
-                email=settings.ADMIN_EMAIL,
-                senha_hash=hash_senha(settings.ADMIN_PASSWORD),
-                role=RoleEnum.admin,
-                ativo=True,
-            )
-            db.add(admin)
-            db.commit()
-            print(f"✅ Admin criado: {settings.ADMIN_EMAIL} / {settings.ADMIN_PASSWORD}")
-    finally:
-        pass
 
-    # Migrações de schema (colunas novas adicionadas após criação inicial)
+    # Migrações de schema PRIMEIRO — antes de qualquer consulta ORM, senão o
+    # ORM tenta ler colunas novas que ainda não existem e o app quebra no boot.
     from sqlalchemy import text
     _migracoes = [
         ("leads",     "followup_em",           "DATETIME"),
@@ -446,6 +433,22 @@ async def startup():
             print(f"✅ Migração: {tabela}.{coluna} adicionada")
         except Exception:
             pass  # coluna já existe — ignorar
+
+    # Cria admin padrão se não existir nenhum usuário (DEPOIS das migrações!)
+    try:
+        if db.query(Usuario).count() == 0:
+            admin = Usuario(
+                nome=settings.ADMIN_NOME,
+                email=settings.ADMIN_EMAIL,
+                senha_hash=hash_senha(settings.ADMIN_PASSWORD),
+                role=RoleEnum.admin,
+                ativo=True,
+            )
+            db.add(admin)
+            db.commit()
+            print(f"✅ Admin criado: {settings.ADMIN_EMAIL} / {settings.ADMIN_PASSWORD}")
+    except Exception as e:
+        print(f"⚠️ admin: {e}")
 
     # Backfill: define fechado_em dos leads já fechados a partir da data do negócio
     try:
