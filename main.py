@@ -972,13 +972,15 @@ def _ha_funcionaria_online(db) -> bool:
 @app.get("/api/online")
 async def usuarios_online(db: Session = Depends(get_db),
                           usuario: Usuario = Depends(obter_usuario_atual)):
-    """Quem está online agora (ativo nos últimos 10 min). Visível para todos os logados."""
+    """Funcionárias online agora (ativas nos últimos 10 min). Admins não entram na lista.
+    Visível para todos os logados."""
     limite = datetime.utcnow() - timedelta(seconds=600)
     sessoes = (db.query(SessaoUsuario)
                .join(Usuario, Usuario.id == SessaoUsuario.usuario_id)
                .filter(SessaoUsuario.logout_em.is_(None),
                        SessaoUsuario.ultimo_ativo_em >= limite,
-                       Usuario.ativo == True)
+                       Usuario.ativo == True,
+                       Usuario.role == RoleEnum.funcionario)
                .all())
     vistos = {}
     for s in sessoes:
