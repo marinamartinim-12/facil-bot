@@ -3346,14 +3346,26 @@ def _segundos_esperados_dia(d):
 @app.get("/api/rh/banco-horas")
 async def rh_banco_horas(meses: int = 6, db: Session = Depends(get_db),
                          admin: Usuario = Depends(requer_admin)):
-    """Banco de horas por funcionária (horas trabalhadas × esperadas), com alerta de 6 meses."""
+    """Banco de horas por funcionária — conta só DIAS COMPLETOS (entrada+saída),
+    a partir da data de início configurada (padrão: hoje, ou seja, de agora pra frente)."""
+    # Data de início (config). Se não existir, começa HOJE.
+    cfg = db.query(Configuracao).filter(Configuracao.chave == "banco_horas_inicio").first()
+    inicio_cfg = _parse_iso(cfg.valor) if (cfg and _parse_iso(cfg.valor)) else None
+    if inicio_cfg is None:
+        inicio_cfg = _agora_br().date()
+        if not cfg:
+            db.add(Configuracao(chave="banco_horas_inicio",
+                                valor=inicio_cfg.strftime("%Y-%m-%d"),
+                                descricao="Data de início do banco de horas"))
+            db.commit()
     meses = max(1, min(meses, 24))
     hoje = _agora_br().date()
     y, m = hoje.year, hoje.month - (meses - 1)
     while m <= 0:
         m += 12
         y -= 1
-    inicio = datetime(y, m, 1).date()
+    janela = datetime(y, m, 1).date()
+    inicio = max(inicio_cfg, janela)   # nunca conta antes da data de início
     agora_utc = datetime.utcnow()
     funcs = (db.query(Usuario)
              .filter(Usuario.ativo == True, Usuario.role == RoleEnum.funcionario)
@@ -3364,15 +3376,18 @@ async def rh_banco_horas(meses: int = 6, db: Session = Depends(get_db),
         saldo_s = 0
         por_mes = {}
         d = inicio
-        while d <= hoje:
+        while d < hoje:   # só dias COMPLETOS (não conta hoje, que está em andamento)
             pontos = _pontos_do_dia(db, u.id, d)
-            if pontos:   # só conta dias em que ela bateu ponto
+            if pontos:
                 intervalos = _jornadas_de_pontos(pontos, agora_utc)
-                trab = sum(int((f - i).total_seconds()) for i, f, _ in intervalos)
-                diff = trab - _segundos_esperados_dia(d)
-                saldo_s += diff
-                k = f"{d.year:04d}-{d.month:02d}"
-                por_mes[k] = por_mes.get(k, 0) + diff
+                # Só conta o dia se o ponto está FECHADO (entrada+saída).
+                # Dia com ponto aberto (esqueceu de bater a saída) é ignorado — senão infla.
+                if not any(aberto for _, _, aberto in intervalos):
+                    trab = sum(int((f - i).total_seconds()) for i, f, _ in intervalos)
+                    diff = trab - _segundos_esperados_dia(d)
+                    saldo_s += diff
+                    k = f"{d.year:04d}-{d.month:02d}"
+                    por_mes[k] = por_mes.get(k, 0) + diff
             d += timedelta(days=1)
         # Alerta 6 meses: existe saldo positivo e o mês mais antigo da janela teve extra positivo
         k_antigo = f"{inicio.year:04d}-{inicio.month:02d}"
@@ -3392,7 +3407,26 @@ async def rh_banco_horas(meses: int = 6, db: Session = Depends(get_db),
             "por_mes": meses_lst,
         })
     return {"desde": inicio.strftime("%d/%m/%Y"), "ate": hoje.strftime("%d/%m/%Y"),
+            "inicio_iso": inicio_cfg.strftime("%Y-%m-%d"),
             "funcionarias": resultado}
+
+
+@app.post("/api/rh/banco-horas/inicio")
+async def rh_banco_horas_inicio(request: Request, db: Session = Depends(get_db),
+                                admin: Usuario = Depends(requer_admin)):
+    """Define a partir de quando o banco de horas é contado. Admin only."""
+    body = await request.json()
+    data = (body.get("data") or "").strip()
+    if not _parse_iso(data):
+        raise HTTPException(400, "Data inválida")
+    cfg = db.query(Configuracao).filter(Configuracao.chave == "banco_horas_inicio").first()
+    if cfg:
+        cfg.valor = data
+    else:
+        db.add(Configuracao(chave="banco_horas_inicio", valor=data,
+                            descricao="Data de início do banco de horas"))
+    db.commit()
+    return {"status": "ok", "inicio_iso": data}
 
 
 # ─── Perfil do próprio usuário ───────────────────────────────────────────────────

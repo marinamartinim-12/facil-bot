@@ -3870,8 +3870,14 @@
       const r = await fetch('/api/rh/banco-horas?meses=' + meses);
       if (!r.ok) throw new Error();
       const d = await r.json();
-      if (!d.funcionarias || !d.funcionarias.length) { body.innerHTML = '<span style="color:var(--muted);font-size:.82rem">Sem dados.</span>'; return; }
-      body.innerHTML = `<div style="font-size:.74rem;color:var(--muted);margin-bottom:.4rem">Período: ${esc(d.desde)} a ${esc(d.ate)}</div>` +
+      const ctrl = `<div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.55rem;font-size:.78rem;color:#475569">
+        <span>📆 Contando desde:</span>
+        <input id="bancoInicio" type="date" value="${d.inicio_iso || ''}" style="border:1px solid var(--border);border-radius:6px;padding:.2rem .45rem;font-size:.8rem">
+        <button class="btn btn-sm" style="background:#0d2b4e;color:#fff;padding:.2rem .6rem;font-size:.72rem" onclick="salvarInicioBanco()">Salvar</button>
+        <span style="color:var(--muted)">(${esc(d.desde)} → ${esc(d.ate)})</span>
+      </div>`;
+      if (!d.funcionarias || !d.funcionarias.length) { body.innerHTML = ctrl + '<span style="color:var(--muted);font-size:.82rem">Sem funcionárias.</span>'; return; }
+      body.innerHTML = ctrl +
         d.funcionarias.map(f => {
           const cor = f.saldo_s > 0 ? '#15803d' : (f.saldo_s < 0 ? '#b91c1c' : '#475569');
           const mesesTxt = (f.por_mes || []).map(m => `${esc(m.mes)}: ${esc(m.saldo)}`).join(' · ');
@@ -3885,6 +3891,18 @@
           </div>`;
         }).join('');
     } catch { body.innerHTML = '<span style="color:#991b1b;font-size:.82rem">Erro ao carregar.</span>'; }
+  }
+
+  async function salvarInicioBanco() {
+    const data = document.getElementById('bancoInicio')?.value;
+    if (!data) { alert('Escolha a data.'); return; }
+    try {
+      const r = await fetch('/api/rh/banco-horas/inicio', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }),
+      });
+      if (!r.ok) { alert('Erro ao salvar a data.'); return; }
+      await carregarBancoHoras();
+    } catch { alert('Erro de conexão.'); }
   }
 
   let _paradasInterval = null;
