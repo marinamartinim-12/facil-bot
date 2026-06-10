@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, ForeignKey, Boolean, LargeBinary
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, ForeignKey, Boolean, LargeBinary, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -33,6 +33,23 @@ engine = create_engine(
     _DATABASE_URL,
     connect_args={"check_same_thread": False} if "sqlite" in _DATABASE_URL else {},
 )
+
+
+# ── Desempenho do SQLite: WAL deixa leituras e escritas não se travarem ──────
+# (sem isso, sob carga — várias funcionárias + bot — o banco fica lento/“locked”)
+if "sqlite" in _DATABASE_URL:
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(dbapi_conn, _record):
+        try:
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA synchronous=NORMAL")
+            cur.execute("PRAGMA busy_timeout=8000")
+            cur.close()
+        except Exception as e:
+            print(f"⚠️ PRAGMA SQLite: {e}")
+
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

@@ -2571,28 +2571,33 @@ async def baixar_backup(admin: Usuario = Depends(requer_admin)):
 
 
 def _inbox_sync(db):
-    """Parte pesada do inbox (muitas consultas) — roda em thread p/ não travar o servidor."""
+    """Monta o inbox com POUCAS consultas (antes era 1+ por lead) — roda em thread."""
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import func
+    # Cache de usuários e pré-carga do parceiro: evita ~2 consultas POR lead.
+    usuarios = {u.id: u for u in db.query(Usuario).all()}
     leads_com_msg = (
         db.query(Lead)
+        .options(joinedload(Lead.parceiro))
         .filter(Lead.status != StatusLeadEnum.desqualificado)
         .order_by(Lead.atualizado_em.desc())
         .all()
     )
+    # Última mensagem de cada telefone em UMA consulta só (em vez de 1 por lead)
+    sub = (db.query(MensagemConversa.telefone, func.max(MensagemConversa.id).label("mid"))
+           .group_by(MensagemConversa.telefone).subquery())
+    ultimas = db.query(MensagemConversa).join(sub, MensagemConversa.id == sub.c.mid).all()
+    ult_por_tel = {m.telefone: m for m in ultimas}
     resultado = []
     for l in leads_com_msg:
-        ultima = (
-            db.query(MensagemConversa)
-            .filter(MensagemConversa.telefone == l.telefone)
-            .order_by(MensagemConversa.id.desc())
-            .first()
-        )
+        ultima = ult_por_tel.get(l.telefone)
         if not ultima:
             continue  # ignora leads sem nenhuma mensagem
         conteudo_limpo = re.sub(r'^\[[^\]]+\]:\s*', '', ultima.conteudo)
         # Não lido (compartilhado): última msg é do cliente E chegou depois da última leitura
         nao_lido = (ultima.role == "user") and (l.lido_em is None or ultima.criado_em > l.lido_em)
         resultado.append({
-            **_serial_lead(l, db),
+            **_serial_lead(l, db, usuarios=usuarios),
             "ultima_mensagem": conteudo_limpo[:60],
             "ultima_hora": _fmt_br(ultima.criado_em, "%H:%M") if ultima and ultima.criado_em else "",
             "ultima_msg_ts": ultima.criado_em.timestamp() if ultima and ultima.criado_em else 0,
@@ -6224,10 +6229,11 @@ def _safe_json(raw, padrao):
         return padrao
 
 
-def _serial_lead(l: Lead, db: Session) -> dict:
+def _serial_lead(l: Lead, db: Session, usuarios=None) -> dict:
     responsavel = None
     if l.atribuido_para:
-        u = db.query(Usuario).filter(Usuario.id == l.atribuido_para).first()
+        u = usuarios.get(l.atribuido_para) if usuarios is not None else \
+            db.query(Usuario).filter(Usuario.id == l.atribuido_para).first()
         if u:
             responsavel = {"id": u.id, "nome": u.nome}
     return {
