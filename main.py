@@ -969,6 +969,32 @@ def _ha_funcionaria_online(db) -> bool:
     ).first() is not None
 
 
+@app.get("/api/online")
+async def usuarios_online(db: Session = Depends(get_db),
+                          usuario: Usuario = Depends(obter_usuario_atual)):
+    """Quem está online agora (ativo nos últimos 10 min). Visível para todos os logados."""
+    limite = datetime.utcnow() - timedelta(seconds=600)
+    sessoes = (db.query(SessaoUsuario)
+               .join(Usuario, Usuario.id == SessaoUsuario.usuario_id)
+               .filter(SessaoUsuario.logout_em.is_(None),
+                       SessaoUsuario.ultimo_ativo_em >= limite,
+                       Usuario.ativo == True)
+               .all())
+    vistos = {}
+    for s in sessoes:
+        u = s.usuario
+        if not u:
+            continue
+        ant = vistos.get(u.id)
+        if not ant or (s.ultimo_ativo_em and s.ultimo_ativo_em > ant["_ts"]):
+            vistos[u.id] = {"id": u.id, "nome": u.nome, "role": u.role,
+                            "_ts": s.ultimo_ativo_em or datetime.min}
+    lista = sorted(vistos.values(), key=lambda x: (x["role"] != "admin", x["nome"].lower()))
+    for x in lista:
+        x.pop("_ts", None)
+    return {"online": lista, "total": len(lista)}
+
+
 @app.post("/webhook/zapi")
 async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
     body = await request.json()

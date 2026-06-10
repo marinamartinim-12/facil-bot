@@ -735,6 +735,17 @@
           <!-- Tarja admin -->
           <div id="dashTarjaAdmin" style="display:none"></div>
 
+          <!-- Quem está online agora (visível a todos) -->
+          <div class="form-card" id="dashOnlineCard" style="padding:.8rem 1rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.5rem">
+              <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted)">🟢 Online agora</div>
+              <span id="dashOnlineTotal" style="font-size:.72rem;font-weight:700;color:#16a34a"></span>
+            </div>
+            <div id="dashOnlineLista" style="display:flex;flex-wrap:wrap;gap:.4rem">
+              <span style="color:var(--muted);font-size:.82rem">Carregando…</span>
+            </div>
+          </div>
+
           <!-- Conversas paradas (esperando resposta agora) -->
           <div class="form-card" id="relParadasCard" style="padding:.85rem 1rem;border:1px solid #fecaca">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
@@ -4868,6 +4879,31 @@
     if (currentUser?.role === 'admin') carregarDashRelatorios();
     carregarConversasParadas();
     _iniciarAutoRefreshParadas();
+    carregarOnline();
+  }
+
+  async function carregarOnline() {
+    const card = document.getElementById('dashOnlineCard');
+    if (!card) return;
+    try {
+      const r = await fetch('/api/online');
+      if (!r.ok) return;
+      const d = await r.json();
+      document.getElementById('dashOnlineTotal').textContent = d.total ? `${d.total} online` : '';
+      const lista = document.getElementById('dashOnlineLista');
+      if (!d.online || !d.online.length) {
+        lista.innerHTML = '<span style="color:var(--muted);font-size:.82rem">Ninguém online no momento.</span>';
+        return;
+      }
+      lista.innerHTML = d.online.map(u => {
+        const eu = u.id === currentUser?.id;
+        const sufixo = eu ? ' (você)' : (u.role === 'admin' ? ' (admin)' : '');
+        return `<span style="display:inline-flex;align-items:center;gap:.35rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:99px;padding:.2rem .65rem;font-size:.8rem;font-weight:600;color:#166534">
+          <span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block"></span>
+          ${esc(u.nome)}${sufixo}
+        </span>`;
+      }).join('');
+    } catch {}
   }
 
   function _dashTile(icone, valor, label, cor, view) {
