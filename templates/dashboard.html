@@ -4150,7 +4150,6 @@
         const regs = f.registros.map(r =>
           `<span style="display:inline-flex;align-items:center;gap:.25rem;white-space:nowrap;font-size:.78rem;color:#475569;background:#f1f5f9;border-radius:6px;padding:.1rem .35rem">
             <span style="cursor:pointer" title="Corrigir horário/tipo" onclick="abrirEditarPonto(${r.id},'${r.tipo}','${esc(r.hora)}')">${_PONTO_ICONES[r.tipo] || '•'} ${esc(r.hora)} ✏️</span>
-            ${r.foto ? `<a href="/api/imagem/${r.foto}" target="_blank" title="Ver foto do ponto" style="text-decoration:none">📷</a>` : '<span title="Sem foto" style="opacity:.4">🚫</span>'}
           </span>`
         ).join(' ');
         const justs = (f.justificativas || []).map(j => _renderJustAdmin(j)).join('');
@@ -7116,35 +7115,6 @@
   </div>
 </div>
 
-<!-- ── MODAL: Foto obrigatória do ponto ── -->
-<div class="overlay" id="modalFotoPonto" onclick="if(event.target===this)fecharFotoPonto()">
-  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:420px;display:flex;flex-direction:column;overflow:hidden">
-    <div class="modal-hd">
-      <span style="font-size:1.15rem">📸</span>
-      <h3 id="fotoPontoTitulo">Foto do ponto</h3>
-      <button class="modal-close" onclick="fecharFotoPonto()">×</button>
-    </div>
-    <div style="padding:1.1rem 1.25rem;display:flex;flex-direction:column;gap:.8rem">
-      <div style="font-size:.82rem;color:var(--muted);text-align:center">Tire uma foto para confirmar o ponto.</div>
-      <div style="position:relative;background:#0f172a;border-radius:10px;overflow:hidden;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center">
-        <video id="fotoPontoVideo" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover"></video>
-        <canvas id="fotoPontoCanvas" style="display:none;width:100%;height:100%;object-fit:cover"></canvas>
-        <div id="fotoPontoFallback" style="display:none;padding:1rem;text-align:center;color:#cbd5e1">
-          <div style="font-size:.8rem;margin-bottom:.6rem">Não foi possível abrir a câmera.</div>
-          <input id="fotoPontoFile" type="file" accept="image/*" capture="user"
-            onchange="_fotoPontoArquivo(event)" style="font-size:.8rem;color:#fff">
-        </div>
-      </div>
-      <div id="fotoPontoMsg" style="display:none;padding:.5rem .8rem;border-radius:8px;font-size:.82rem;font-weight:600;text-align:center"></div>
-      <div style="display:flex;gap:.5rem">
-        <button class="btn" id="fotoPontoBtnTirar" onclick="_fotoPontoTirar()" style="flex:1;background:#0d2b4e;color:#fff;font-weight:700;justify-content:center">📸 Tirar foto</button>
-        <button class="btn" id="fotoPontoBtnRefazer" onclick="_fotoPontoRefazer()" style="flex:1;display:none;background:#64748b;color:#fff;font-weight:700;justify-content:center">↺ Refazer</button>
-        <button class="btn" id="fotoPontoBtnConfirmar" onclick="_fotoPontoConfirmar()" style="flex:1;display:none;background:#16a34a;color:#fff;font-weight:700;justify-content:center">✓ Bater ponto</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <!-- ── MODAL: Justificativa de horário ── -->
 <div class="overlay" id="modalJustificativa" onclick="if(event.target===this)fecharJustificativa()">
   <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:480px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">
@@ -7398,7 +7368,7 @@
       // Botões de ação
       const acoes = document.getElementById('pontoAcoes');
       acoes.innerHTML = (data.proximas_acoes || []).map(a => `
-        <button class="btn" onclick="batePonto('${a.tipo}','${esc(a.label)}')" style="${_PONTO_BTN_ESTILO[a.tipo] || ''};font-weight:700;justify-content:center">
+        <button class="btn" onclick="batePonto('${a.tipo}')" style="${_PONTO_BTN_ESTILO[a.tipo] || ''};font-weight:700;justify-content:center">
           ${_PONTO_ICONES[a.tipo] || ''} ${esc(a.label)}
         </button>`).join('');
     } catch (e) {
@@ -7406,108 +7376,22 @@
     }
   }
 
-  // ─── Bater ponto COM FOTO obrigatória ───────────────────────────────────
-  let _pontoTipoPendente = null;
-  let _fotoPontoStream = null;
-  let _fotoPontoBlob = null;
-
-  function batePonto(tipo, label) {
-    _pontoTipoPendente = tipo;
-    _fotoPontoBlob = null;
-    document.getElementById('fotoPontoTitulo').textContent = 'Foto — ' + (label || 'ponto');
-    _fotoPontoMsg('', true);
-    document.getElementById('fotoPontoVideo').style.display = '';
-    document.getElementById('fotoPontoCanvas').style.display = 'none';
-    document.getElementById('fotoPontoFallback').style.display = 'none';
-    document.getElementById('fotoPontoBtnTirar').style.display = '';
-    document.getElementById('fotoPontoBtnRefazer').style.display = 'none';
-    document.getElementById('fotoPontoBtnConfirmar').style.display = 'none';
-    document.getElementById('modalFotoPonto').classList.add('open');
-    _iniciarCameraPonto();
-  }
-
-  async function _iniciarCameraPonto() {
-    const video = document.getElementById('fotoPontoVideo');
+  // ─── Bater ponto (direto, sem foto) ─────────────────────────────────────
+  async function batePonto(tipo) {
+    _msgPonto('', true);
     try {
-      _fotoPontoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
-      video.srcObject = _fotoPontoStream;
-    } catch (e) {
-      document.getElementById('fotoPontoVideo').style.display = 'none';
-      document.getElementById('fotoPontoFallback').style.display = 'block';
-      document.getElementById('fotoPontoBtnTirar').style.display = 'none';
-    }
-  }
-
-  function _pararCameraPonto() {
-    if (_fotoPontoStream) { _fotoPontoStream.getTracks().forEach(t => t.stop()); _fotoPontoStream = null; }
-  }
-
-  function _fotoPontoTirar() {
-    const video = document.getElementById('fotoPontoVideo');
-    const canvas = document.getElementById('fotoPontoCanvas');
-    const w = video.videoWidth || 640, h = video.videoHeight || 480;
-    canvas.width = w; canvas.height = h;
-    canvas.getContext('2d').drawImage(video, 0, 0, w, h);
-    canvas.toBlob(b => { _fotoPontoBlob = b; }, 'image/jpeg', 0.85);
-    _pararCameraPonto();
-    video.style.display = 'none';
-    canvas.style.display = 'block';
-    document.getElementById('fotoPontoBtnTirar').style.display = 'none';
-    document.getElementById('fotoPontoBtnRefazer').style.display = '';
-    document.getElementById('fotoPontoBtnConfirmar').style.display = '';
-  }
-
-  function _fotoPontoArquivo(ev) {
-    const f = ev.target.files && ev.target.files[0];
-    if (!f) return;
-    _fotoPontoBlob = f;
-    document.getElementById('fotoPontoBtnConfirmar').style.display = '';
-    _fotoPontoMsg('Foto selecionada ✓', true);
-  }
-
-  function _fotoPontoRefazer() {
-    _fotoPontoBlob = null;
-    document.getElementById('fotoPontoCanvas').style.display = 'none';
-    document.getElementById('fotoPontoVideo').style.display = '';
-    document.getElementById('fotoPontoBtnRefazer').style.display = 'none';
-    document.getElementById('fotoPontoBtnConfirmar').style.display = 'none';
-    document.getElementById('fotoPontoBtnTirar').style.display = '';
-    _fotoPontoMsg('', true);
-    _iniciarCameraPonto();
-  }
-
-  async function _fotoPontoConfirmar() {
-    if (!_fotoPontoBlob) { _fotoPontoMsg('Tire a foto primeiro.', false); return; }
-    const btn = document.getElementById('fotoPontoBtnConfirmar');
-    btn.disabled = true;
-    try {
-      const fd = new FormData();
-      fd.append('tipo', _pontoTipoPendente);
-      fd.append('foto', _fotoPontoBlob, 'ponto.jpg');
-      const r = await fetch('/api/ponto', { method: 'POST', body: fd });
+      const r = await fetch('/api/ponto', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo }),
+      });
       const data = await r.json();
-      if (!r.ok) { _fotoPontoMsg(data.detail || 'Não foi possível registrar.', false); btn.disabled = false; return; }
-      fecharFotoPonto();
+      if (!r.ok) { _msgPonto(data.detail || 'Não foi possível registrar.', false); return; }
       _msgPonto(`${data.label} registrado às ${data.hora} ✓`, true);
       await carregarPontoHoje();
       if (_pontoHistAberto) await carregarPontoHistorico();
     } catch (e) {
-      _fotoPontoMsg('Erro de conexão.', false);
+      _msgPonto('Erro de conexão.', false);
     }
-    btn.disabled = false;
-  }
-
-  function _fotoPontoMsg(t, ok) {
-    const m = document.getElementById('fotoPontoMsg');
-    if (!t) { m.style.display = 'none'; return; }
-    m.style.display = 'block'; m.textContent = t;
-    m.style.background = ok ? '#dcfce7' : '#fee2e2';
-    m.style.color = ok ? '#166534' : '#991b1b';
-  }
-
-  function fecharFotoPonto() {
-    _pararCameraPonto();
-    document.getElementById('modalFotoPonto').classList.remove('open');
   }
 
   // ─── Justificativa de horário (funcionária) ─────────────────────────────

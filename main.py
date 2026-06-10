@@ -3632,10 +3632,10 @@ def _tempo_ativo_intervalos(db, usuario_id, intervalos):
 
 
 @app.post("/api/ponto")
-async def bater_ponto(request: Request, tipo: str = Form(...), foto: UploadFile = File(...),
-                      db: Session = Depends(get_db),
+async def bater_ponto(request: Request, db: Session = Depends(get_db),
                       usuario: Usuario = Depends(obter_usuario_atual)):
-    tipo = (tipo or "").strip()
+    body = await request.json()
+    tipo = (body.get("tipo") or "").strip()
     if tipo not in _PONTO_LABELS:
         raise HTTPException(400, "Tipo de ponto inválido")
     hoje = _agora_br().date()
@@ -3643,16 +3643,7 @@ async def bater_ponto(request: Request, tipo: str = Form(...), foto: UploadFile 
     validos = _proximas_acoes_ponto(pontos)
     if tipo not in validos:
         raise HTTPException(400, "Ação não permitida agora.")
-    # Foto obrigatória — comprova presença no momento da batida
-    dados = await foto.read()
-    if not dados:
-        raise HTTPException(400, "É obrigatório tirar uma foto para bater o ponto.")
-    if len(dados) > 8 * 1024 * 1024:
-        raise HTTPException(400, "Foto muito grande (máx. 8 MB).")
-    foto_filename = f"{uuid.uuid4().hex}.jpg"
-    _guardar_blob(db, foto_filename, "imagem", dados, mime="image/jpeg", subdir="imagens")
-    reg = RegistroPonto(usuario_id=usuario.id, tipo=tipo, ip=_ip_da_requisicao(request),
-                        foto_filename=foto_filename)
+    reg = RegistroPonto(usuario_id=usuario.id, tipo=tipo, ip=_ip_da_requisicao(request))
     db.add(reg)
     db.commit()
     db.refresh(reg)
