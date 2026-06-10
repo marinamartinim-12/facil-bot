@@ -2570,20 +2570,14 @@ async def baixar_backup(admin: Usuario = Depends(requer_admin)):
                         background=BackgroundTask(os.remove, tmp_path))
 
 
-@app.get("/api/inbox")
-async def inbox(
-    db: Session = Depends(get_db),
-    usuario: Usuario = Depends(obter_usuario_atual),
-):
-    """Retorna TODAS as conversas com mensagens, ordenadas pela mais recente."""
-    # Busca todos os leads que têm pelo menos uma mensagem
+def _inbox_sync(db):
+    """Parte pesada do inbox (muitas consultas) — roda em thread p/ não travar o servidor."""
     leads_com_msg = (
         db.query(Lead)
         .filter(Lead.status != StatusLeadEnum.desqualificado)
         .order_by(Lead.atualizado_em.desc())
         .all()
     )
-
     resultado = []
     for l in leads_com_msg:
         ultima = (
@@ -2594,7 +2588,6 @@ async def inbox(
         )
         if not ultima:
             continue  # ignora leads sem nenhuma mensagem
-        import re
         conteudo_limpo = re.sub(r'^\[[^\]]+\]:\s*', '', ultima.conteudo)
         # Não lido (compartilhado): última msg é do cliente E chegou depois da última leitura
         nao_lido = (ultima.role == "user") and (l.lido_em is None or ultima.criado_em > l.lido_em)
@@ -2605,10 +2598,18 @@ async def inbox(
             "ultima_msg_ts": ultima.criado_em.timestamp() if ultima and ultima.criado_em else 0,
             "nao_lido": nao_lido,
         })
-
-    # Ordena pelo timestamp da última mensagem (mais recente primeiro)
     resultado.sort(key=lambda x: x.get("ultima_msg_ts", 0), reverse=True)
     return resultado
+
+
+@app.get("/api/inbox")
+async def inbox(
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Retorna TODAS as conversas com mensagens, ordenadas pela mais recente.
+    Roda em thread separada para NÃO travar o servidor (evita envios pendurados)."""
+    return await asyncio.to_thread(_inbox_sync, db)
 
 
 @app.post("/api/leads/{lead_id}/marcar-lida")
