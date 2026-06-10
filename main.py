@@ -457,6 +457,7 @@ async def startup():
     # Inicia tarefa de follow-up automático
     asyncio.create_task(_loop_followup())
     asyncio.create_task(_loop_ocultar_inativos())
+    asyncio.create_task(_loop_backup())   # backup automático diário no servidor
 
     print("✅ Fácil Financiamentos Bot v2 iniciado!")
     print(f"🗄️  Banco: {settings.DATABASE_URL}")
@@ -2522,6 +2523,113 @@ async def consultar_placa_debug(placa: str, db: Session = Depends(get_db),
         return {"status_http": r.status_code, "resposta": r.json()}
     except Exception as e:
         return {"erro": f"Falha ao consultar: {e}"}
+
+
+def _pasta_backups():
+    """Pasta de backups no MESMO disco do banco (volume persistente do Railway)."""
+    from models import engine
+    db_path = engine.url.database
+    if not db_path:
+        return None
+    pasta = os.path.join(os.path.dirname(db_path) or ".", "backups")
+    try:
+        os.makedirs(pasta, exist_ok=True)
+    except Exception:
+        return None
+    return pasta
+
+
+def _fazer_backup_servidor(manter: int = 7):
+    """Cria o backup do dia (compactado) no disco do servidor e mantém os últimos N dias."""
+    from models import engine
+    import sqlite3, gzip, shutil, glob
+    db_path = engine.url.database
+    if not db_path or not os.path.exists(db_path):
+        return None
+    pasta = _pasta_backups()
+    if not pasta:
+        return None
+    nome = f"backup_{_agora_br().strftime('%Y%m%d')}.db.gz"
+    destino = os.path.join(pasta, nome)
+    fd, tmp = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        src = sqlite3.connect(db_path)
+        dst = sqlite3.connect(tmp)
+        with dst:
+            src.backup(dst)   # snapshot consistente mesmo com o sistema rodando
+        src.close()
+        dst.close()
+        with open(tmp, "rb") as f_in, gzip.open(destino, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+    except Exception as e:
+        print(f"⚠️ Erro no backup automático: {e}")
+        return None
+    finally:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+    # Rotação: mantém só os últimos N (um por dia, pelo nome)
+    arquivos = sorted(glob.glob(os.path.join(pasta, "backup_*.db.gz")))
+    for velho in arquivos[:-manter]:
+        try:
+            os.remove(velho)
+        except Exception:
+            pass
+    print(f"💾 Backup automático: {nome} (mantendo {manter} dias)")
+    return destino
+
+
+async def _loop_backup():
+    """Gera um backup automático por dia (verifica a cada 12h)."""
+    await asyncio.sleep(90)   # logo após o startup
+    while True:
+        try:
+            await asyncio.to_thread(_fazer_backup_servidor)
+        except Exception as e:
+            print(f"⚠️ loop backup: {e}")
+        await asyncio.sleep(12 * 3600)
+
+
+@app.get("/api/admin/backups")
+async def listar_backups_servidor(admin: Usuario = Depends(requer_admin)):
+    """Lista os backups automáticos guardados no servidor. Admin only."""
+    import glob
+    pasta = _pasta_backups()
+    if not pasta:
+        return {"backups": []}
+    arqs = sorted(glob.glob(os.path.join(pasta, "backup_*.db.gz")), reverse=True)
+    out = []
+    for p in arqs:
+        try:
+            st = os.stat(p)
+            out.append({"arquivo": os.path.basename(p),
+                        "tamanho": _tamanho_legivel(st.st_size)})
+        except Exception:
+            pass
+    return {"backups": out}
+
+
+@app.post("/api/admin/backups/gerar")
+async def gerar_backup_agora(admin: Usuario = Depends(requer_admin)):
+    """Gera um backup automático na hora. Admin only."""
+    destino = await asyncio.to_thread(_fazer_backup_servidor)
+    if not destino:
+        raise HTTPException(500, "Não foi possível gerar o backup.")
+    return {"status": "ok", "arquivo": os.path.basename(destino)}
+
+
+@app.get("/api/admin/backups/{nome}")
+async def baixar_backup_servidor(nome: str, admin: Usuario = Depends(requer_admin)):
+    """Baixa um backup específico guardado no servidor. Admin only."""
+    if not re.match(r'^backup_\d{8}\.db\.gz$', nome):
+        raise HTTPException(404)
+    pasta = _pasta_backups()
+    p = os.path.join(pasta, nome) if pasta else None
+    if not p or not os.path.exists(p):
+        raise HTTPException(404, "Backup não encontrado")
+    return FileResponse(p, filename=nome, media_type="application/gzip")
 
 
 @app.get("/api/admin/backup")

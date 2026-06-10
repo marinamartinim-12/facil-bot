@@ -1018,6 +1018,16 @@
               Baixe uma cópia completa de tudo (conversas, contratos, <b>documentos anexados</b> e mídias) e guarde em local seguro (seu computador, Google Drive, pen drive). Recomendo fazer isso <b>toda semana</b> — é a sua garantia caso aconteça qualquer coisa com o número ou o servidor.
             </div>
             <a href="/api/admin/backup" download class="btn btn-sm" style="background:#065f46;color:#fff;text-decoration:none;padding:.45rem 1rem">⬇️ Baixar backup completo</a>
+
+            <!-- Backups automáticos no servidor -->
+            <div style="margin-top:1rem;padding-top:.8rem;border-top:1px solid #bbf7d0">
+              <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+                <div style="font-size:.85rem;font-weight:800;color:#065f46">💾 Backups automáticos (no servidor)</div>
+                <button onclick="gerarBackupServidor()" id="btnGerarBackup" class="btn btn-sm btn-outline" style="padding:.3rem .8rem">＋ Gerar agora</button>
+              </div>
+              <div style="font-size:.78rem;color:#166534;margin:.3rem 0 .6rem">O sistema guarda sozinho <b>1 backup por dia</b> (últimos 7 dias). Protege contra erro/exclusão. Ainda assim, baixe uma cópia pro seu computador de vez em quando.</div>
+              <div id="listaBackupsServidor" style="display:flex;flex-direction:column;gap:.3rem"><span style="color:#166534;font-size:.8rem">Carregando…</span></div>
+            </div>
           </div>
 
           <!-- Token API Placas -->
@@ -6060,6 +6070,40 @@
     const tk = (configData || []).find(c => c.chave === 'apiplacas_token');
     const inp = document.getElementById('cfgPlacasToken');
     if (inp) inp.value = tk?.valor || '';
+    carregarBackupsServidor();
+  }
+
+  async function carregarBackupsServidor() {
+    const box = document.getElementById('listaBackupsServidor');
+    if (!box) return;
+    try {
+      const r = await fetch('/api/admin/backups');
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      if (!d.backups || !d.backups.length) {
+        box.innerHTML = '<span style="color:#166534;font-size:.8rem">Nenhum backup automático ainda (o 1º é gerado logo após ligar o sistema).</span>';
+        return;
+      }
+      box.innerHTML = d.backups.map(b => {
+        const m = b.arquivo.match(/^backup_(\d{4})(\d{2})(\d{2})\.db\.gz$/);
+        const data = m ? `${m[3]}/${m[2]}/${m[1]}` : b.arquivo;
+        return `<div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;background:#fff;border:1px solid #bbf7d0;border-radius:7px;padding:.35rem .6rem">
+          <span style="font-size:.82rem;color:#065f46;font-weight:600">📅 ${data} <span style="color:#16a34a;font-weight:400">(${esc(b.tamanho)})</span></span>
+          <a href="/api/admin/backups/${esc(b.arquivo)}" download class="btn btn-sm btn-outline" style="padding:.2rem .6rem;font-size:.74rem">⬇️ Baixar</a>
+        </div>`;
+      }).join('');
+    } catch { box.innerHTML = '<span style="color:#991b1b;font-size:.8rem">Erro ao carregar a lista.</span>'; }
+  }
+
+  async function gerarBackupServidor() {
+    const btn = document.getElementById('btnGerarBackup');
+    btn.disabled = true; btn.textContent = 'Gerando…';
+    try {
+      const r = await fetch('/api/admin/backups/gerar', { method: 'POST' });
+      if (!r.ok) { alert('Não foi possível gerar o backup.'); }
+      await carregarBackupsServidor();
+    } catch { alert('Erro de conexão.'); }
+    btn.disabled = false; btn.textContent = '＋ Gerar agora';
   }
 
   async function salvarTokenPlacas() {
