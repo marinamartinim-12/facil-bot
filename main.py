@@ -322,6 +322,20 @@ async def _loop_ocultar_inativos():
 
 @app.on_event("startup")
 async def startup():
+    # ── LIMPEZA EMERGENCIAL: remove backups locais que encheram o disco ──
+    # (o backup automático foi removido; isso libera o espaço que ele ocupou)
+    try:
+        from models import engine as _eng
+        _dbp = _eng.url.database
+        if _dbp:
+            _bkp_dir = os.path.join(os.path.dirname(_dbp) or ".", "backups")
+            if os.path.isdir(_bkp_dir):
+                import shutil as _shutil
+                _shutil.rmtree(_bkp_dir, ignore_errors=True)
+                print(f"🧹 Backups locais removidos para liberar disco: {_bkp_dir}")
+    except Exception as e:
+        print(f"⚠️ limpeza de backups: {e}")
+
     # Garante que o diretório do banco existe (volume /data ou local)
     db_url = settings.DATABASE_URL
     if "sqlite" in db_url:
