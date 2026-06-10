@@ -83,8 +83,6 @@ class Usuario(Base):
     senha_hash = Column(String(200), nullable=False)
     role = Column(String(20), default=RoleEnum.funcionario)
     ativo = Column(Boolean, default=True)
-    data_admissao = Column(String(10), nullable=True)        # YYYY-MM-DD (p/ saldo de férias e banco de horas)
-    ferias_ajuste = Column(Integer, default=0)               # ajuste manual no saldo de férias (admin)
     criado_em = Column(DateTime, default=datetime.utcnow)
 
     leads_assumidos = relationship("Lead", back_populates="responsavel")
@@ -259,7 +257,7 @@ class SessaoUsuario(Base):
 
 
 class AusenciaFuncionaria(Base):
-    """Folgas, férias e afastamentos — com pedido da funcionária e aprovação do admin."""
+    """Folgas, férias e afastamentos programados — apenas controle visual."""
     __tablename__ = "ausencias_funcionaria"
 
     id          = Column(Integer, primary_key=True, index=True)
@@ -268,18 +266,9 @@ class AusenciaFuncionaria(Base):
     data_inicio = Column(String(10), nullable=False)   # YYYY-MM-DD
     data_fim    = Column(String(10), nullable=False)   # YYYY-MM-DD
     observacao  = Column(String(300), nullable=True)
-    # ── Pedido / aprovação ────────────────────────────────────────────────
-    status         = Column(String(20), default="aprovada")  # pendente | aprovada | rejeitada
-    solicitante_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)  # quem pediu
-    desconta_ferias = Column(Boolean, default=False)         # folga que desconta do saldo de férias
-    obs_admin      = Column(String(400), nullable=True)      # motivo da recusa
-    resolvido_por  = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
-    resolvido_em   = Column(DateTime, nullable=True)
     criado_em   = Column(DateTime, default=datetime.utcnow)
 
-    usuario     = relationship("Usuario", foreign_keys=[usuario_id])
-    solicitante = relationship("Usuario", foreign_keys=[solicitante_id])
-    resolvedor  = relationship("Usuario", foreign_keys=[resolvido_por])
+    usuario = relationship("Usuario")
 
 
 class RegistroPonto(Base):

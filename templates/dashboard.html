@@ -746,18 +746,6 @@
             </div>
           </div>
 
-          <!-- Férias & Folgas (visível a todos) -->
-          <div class="form-card" id="dashFeriasCard" style="padding:.85rem 1rem">
-            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.5rem">
-              <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted)">📅 Férias & Folgas</div>
-              <button onclick="abrirPedirAusencia()" class="btn btn-sm" style="background:#0d2b4e;color:#fff;padding:.3rem .8rem">➕ Pedir folga/férias</button>
-            </div>
-            <div id="dashFeriasSaldo" style="font-size:.82rem;margin-bottom:.5rem;color:var(--muted)"></div>
-            <div id="dashFeriasPendentes" style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.5rem"></div>
-            <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">Próximas e em andamento</div>
-            <div id="dashFeriasLista" style="display:flex;flex-direction:column;gap:.35rem"><span style="color:var(--muted);font-size:.82rem">Carregando…</span></div>
-          </div>
-
           <!-- Conversas paradas (esperando resposta agora) -->
           <div class="form-card" id="relParadasCard" style="padding:.85rem 1rem;border:1px solid #fecaca">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
@@ -1060,38 +1048,8 @@
       <!-- ═══════════ RH (admin) ═══════════ -->
       <div id="viewRh" style="display:none">
         <div style="margin-bottom:.8rem">
-          <p style="font-size:.85rem;color:var(--muted);margin:0">Gestão das funcionárias — férias, banco de horas, ponto, jornada/atividade e acessos.</p>
+          <p style="font-size:.85rem;color:var(--muted);margin:0">Gestão das funcionárias — ponto, jornada/atividade e acessos. As justificativas e correções de ponto aparecem no próprio card de Ponto.</p>
         </div>
-
-        <!-- Férias: saldos e admissão -->
-        <div class="rel-card" id="rhFeriasCard">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
-            <h3 style="margin:0">🏖️ Férias — saldos & admissão</h3>
-            <button onclick="carregarRHFerias()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
-          </div>
-          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .6rem">Defina a <b>data de admissão</b> (o saldo é calculado: 30 dias por ano). Ajuste manual se precisar.</p>
-          <div id="rhFeriasSaldos"><div style="text-align:center;padding:1rem;color:var(--muted)">Carregando…</div></div>
-          <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:.8rem 0 .35rem">Pedidos e lançamentos</div>
-          <div id="rhFeriasLista" style="display:flex;flex-direction:column;gap:.4rem"></div>
-        </div>
-
-        <!-- Banco de Horas -->
-        <div class="rel-card" id="rhBancoCard">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
-            <h3 style="margin:0">⏱️ Banco de Horas</h3>
-            <div style="display:flex;align-items:center;gap:.5rem">
-              <select id="rhBancoMeses" onchange="carregarBancoHoras()" style="border:1px solid var(--border);border-radius:8px;padding:.3rem .6rem;font-size:.82rem;outline:none">
-                <option value="3">3 meses</option>
-                <option value="6" selected>6 meses</option>
-                <option value="12">12 meses</option>
-              </select>
-              <button onclick="carregarBancoHoras()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
-            </div>
-          </div>
-          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .6rem">Horas trabalhadas × esperadas (Seg–Sex 8h, Sáb 4h). <b>+</b> = horas extras a compensar; <b>−</b> = horas a repor. ⚠️ = extras chegando no prazo de 6 meses.</p>
-          <div id="rhBancoBody"><div style="text-align:center;padding:1rem;color:var(--muted)">Carregando…</div></div>
-        </div>
-
         <div id="viewRHBody"></div>
       </div>
 
@@ -3690,201 +3648,10 @@
   function carregarRH() {
     if (currentUser?.role !== 'admin') return;
     _moverCardsRH();
-    carregarRHFerias();
-    carregarBancoHoras();
     carregarRelatorioPonto();
     carregarSessoes();
     _iniciarAutoRefreshSessoes();
     carregarIpCompartilhado();
-  }
-
-  // ═══════ RH: Férias / Folgas + Banco de Horas ═══════
-  function _renderAusencia(a, comAcoes) {
-    const tipos = { folga: '🟡 Folga', ferias: '🏖️ Férias', afastamento: '🩺 Afastamento' };
-    const cor = a.status === 'aprovada' ? '#16a34a' : (a.status === 'rejeitada' ? '#dc2626' : '#d97706');
-    const lab = a.status === 'aprovada' ? 'Aprovada' : (a.status === 'rejeitada' ? 'Rejeitada' : 'Pendente');
-    const desc = (a.tipo === 'folga' && a.desconta_ferias) ? ' · desconta férias' : '';
-    const podeAgir = comAcoes && a.status === 'pendente' && currentUser?.role === 'admin';
-    const acoes = podeAgir
-      ? `<div style="display:flex;gap:.4rem;margin-top:.3rem">
-           <button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:.2rem .6rem;font-size:.74rem" onclick="aprovarAusencia(${a.id})">✓ Aprovar</button>
-           <button class="btn btn-sm" style="background:#dc2626;color:#fff;padding:.2rem .6rem;font-size:.74rem" onclick="rejeitarAusencia(${a.id})">✕ Rejeitar</button>
-         </div>` : '';
-    const obs = (a.status === 'rejeitada' && a.obs_admin) ? `<div style="font-size:.72rem;color:#dc2626">Motivo: ${esc(a.obs_admin)}</div>` : '';
-    return `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:.5rem .65rem">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem">
-        <span style="font-size:.82rem;font-weight:600;color:#1e293b">${esc(a.funcionaria)} — ${tipos[a.tipo] || a.tipo}</span>
-        <span style="font-size:.68rem;font-weight:800;color:${cor}">${lab}</span>
-      </div>
-      <div style="font-size:.78rem;color:#475569">${esc(a.data_inicio_br)}–${esc(a.data_fim_br)} (${a.dias} dia${a.dias > 1 ? 's' : ''})${desc}</div>
-      ${a.observacao ? `<div style="font-size:.74rem;color:#64748b">${esc(a.observacao)}</div>` : ''}
-      ${obs}${acoes}
-    </div>`;
-  }
-
-  async function carregarFeriasDash() {
-    if (!document.getElementById('dashFeriasCard')) return;
-    try {
-      const rs = await fetch('/api/rh/saldos');
-      if (rs.ok) {
-        const saldos = await rs.json();
-        const meu = saldos.find(s => s.usuario_id === currentUser?.id);
-        const el = document.getElementById('dashFeriasSaldo');
-        el.innerHTML = meu
-          ? `Seu saldo de férias: <b style="color:#0d2b4e">${meu.saldo_disponivel} dia(s)</b>` + (meu.data_admissao ? '' : ' <span style="color:#d97706">(admissão não cadastrada)</span>')
-          : '';
-      }
-      const ra = await fetch('/api/rh/ausencias');
-      const aus = ra.ok ? await ra.json() : [];
-      const pendBox = document.getElementById('dashFeriasPendentes');
-      if (currentUser?.role === 'admin') {
-        const pend = aus.filter(a => a.status === 'pendente');
-        pendBox.innerHTML = pend.length
-          ? '<div style="font-size:.68rem;font-weight:800;color:#92400e;margin-bottom:.2rem">⚠️ Pedidos aguardando você</div>' + pend.map(a => _renderAusencia(a, true)).join('')
-          : '';
-      } else { pendBox.innerHTML = ''; }
-      const hojeIso = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-      const prox = aus.filter(a => a.status === 'aprovada' && a.data_fim >= hojeIso)
-        .sort((a, b) => a.data_inicio.localeCompare(b.data_inicio));
-      document.getElementById('dashFeriasLista').innerHTML = prox.length
-        ? prox.map(a => _renderAusencia(a, false)).join('')
-        : '<span style="color:var(--muted);font-size:.82rem">Ninguém de férias/folga no momento.</span>';
-    } catch {}
-  }
-
-  function abrirPedirAusencia() {
-    document.getElementById('paTipo').value = 'folga';
-    document.getElementById('paIni').value = '';
-    document.getElementById('paFim').value = '';
-    document.getElementById('paObs').value = '';
-    document.getElementById('paDesconta').checked = false;
-    document.getElementById('paDiasInfo').textContent = '';
-    _paMsg('', true);
-    const wrap = document.getElementById('paFuncWrap');
-    if (currentUser?.role === 'admin') {
-      wrap.style.display = 'flex';
-      fetch('/api/rh/saldos').then(r => r.json()).then(s => {
-        document.getElementById('paFunc').innerHTML = s.map(x => `<option value="${x.usuario_id}">${esc(x.funcionaria)}</option>`).join('');
-      }).catch(() => {});
-    } else { wrap.style.display = 'none'; }
-    _paAtualiza();
-    document.getElementById('modalPedirAusencia').classList.add('open');
-  }
-  function fecharPedirAusencia() { document.getElementById('modalPedirAusencia').classList.remove('open'); }
-  function _paMsg(t, ok) {
-    const m = document.getElementById('paMsg');
-    if (!t) { m.style.display = 'none'; return; }
-    m.style.display = 'block'; m.textContent = t;
-    m.style.background = ok ? '#dcfce7' : '#fee2e2'; m.style.color = ok ? '#166534' : '#991b1b';
-  }
-  function _paAtualiza() {
-    const tipo = document.getElementById('paTipo').value;
-    document.getElementById('paDescontaWrap').style.display = tipo === 'folga' ? 'block' : 'none';
-    const ini = document.getElementById('paIni').value, fim = document.getElementById('paFim').value;
-    const info = document.getElementById('paDiasInfo');
-    if (ini && fim && fim >= ini) {
-      const dias = Math.round((new Date(fim + 'T12:00:00') - new Date(ini + 'T12:00:00')) / 86400000) + 1;
-      info.textContent = `${dias} dia(s)`;
-    } else info.textContent = '';
-  }
-  async function enviarPedidoAusencia() {
-    const tipo = document.getElementById('paTipo').value;
-    const di = document.getElementById('paIni').value, df = document.getElementById('paFim').value;
-    if (!di || !df) { _paMsg('Escolha as datas.', false); return; }
-    if (df < di) { _paMsg('Data fim antes da início.', false); return; }
-    const body = { tipo, data_inicio: di, data_fim: df, observacao: document.getElementById('paObs').value.trim() };
-    if (tipo === 'folga') body.desconta_ferias = document.getElementById('paDesconta').checked;
-    const ehAdmin = currentUser?.role === 'admin';
-    if (ehAdmin) { const f = document.getElementById('paFunc').value; if (f) body.usuario_id = Number(f); }
-    const btn = document.getElementById('paBtn'); btn.disabled = true;
-    try {
-      const r = await fetch('/api/rh/ausencias', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      const d = await r.json();
-      if (!r.ok) { _paMsg(d.detail || 'Erro ao enviar.', false); btn.disabled = false; return; }
-      _paMsg((ehAdmin && body.usuario_id) ? 'Lançado! ✓' : 'Pedido enviado! Aguardando aprovação. ✓', true);
-      await carregarFeriasDash();
-      if (ehAdmin) carregarRHFerias();
-      setTimeout(fecharPedirAusencia, 900);
-    } catch { _paMsg('Erro de conexão.', false); }
-    btn.disabled = false;
-  }
-  async function aprovarAusencia(id) {
-    try {
-      const r = await fetch(`/api/rh/ausencias/${id}/aprovar`, { method: 'POST' });
-      if (!r.ok) { alert('Erro ao aprovar.'); return; }
-      await carregarFeriasDash(); carregarRHFerias();
-    } catch { alert('Erro de conexão.'); }
-  }
-  async function rejeitarAusencia(id) {
-    const obs = prompt('Motivo da recusa (opcional):');
-    if (obs === null) return;
-    try {
-      const r = await fetch(`/api/rh/ausencias/${id}/rejeitar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ obs }) });
-      if (!r.ok) { alert('Erro ao rejeitar.'); return; }
-      await carregarFeriasDash(); carregarRHFerias();
-    } catch { alert('Erro de conexão.'); }
-  }
-
-  async function carregarRHFerias() {
-    if (currentUser?.role !== 'admin' || !document.getElementById('rhFeriasCard')) return;
-    try {
-      const rs = await fetch('/api/rh/saldos');
-      const saldos = rs.ok ? await rs.json() : [];
-      document.getElementById('rhFeriasSaldos').innerHTML = `
-        <table class="rel-table">
-          <thead><tr><th>Funcionária</th><th>Admissão</th><th style="text-align:center">Saldo</th><th style="text-align:center">Ajuste</th><th></th></tr></thead>
-          <tbody>${saldos.map(s => `
-            <tr>
-              <td>${esc(s.funcionaria)}</td>
-              <td><input type="date" id="adm_${s.usuario_id}" value="${s.data_admissao || ''}" style="border:1px solid var(--border);border-radius:6px;padding:.2rem .4rem;font-size:.8rem"></td>
-              <td style="text-align:center;font-weight:800;color:${s.saldo_disponivel >= 0 ? '#0d2b4e' : '#dc2626'}">${s.saldo_disponivel}</td>
-              <td style="text-align:center"><input type="number" id="aju_${s.usuario_id}" value="${s.ajuste || 0}" style="width:54px;border:1px solid var(--border);border-radius:6px;padding:.2rem .3rem;font-size:.8rem;text-align:center"></td>
-              <td><button class="btn btn-sm" style="background:#0d2b4e;color:#fff;padding:.2rem .55rem;font-size:.72rem" onclick="salvarRHUsuario(${s.usuario_id})">💾</button></td>
-            </tr>`).join('')}</tbody>
-        </table>`;
-    } catch {}
-    try {
-      const ra = await fetch('/api/rh/ausencias');
-      const aus = ra.ok ? await ra.json() : [];
-      document.getElementById('rhFeriasLista').innerHTML = aus.length
-        ? aus.map(a => _renderAusencia(a, true)).join('')
-        : '<span style="color:var(--muted);font-size:.82rem">Nenhum registro.</span>';
-    } catch {}
-  }
-  async function salvarRHUsuario(uid) {
-    const data_admissao = document.getElementById('adm_' + uid).value;
-    const ferias_ajuste = document.getElementById('aju_' + uid).value;
-    try {
-      const r = await fetch(`/api/rh/usuario/${uid}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data_admissao, ferias_ajuste }) });
-      if (!r.ok) { alert('Erro ao salvar.'); return; }
-      await carregarRHFerias(); carregarFeriasDash();
-    } catch { alert('Erro de conexão.'); }
-  }
-
-  async function carregarBancoHoras() {
-    if (currentUser?.role !== 'admin' || !document.getElementById('rhBancoCard')) return;
-    const meses = document.getElementById('rhBancoMeses')?.value || 6;
-    const body = document.getElementById('rhBancoBody');
-    body.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--muted)">Carregando…</div>';
-    try {
-      const r = await fetch('/api/rh/banco-horas?meses=' + meses);
-      if (!r.ok) throw new Error();
-      const d = await r.json();
-      if (!d.funcionarias || !d.funcionarias.length) { body.innerHTML = '<span style="color:var(--muted);font-size:.82rem">Sem dados.</span>'; return; }
-      body.innerHTML = `<div style="font-size:.74rem;color:var(--muted);margin-bottom:.4rem">Período: ${esc(d.desde)} a ${esc(d.ate)}</div>` +
-        d.funcionarias.map(f => {
-          const cor = f.saldo_s > 0 ? '#15803d' : (f.saldo_s < 0 ? '#b91c1c' : '#475569');
-          const mesesTxt = (f.por_mes || []).map(m => `${esc(m.mes)}: ${esc(m.saldo)}`).join(' · ');
-          return `<div style="border:1px solid ${f.alerta_6m ? '#fca5a5' : '#e2e8f0'};background:${f.alerta_6m ? '#fef2f2' : '#fff'};border-radius:8px;padding:.5rem .65rem;margin-bottom:.4rem">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem">
-              <span style="font-weight:700;color:#1e293b">${f.alerta_6m ? '⚠️ ' : ''}${esc(f.funcionaria)}</span>
-              <span style="font-weight:800;color:${cor}">${esc(f.saldo)}</span>
-            </div>
-            ${mesesTxt ? `<div style="font-size:.72rem;color:#64748b;margin-top:.2rem">${mesesTxt}</div>` : ''}
-            ${f.alerta_6m ? '<div style="font-size:.72rem;color:#dc2626;font-weight:600">Horas extras chegando no prazo de 6 meses — compense em breve.</div>' : ''}
-          </div>`;
-        }).join('');
-    } catch { body.innerHTML = '<span style="color:#991b1b;font-size:.82rem">Erro ao carregar.</span>'; }
   }
 
   let _paradasInterval = null;
@@ -5112,7 +4879,6 @@
     carregarConversasParadas();
     _iniciarAutoRefreshParadas();
     carregarOnline();
-    carregarFeriasDash();
   }
 
   async function carregarOnline() {
@@ -7379,57 +7145,6 @@
       <div>
         <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:.4rem 0 .35rem">Minhas justificativas</div>
         <div id="justMinhas" style="display:flex;flex-direction:column;gap:.4rem"></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ── MODAL: Pedir folga / férias ── -->
-<div class="overlay" id="modalPedirAusencia" onclick="if(event.target===this)fecharPedirAusencia()">
-  <div style="background:#fff;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.28);width:100%;max-width:470px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">
-    <div class="modal-hd">
-      <span style="font-size:1.15rem">📅</span>
-      <h3>Pedir folga / férias</h3>
-      <button class="modal-close" onclick="fecharPedirAusencia()">×</button>
-    </div>
-    <div style="padding:1.1rem 1.4rem;display:flex;flex-direction:column;gap:.75rem;overflow-y:auto">
-      <div id="paFuncWrap" style="display:none;flex-direction:column;gap:.25rem">
-        <label style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Funcionária</label>
-        <select id="paFunc" style="border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none"></select>
-        <span style="font-size:.7rem;color:var(--muted)">Como admin, o lançamento já entra aprovado.</span>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:.25rem">
-        <label style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Tipo</label>
-        <select id="paTipo" onchange="_paAtualiza()" style="border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none">
-          <option value="folga">Folga</option>
-          <option value="ferias">Férias</option>
-          <option value="afastamento">Afastamento</option>
-        </select>
-      </div>
-      <div style="display:flex;gap:.6rem">
-        <div style="flex:1;display:flex;flex-direction:column;gap:.25rem">
-          <label style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Início</label>
-          <input id="paIni" type="date" onchange="_paAtualiza()" style="border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none">
-        </div>
-        <div style="flex:1;display:flex;flex-direction:column;gap:.25rem">
-          <label style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Fim</label>
-          <input id="paFim" type="date" onchange="_paAtualiza()" style="border:1px solid var(--border);border-radius:8px;padding:.5rem;font-size:.9rem;outline:none">
-        </div>
-      </div>
-      <div id="paDiasInfo" style="font-size:.78rem;color:#0d2b4e;font-weight:600"></div>
-      <div id="paDescontaWrap" style="display:none">
-        <label style="display:flex;align-items:center;gap:.45rem;font-size:.82rem;color:#475569;cursor:pointer">
-          <input id="paDesconta" type="checkbox" style="width:16px;height:16px"> Descontar esta folga do saldo de férias
-        </label>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:.25rem">
-        <label style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Motivo (opcional)</label>
-        <textarea id="paObs" rows="2" placeholder="Ex: viagem em família" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:.6rem;font-size:.88rem;outline:none;resize:vertical"></textarea>
-      </div>
-      <div id="paMsg" style="display:none;padding:.5rem .8rem;border-radius:8px;font-size:.82rem;font-weight:600;text-align:center"></div>
-      <div style="display:flex;justify-content:flex-end;gap:.5rem">
-        <button class="btn btn-sm btn-outline" onclick="fecharPedirAusencia()">Cancelar</button>
-        <button class="btn btn-sm" id="paBtn" onclick="enviarPedidoAusencia()" style="background:#0d2b4e;color:#fff;font-weight:700">Enviar pedido</button>
       </div>
     </div>
   </div>
