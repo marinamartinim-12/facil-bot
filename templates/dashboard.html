@@ -6469,6 +6469,11 @@
          </div>`
       : `<button class="btn btn-sm btn-outline" onclick="renderDadosLead(window._modalLeadData,true)" style="margin-top:.5rem;width:100%">✏️ Editar dados</button>`;
 
+    // Origem — se veio de parceiro, mostra o nome clicável (abre os dados do parceiro)
+    const origemHtml = (lead.parceiro_id)
+      ? `🤝 Parceiro: <a href="#" onclick="event.preventDefault();abrirModalParceiro(${lead.parceiro_id}, false)" style="color:var(--navy);font-weight:700">${escHtml(lead.parceiro_nome || 'ver parceiro')}</a> <span style="font-size:.7rem;color:var(--muted)">— clique para ver os dados</span>`
+      : origemLabel(lead.origem, lead.origem_detalhe);
+
     document.getElementById('modalDados').innerHTML = `
       <div class="data-item"><label>Nome</label>${inputNome}</div>
       <div class="data-item"><label>Telefone</label><a href="#" onclick="event.preventDefault();closeModal();showView('atendimento');setTimeout(()=>{ const l=inboxLeads.find(x=>x.id===${lead.id}); if(l)abrirChat(l.id); },300);" title="Abrir conversa no sistema" style="color:var(--navy);font-weight:600;text-decoration:none;display:flex;align-items:center;gap:4px">${escHtml(lead.telefone||'—')} <span style="font-size:.8rem">💬</span></a></div>
@@ -6481,6 +6486,7 @@
       <div class="data-item"><label>Renda</label>${inputRenda}</div>
       <div class="data-item full"><label>CNH</label>${inputCnh}</div>
       <div class="data-item"><label>Responsável</label><span>${lead.responsavel ? escHtml(lead.responsavel.nome) : '—'}</span></div>
+      <div class="data-item full"><label>Origem</label><span>${origemHtml}</span></div>
       <div class="data-item"><label>Cadastrado</label><span>${escHtml(lead.criado_em||'—')}</span></div>
       ${lead.assumido_em ? `<div class="data-item"><label>Assumido em</label><span>${escHtml(lead.assumido_em)}</span></div>` : ''}
       ${reqBlock}
