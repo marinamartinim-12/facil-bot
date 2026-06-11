@@ -284,6 +284,9 @@
     .badge-perdido { background: #fee2e2; color: #991b1b; }
     .badge-desqualificado { background: #f3f4f6; color: #6b7280; }
     .badge-parceiro { background: #e0f2fe; color: #075985; }
+    /* Parceiro em modo só leitura (aberto a partir do lead) */
+    #modalParceiro.ro input, #modalParceiro.ro select, #modalParceiro.ro textarea { pointer-events: none; background: #f1f5f9; color: #475569; }
+    #modalParceiro.ro button:not(.modal-close) { display: none !important; }
     .card-time { font-size: .7rem; color: var(--muted); }
     .card-actions { display: flex; gap: .3rem; margin-top: .5rem; flex-wrap: wrap; }
     .card-resp { font-size: .72rem; color: var(--muted); margin-top: .35rem; }
@@ -3372,13 +3375,15 @@
       </div>`).join('');
   }
 
-  async function abrirModalParceiro(id, retornarParaLead = false) {
+  async function abrirModalParceiro(id, retornarParaLead = false, somenteLeitura = false) {
     _parceiroEditId = id;
     _parceiroRetornarNovoLead = retornarParaLead;
     _contatosTemp = [];
     _telefonesExtras = [];
     document.getElementById('parceiroMsg').style.display = 'none';
-    document.getElementById('parceiroModalTitulo').textContent = id ? 'Editar Parceiro' : 'Novo Parceiro';
+    document.getElementById('modalParceiro').classList.toggle('ro', !!somenteLeitura);
+    document.getElementById('parceiroModalTitulo').textContent =
+      somenteLeitura ? 'Dados do Parceiro' : (id ? 'Editar Parceiro' : 'Novo Parceiro');
 
     // Carrega lista de usuários ativos para o select de operadora (endpoint acessível a todas)
     try {
@@ -6471,7 +6476,7 @@
 
     // Origem — se veio de parceiro, mostra o nome clicável (abre os dados do parceiro)
     const origemHtml = (lead.parceiro_id)
-      ? `🤝 Parceiro: <a href="#" onclick="event.preventDefault();abrirModalParceiro(${lead.parceiro_id}, false)" style="color:var(--navy);font-weight:700">${escHtml(lead.parceiro_nome || 'ver parceiro')}</a> <span style="font-size:.7rem;color:var(--muted)">— clique para ver os dados</span>`
+      ? `🤝 Parceiro: <a href="#" onclick="event.preventDefault();abrirModalParceiro(${lead.parceiro_id}, false, true)" style="color:var(--navy);font-weight:700">${escHtml(lead.parceiro_nome || 'ver parceiro')}</a> <span style="font-size:.7rem;color:var(--muted)">— clique para ver os dados</span>`
       : origemLabel(lead.origem, lead.origem_detalhe);
 
     document.getElementById('modalDados').innerHTML = `
