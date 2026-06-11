@@ -2570,6 +2570,72 @@ async def baixar_backup(admin: Usuario = Depends(requer_admin)):
                         background=BackgroundTask(os.remove, tmp_path))
 
 
+def _migrar_para_postgres_sync():
+    """Copia TODOS os dados do banco atual para o PostgreSQL em POSTGRES_URL.
+    NÃO mexe no banco atual (só lê). Recria o schema no Postgres e copia tabela a tabela."""
+    pg_url = (os.environ.get("POSTGRES_URL") or "").strip()
+    if not pg_url:
+        raise HTTPException(400, "Defina a variável POSTGRES_URL no Railway antes (referência ao Postgres).")
+    if pg_url.startswith("postgres://"):
+        pg_url = pg_url.replace("postgres://", "postgresql://", 1)
+    if not pg_url.startswith("postgresql"):
+        raise HTTPException(400, "POSTGRES_URL inválida.")
+
+    from sqlalchemy import create_engine as _ce, text as _text, Boolean as _Bool
+    from models import Base, engine as src_engine
+
+    pg_engine = _ce(pg_url)
+    # Schema limpo no Postgres (idempotente: pode rodar de novo sem problema)
+    Base.metadata.drop_all(pg_engine)
+    Base.metadata.create_all(pg_engine)
+
+    resultado = {}
+    src = src_engine.connect()
+    dst = pg_engine.connect()
+    try:
+        for table in Base.metadata.sorted_tables:   # ordem respeita as chaves estrangeiras
+            bool_cols = [c.name for c in table.columns if isinstance(c.type, _Bool)]
+            total = 0
+            batch = []
+            for row in src.execute(table.select()):
+                d = dict(row._mapping)
+                for bc in bool_cols:               # SQLite guarda 0/1; Postgres precisa de bool
+                    if d.get(bc) is not None:
+                        d[bc] = bool(d[bc])
+                batch.append(d)
+                if len(batch) >= 200:
+                    dst.execute(table.insert(), batch)
+                    total += len(batch); batch = []
+            if batch:
+                dst.execute(table.insert(), batch)
+                total += len(batch)
+            dst.commit()
+            # Reseta a sequência do id (auto-incremento) p/ o próximo valor correto
+            try:
+                dst.execute(_text(
+                    f"SELECT setval(pg_get_serial_sequence('{table.name}', 'id'), "
+                    f"GREATEST((SELECT COALESCE(MAX(id), 1) FROM {table.name}), 1))"
+                ))
+                dst.commit()
+            except Exception:
+                dst.rollback()
+            resultado[table.name] = total
+    finally:
+        src.close()
+        dst.close()
+        pg_engine.dispose()
+    return resultado
+
+
+@app.get("/api/admin/migrar-postgres")
+async def migrar_postgres(admin: Usuario = Depends(requer_admin)):
+    """Migra os dados para o PostgreSQL (POSTGRES_URL). Não altera o banco atual. Admin only."""
+    copiado = await asyncio.to_thread(_migrar_para_postgres_sync)
+    return JSONResponse({"status": "ok", "copiado": copiado,
+                         "total_tabelas": len(copiado),
+                         "total_linhas": sum(copiado.values())})
+
+
 def _inbox_sync(db):
     """Parte pesada do inbox (muitas consultas) — roda em thread p/ não travar o servidor."""
     leads_com_msg = (
