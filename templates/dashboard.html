@@ -5573,7 +5573,7 @@
   // Inicia polling automático da lista de conversas
   function iniciarPollingInbox() {
     if (inboxPollingInterval) clearInterval(inboxPollingInterval);
-    inboxPollingInterval = setInterval(carregarInbox, 5000);
+    inboxPollingInterval = setInterval(carregarInbox, 12000);  // 12s: alivia o servidor
   }
 
   function renderInboxList() {
@@ -5646,7 +5646,7 @@
     renderInboxList();
     await carregarMensagensChat(true); // sempre vai pro fim na abertura
     if (chatPollingInterval) clearInterval(chatPollingInterval);
-    chatPollingInterval = setInterval(carregarMensagensChat, 5000);
+    chatPollingInterval = setInterval(carregarMensagensChat, 8000);  // 8s: alivia o servidor
   }
 
   function verDadosChat() {
