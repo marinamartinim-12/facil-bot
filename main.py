@@ -2581,18 +2581,32 @@ def _migrar_para_postgres_sync():
     if not pg_url.startswith("postgresql"):
         raise HTTPException(400, "POSTGRES_URL inválida.")
 
-    from sqlalchemy import create_engine as _ce, text as _text, Boolean as _Bool
+    from sqlalchemy import create_engine as _ce, text as _text, Boolean as _Bool, String as _Str
     from models import Base, engine as src_engine
 
     pg_engine = _ce(pg_url)
-    # Schema limpo no Postgres (idempotente: pode rodar de novo sem problema)
-    Base.metadata.drop_all(pg_engine)
-    Base.metadata.create_all(pg_engine)
+
+    # O SQLite NÃO respeita limites de VARCHAR, então há dados maiores que o tipo declarado
+    # (ex.: telefone de GRUPO do WhatsApp "...@g.us" tem >20 chars). O Postgres recusa isso.
+    # Solução: criar o schema no Postgres com os VARCHAR sem limite (ilimitado) e restaurar
+    # os limites originais no fim — assim o modelo do app continua igual.
+    _orig_lens = []
+    for _t in Base.metadata.sorted_tables:
+        for _c in _t.columns:
+            if isinstance(_c.type, _Str) and getattr(_c.type, "length", None) is not None:
+                _orig_lens.append((_c, _c.type.length))
+                _c.type.length = None
 
     resultado = {}
-    src = src_engine.connect()
-    dst = pg_engine.connect()
+    src = None
+    dst = None
     try:
+        # Schema limpo no Postgres (idempotente: pode rodar de novo sem problema)
+        Base.metadata.drop_all(pg_engine)
+        Base.metadata.create_all(pg_engine)
+
+        src = src_engine.connect()
+        dst = pg_engine.connect()
         for table in Base.metadata.sorted_tables:   # ordem respeita as chaves estrangeiras
             bool_cols = [c.name for c in table.columns if isinstance(c.type, _Bool)]
             total = 0
@@ -2621,9 +2635,13 @@ def _migrar_para_postgres_sync():
                 dst.rollback()
             resultado[table.name] = total
     finally:
-        src.close()
-        dst.close()
+        if src is not None:
+            src.close()
+        if dst is not None:
+            dst.close()
         pg_engine.dispose()
+        for _c, _ln in _orig_lens:      # restaura os limites originais do modelo
+            _c.type.length = _ln
     return resultado
 
 
