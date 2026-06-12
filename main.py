@@ -2584,6 +2584,13 @@ def _migrar_para_postgres_sync():
     from sqlalchemy import create_engine as _ce, text as _text, Boolean as _Bool, String as _Str
     from models import Base, engine as src_engine
 
+    # TRAVA DE SEGURANÇA: só migra de um SQLite (origem) para o Postgres (destino).
+    # Depois da virada de chave o app JÁ roda no Postgres — rodar de novo apagaria tudo
+    # (drop_all no destino + copiar da origem que virou o próprio destino vazio).
+    if "sqlite" not in str(src_engine.url):
+        raise HTTPException(400, "Migração bloqueada: o app já está rodando no PostgreSQL. "
+                                 "Rodar agora apagaria os dados (origem = destino). Migração já foi concluída.")
+
     pg_engine = _ce(pg_url)
 
     # O SQLite NÃO respeita limites de VARCHAR, então há dados maiores que o tipo declarado
