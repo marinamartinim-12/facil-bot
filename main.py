@@ -2607,6 +2607,14 @@ def _migrar_para_postgres_sync():
 
         src = src_engine.connect()
         dst = pg_engine.connect()
+        # O SQLite NÃO valida chaves estrangeiras, então existem registros órfãos
+        # (ex.: um contrato com lead_id de um lead já apagado). O Postgres valida e recusa.
+        # Desliga a validação de FK nesta sessão p/ copiar os dados como estão hoje no SQLite.
+        try:
+            dst.execute(_text("SET session_replication_role = 'replica'"))
+            dst.commit()
+        except Exception:
+            dst.rollback()
         for table in Base.metadata.sorted_tables:   # ordem respeita as chaves estrangeiras
             bool_cols = [c.name for c in table.columns if isinstance(c.type, _Bool)]
             total = 0
