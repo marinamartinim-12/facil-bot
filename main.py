@@ -2630,7 +2630,18 @@ def _migrar_para_postgres_sync():
 @app.get("/api/admin/migrar-postgres")
 async def migrar_postgres(admin: Usuario = Depends(requer_admin)):
     """Migra os dados para o PostgreSQL (POSTGRES_URL). Não altera o banco atual. Admin only."""
-    copiado = await asyncio.to_thread(_migrar_para_postgres_sync)
+    try:
+        copiado = await asyncio.to_thread(_migrar_para_postgres_sync)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback as _tb
+        return JSONResponse(status_code=500, content={
+            "status": "erro",
+            "erro": str(e),
+            "tipo": type(e).__name__,
+            "trace": _tb.format_exc()[-2500:],
+        })
     return JSONResponse({"status": "ok", "copiado": copiado,
                          "total_tabelas": len(copiado),
                          "total_linhas": sum(copiado.values())})
