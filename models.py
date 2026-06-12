@@ -11,6 +11,9 @@ settings = get_settings()
 
 def _resolver_database_url() -> str:
     url = settings.DATABASE_URL
+    # Railway às vezes entrega "postgres://"; o SQLAlchemy exige "postgresql://"
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
     if "sqlite" in url:
         # Garante que o diretório existe
         caminho = url.replace("sqlite:///", "").lstrip("/")
@@ -27,12 +30,20 @@ def _resolver_database_url() -> str:
     return url
 
 _DATABASE_URL = _resolver_database_url()
-print(f"🗄️  DATABASE_URL resolvida: {_DATABASE_URL}")
+_IS_SQLITE = "sqlite" in _DATABASE_URL
+print(f"🗄️  DATABASE_URL resolvida: {_DATABASE_URL.split('@')[-1] if not _IS_SQLITE else _DATABASE_URL}")
 
-engine = create_engine(
-    _DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in _DATABASE_URL else {},
-)
+if _IS_SQLITE:
+    engine = create_engine(_DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    # PostgreSQL: pool com pre-ping (evita erros de conexão caída pelo proxy do Railway)
+    engine = create_engine(
+        _DATABASE_URL,
+        pool_pre_ping=True,
+        pool_recycle=1800,   # recicla conexões a cada 30min
+        pool_size=10,
+        max_overflow=20,
+    )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
