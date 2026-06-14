@@ -4614,6 +4614,51 @@ async def relatorios(db: Session = Depends(get_db), admin: Usuario = Depends(req
     }
 
 
+@app.get("/api/relatorio/produtividade")
+async def relatorio_produtividade(db: Session = Depends(get_db),
+                                  admin: Usuario = Depends(requer_admin)):
+    """Por operadora (responsável pelo lead): quantos dos leads dela JÁ TÊM e quantos
+    AINDA NÃO TÊM observação e agendamento (follow-up manual). Conta individualmente."""
+    _ign = Lead.ignorar_relatorios.isnot(True)
+    # Leads que entram em relatório: (id, responsável, observações)
+    leads = db.query(Lead.id, Lead.atribuido_para, Lead.observacoes).filter(_ign).all()
+    # IDs de leads com ao menos 1 agendamento (= follow-up inserido pela operadora)
+    com_agendamento = {lid for (lid,) in db.query(Agendamento.lead_id).distinct().all()}
+    # Operadoras (funcionárias) — inclui inativas só se tiverem leads
+    operadoras = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario).all()
+
+    stats = {u.id: {"id": u.id, "nome": u.nome, "_ativo": bool(u.ativo), "total": 0,
+                    "com_obs": 0, "sem_obs": 0, "com_followup": 0, "sem_followup": 0}
+             for u in operadoras}
+
+    for lid, resp, obs in leads:
+        s = stats.get(resp)
+        if s is None:
+            continue   # lead sem responsável (ou de admin/usuário fora da lista) → não conta
+        s["total"] += 1
+        if len(_parse_observacoes(obs)) > 0:
+            s["com_obs"] += 1
+        else:
+            s["sem_obs"] += 1
+        if lid in com_agendamento:
+            s["com_followup"] += 1
+        else:
+            s["sem_followup"] += 1
+
+    # Mostra operadoras ativas (mesmo com 0) e inativas só se tiverem leads
+    lista = [s for s in stats.values() if s["_ativo"] or s["total"] > 0]
+    for s in lista:
+        s.pop("_ativo", None)
+    lista.sort(key=lambda x: x["nome"].lower())
+
+    totais = {"total": 0, "com_obs": 0, "sem_obs": 0, "com_followup": 0, "sem_followup": 0}
+    for s in lista:
+        for k in totais:
+            totais[k] += s[k]
+
+    return {"operadoras": lista, "totais": totais}
+
+
 @app.get("/api/relatorio/parceiros")
 async def relatorio_parceiros(
     db: Session = Depends(get_db),

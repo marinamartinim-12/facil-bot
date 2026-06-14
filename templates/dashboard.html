@@ -1109,6 +1109,32 @@
           </table>
         </div>
 
+        <!-- ── OBSERVAÇÕES & FOLLOW-UPS POR OPERADORA (admin only) ── -->
+        <div class="rel-card admin-only" id="relProdutividadeCard">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
+            <h3 style="margin:0">📝 Observações & Follow-ups por operadora</h3>
+            <button onclick="carregarRelatorioProdutividade()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
+          </div>
+          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .75rem">Para cada operadora, quantos dos leads atribuídos a ela já têm <strong>observação</strong> e quantos têm <strong>agendamento (follow-up)</strong> — e quantos ainda não têm.</p>
+          <div style="overflow-x:auto">
+            <table class="rel-table" style="min-width:660px">
+              <thead>
+                <tr>
+                  <th>Operadora</th>
+                  <th>Leads</th>
+                  <th>Com obs.</th>
+                  <th>Sem obs.</th>
+                  <th>Com follow-up</th>
+                  <th>Sem follow-up</th>
+                </tr>
+              </thead>
+              <tbody id="relProdutividadeBody">
+                <tr><td colspan="6" style="text-align:center;padding:1rem;color:var(--muted)">Carregando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- ── PERFIL PARA ANÚNCIOS ── -->
         <div class="rel-card" id="relPerfilCard">
           <h3>📊 Perfil dos Clientes — Dados para Anúncios</h3>
@@ -3671,12 +3697,52 @@
         <tr><td><span class="badge badge-refinanciamento">Refinanciamento</span></td><td><strong>${m.refinanciamento}</strong></td></tr>
       `;
     } catch {}
+    await carregarRelatorioProdutividade();
     await carregarRelatorioParceiros();
     await carregarRelatorioContratosMes();
     await carregarRelatorioPerfil();
     await carregarTempoResposta();
     await carregarVolumeApi();
     await carregarLeadsCalendario();
+  }
+
+  async function carregarRelatorioProdutividade() {
+    const body = document.getElementById('relProdutividadeBody');
+    if (!body) return;
+    try {
+      const r = await fetch('/api/relatorio/produtividade');
+      if (!r.ok) { body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:1rem;color:var(--muted)">Sem dados.</td></tr>'; return; }
+      const d = await r.json();
+      const ops = d.operadoras || [];
+      if (!ops.length) {
+        body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:1rem;color:var(--muted)">Nenhuma operadora com leads.</td></tr>';
+        return;
+      }
+      const pct = (n, tot) => tot > 0 ? Math.round(n / tot * 100) : 0;
+      const corSem = (n) => n > 0 ? '#dc2626' : '#94a3b8';
+      let html = ops.map(o => `
+        <tr>
+          <td><strong>${escHtml(o.nome)}</strong></td>
+          <td>${o.total}</td>
+          <td style="color:#16a34a;font-weight:700">${o.com_obs} <span style="color:var(--muted);font-weight:400">(${pct(o.com_obs, o.total)}%)</span></td>
+          <td style="color:${corSem(o.sem_obs)};font-weight:700">${o.sem_obs}</td>
+          <td style="color:#16a34a;font-weight:700">${o.com_followup} <span style="color:var(--muted);font-weight:400">(${pct(o.com_followup, o.total)}%)</span></td>
+          <td style="color:${corSem(o.sem_followup)};font-weight:700">${o.sem_followup}</td>
+        </tr>`).join('');
+      const t = d.totais || {};
+      html += `
+        <tr style="border-top:2px solid var(--border);font-weight:700;background:#f8fafc">
+          <td>Total</td>
+          <td>${t.total || 0}</td>
+          <td style="color:#16a34a">${t.com_obs || 0}</td>
+          <td style="color:${corSem(t.sem_obs || 0)}">${t.sem_obs || 0}</td>
+          <td style="color:#16a34a">${t.com_followup || 0}</td>
+          <td style="color:${corSem(t.sem_followup || 0)}">${t.sem_followup || 0}</td>
+        </tr>`;
+      body.innerHTML = html;
+    } catch {
+      body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:1rem;color:#dc2626">Erro ao carregar.</td></tr>';
+    }
   }
 
   // ═══════ RH (Ponto, Atividade, Acessos) ═══════

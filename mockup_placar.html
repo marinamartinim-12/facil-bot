@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Fila Rotativa</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; padding: 2rem; }
+
+  .page-title { font-size: 1.1rem; font-weight: 800; color: #0d2b4e; margin-bottom: 1.5rem; }
+  .opcao { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08); padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+  .opcao-label { font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; color: #94a3b8; margin-bottom: 1rem; }
+  .context-note { font-size: .75rem; color: #94a3b8; margin-top: .75rem; font-style: italic; }
+
+  /* ── OPÇÃO A — Barra no topo do funil ── */
+  .fila-barra {
+    display: flex; align-items: center; gap: .5rem;
+    background: #0d2b4e; border-radius: 10px; padding: .55rem 1rem;
+    flex-wrap: wrap;
+  }
+  .fila-titulo { font-size: .7rem; font-weight: 700; color: #64748b; white-space: nowrap; margin-right: .25rem; }
+  .fila-item {
+    display: flex; align-items: center; gap: .35rem;
+    padding: .3rem .7rem; border-radius: 20px;
+    font-size: .78rem; font-weight: 700;
+    background: #1e3f6b; color: #94a3b8;
+  }
+  .fila-item.proxima {
+    background: #22c55e; color: #fff;
+  }
+  .fila-item.segunda { background: #1e4a7a; color: #cbd5e1; }
+  .fila-seta { color: #475569; font-size: .7rem; }
+
+  /* ── OPÇÃO B — Widget lateral no funil ── */
+  .widget {
+    width: 200px; background: #fff;
+    border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.1);
+    overflow: hidden;
+  }
+  .widget-header {
+    background: #0d2b4e; padding: .5rem .85rem;
+    font-size: .7rem; font-weight: 700; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: .08em;
+  }
+  .widget-body { padding: .5rem; }
+  .widget-row {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .45rem .5rem; border-radius: 8px;
+    margin-bottom: .2rem;
+  }
+  .widget-row.proxima { background: #f0fdf4; }
+  .widget-row.segunda { background: #f8fafc; }
+  .widget-row.terceira { background: #f8fafc; opacity: .6; }
+  .w-num { font-size: .65rem; font-weight: 800; color: #94a3b8; width: 14px; text-align: center; }
+  .w-av { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 800; flex-shrink: 0; }
+  .w-av.p { background: #22c55e; color: #fff; }
+  .w-av.s { background: #dbeafe; color: #1d4ed8; }
+  .w-av.t { background: #f1f5f9; color: #64748b; }
+  .w-nome { font-size: .82rem; font-weight: 700; color: #1e293b; flex: 1; }
+  .w-tag { font-size: .62rem; font-weight: 700; color: #16a34a; background: #dcfce7; padding: 1px 6px; border-radius: 20px; white-space: nowrap; }
+  .widget-footer {
+    border-top: 1px solid #f1f5f9; padding: .4rem .5rem;
+    font-size: .68rem; color: #94a3b8; text-align: center;
+  }
+
+  /* layout funil fake pra contexto */
+  .funil-context { display: flex; gap: 1rem; align-items: flex-start; }
+  .kanban-fake { flex: 1; display: flex; gap: .5rem; overflow: hidden; }
+  .kf-col { min-width: 140px; background: #f1f5f9; border-radius: 8px; padding: .6rem; }
+  .kf-hd { font-size: .65rem; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: .4rem; }
+  .kf-card { background: #fff; border-radius: 6px; padding: .4rem .5rem; margin-bottom: .3rem; font-size: .7rem; color: #334155; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+
+  /* ── OPÇÃO C — Inline super simples ── */
+  .fila-inline {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .45rem .85rem; background: #f8fafc;
+    border: 1px solid #e2e8f0; border-radius: 8px;
+    flex-wrap: wrap;
+  }
+  .fi-label { font-size: .72rem; font-weight: 700; color: #64748b; }
+  .fi-chip {
+    display: flex; align-items: center; gap: .3rem;
+    padding: .22rem .65rem; border-radius: 20px;
+    font-size: .75rem; font-weight: 700;
+    background: #e2e8f0; color: #475569;
+  }
+  .fi-chip.proxima { background: #dcfce7; color: #16a34a; }
+  .fi-arrow { color: #cbd5e1; font-size: .7rem; }
+  .fi-repeat { font-size: .68rem; color: #94a3b8; margin-left: .2rem; font-style: italic; }
+</style>
+</head>
+<body>
+
+<div class="page-title">Fila Rotativa de Leads — Mockups</div>
+
+<!-- OPÇÃO A -->
+<div class="opcao">
+  <div class="opcao-label">Opção A — Barra no topo do funil</div>
+  <div class="fila-barra">
+    <span class="fila-titulo">Próximo lead:</span>
+    <div class="fila-item proxima">▶ Camila</div>
+    <span class="fila-seta">→</span>
+    <div class="fila-item segunda">Larissa</div>
+    <span class="fila-seta">→</span>
+    <div class="fila-item">Luana</div>
+    <span class="fila-seta">→</span>
+    <div class="fila-item" style="opacity:.5">Camila…</div>
+  </div>
+  <p class="context-note">↑ Colada acima do kanban. Todas veem quem é a próxima sem precisar perguntar.</p>
+</div>
+
+<!-- OPÇÃO B -->
+<div class="opcao">
+  <div class="opcao-label">Opção B — Widget fixo ao lado do funil</div>
+  <div class="funil-context">
+    <div class="widget">
+      <div class="widget-header">🔄 Fila de atendimento</div>
+      <div class="widget-body">
+        <div class="widget-row proxima">
+          <span class="w-num">1</span>
+          <div class="w-av p">C</div>
+          <span class="w-nome">Camila</span>
+          <span class="w-tag">agora</span>
+        </div>
+        <div class="widget-row segunda">
+          <span class="w-num">2</span>
+          <div class="w-av s">L</div>
+          <span class="w-nome">Larissa</span>
+        </div>
+        <div class="widget-row terceira">
+          <span class="w-num">3</span>
+          <div class="w-av t">L</div>
+          <span class="w-nome">Luana</span>
+        </div>
+      </div>
+      <div class="widget-footer">↺ repete automaticamente</div>
+    </div>
+    <div class="kanban-fake">
+      <div class="kf-col"><div class="kf-hd">Em atendimento</div><div class="kf-card">João S.</div><div class="kf-card">Maria L.</div></div>
+      <div class="kf-col"><div class="kf-hd">Qualificado</div><div class="kf-card">Pedro A.</div></div>
+      <div class="kf-col"><div class="kf-hd">Assumido</div><div class="kf-card">Ana P.</div><div class="kf-card">Carlos M.</div></div>
+    </div>
+  </div>
+  <p class="context-note">↑ Widget fixo visível ao lado do kanban. Mais detalhado — vê as 3 posições de uma vez.</p>
+</div>
+
+<!-- OPÇÃO C -->
+<div class="opcao">
+  <div class="opcao-label">Opção C — Linha discreta (mais simples)</div>
+  <div class="fila-inline">
+    <span class="fi-label">Próximo lead vai para:</span>
+    <div class="fi-chip proxima">▶ Camila</div>
+    <span class="fi-arrow">→</span>
+    <div class="fi-chip">Larissa</div>
+    <span class="fi-arrow">→</span>
+    <div class="fi-chip">Luana</div>
+    <span class="fi-repeat">↺ repete</span>
+  </div>
+  <p class="context-note">↑ Uma linha simples. Pode ficar no topo de qualquer página.</p>
+</div>
+
+</body>
+</html>
