@@ -4934,6 +4934,8 @@ async def relatorio_tempo_resposta(
             .filter(MensagemConversa.criado_em >= desde)
             .order_by(MensagemConversa.telefone, MensagemConversa.criado_em).all())
     ignorados = {t for (t,) in db.query(Lead.telefone).filter(Lead.ignorar_relatorios == True).all()}
+    # Nomes de admins (dona/owner) — não entram no relatório de tempo de resposta
+    admin_nomes = {u.nome for u in db.query(Usuario).filter(Usuario.role == RoleEnum.admin).all()}
     grupos = defaultdict(list)
     for m in msgs:
         if m.telefone in ignorados:
@@ -4953,6 +4955,8 @@ async def relatorio_tempo_resposta(
         seg = _segundos_comerciais(cli.criado_em, h.criado_em)
         mobj = re.match(r"^\[([^\]]+)\]:", h.conteudo or "")
         nome = mobj.group(1) if mobj else "—"
+        if nome in admin_nomes:
+            continue   # admin/dona não conta (evita distorcer a média da equipe)
         tempos.append((seg, nome))
 
     # Leads qualificados que ainda não tiveram nenhuma 1ª resposta humana
