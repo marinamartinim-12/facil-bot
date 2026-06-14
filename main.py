@@ -1891,6 +1891,22 @@ def _contratos_periodo(db, periodo: str = "mes") -> list:
     return q.order_by(Lead.fechado_em.desc().nullslast()).all()
 
 
+def _inicio_periodo(periodo: str):
+    """Início (UTC naive) do período p/ filtros de relatório, ou None p/ 'tudo'.
+    periodo = 'semana' | 'mes' | '7dias' | '30dias' | 'tudo'."""
+    hoje = _agora_br()
+    if periodo == "semana":
+        ini_br = datetime(hoje.year, hoje.month, hoje.day, tzinfo=_TZ_BR) - timedelta(days=hoje.weekday())
+        return ini_br.astimezone(timezone.utc).replace(tzinfo=None)
+    if periodo == "mes":
+        return datetime(hoje.year, hoje.month, 1, tzinfo=_TZ_BR).astimezone(timezone.utc).replace(tzinfo=None)
+    if periodo == "7dias":
+        return datetime.utcnow() - timedelta(days=7)
+    if periodo == "30dias":
+        return datetime.utcnow() - timedelta(days=30)
+    return None
+
+
 @app.get("/api/relatorio/contratos-mes")
 async def relatorio_contratos_mes(
     periodo: str = "mes",
@@ -4615,13 +4631,19 @@ async def relatorios(db: Session = Depends(get_db), admin: Usuario = Depends(req
 
 
 @app.get("/api/relatorio/produtividade")
-async def relatorio_produtividade(db: Session = Depends(get_db),
+async def relatorio_produtividade(periodo: str = "tudo",
+                                  db: Session = Depends(get_db),
                                   admin: Usuario = Depends(requer_admin)):
     """Por operadora (responsável pelo lead): quantos dos leads dela JÁ TÊM e quantos
-    AINDA NÃO TÊM observação e agendamento (follow-up manual). Conta individualmente."""
+    AINDA NÃO TÊM observação e agendamento (follow-up manual). Conta individualmente.
+    'periodo' filtra pelos leads que ENTRARAM no período (criado_em)."""
     _ign = Lead.ignorar_relatorios.isnot(True)
+    desde = _inicio_periodo(periodo)
     # Leads que entram em relatório: (id, responsável, observações)
-    leads = db.query(Lead.id, Lead.atribuido_para, Lead.observacoes).filter(_ign).all()
+    q = db.query(Lead.id, Lead.atribuido_para, Lead.observacoes).filter(_ign)
+    if desde is not None:
+        q = q.filter(Lead.criado_em >= desde)
+    leads = q.all()
     # IDs de leads com ao menos 1 agendamento (= follow-up inserido pela operadora)
     com_agendamento = {lid for (lid,) in db.query(Agendamento.lead_id).distinct().all()}
     # Operadoras (funcionárias) — inclui inativas só se tiverem leads
@@ -4660,16 +4682,22 @@ async def relatorio_produtividade(db: Session = Depends(get_db),
 
 
 @app.get("/api/relatorio/eficiencia")
-async def relatorio_eficiencia(db: Session = Depends(get_db),
+async def relatorio_eficiencia(periodo: str = "tudo",
+                               db: Session = Depends(get_db),
                                admin: Usuario = Depends(requer_admin)):
     """Funil de conversão por operadora: recebidos → proposta → aprovados → fechados, + perdidos.
     Contagem CUMULATIVA por status atual: quem está (ou passou) num estágio à frente conta nos
     anteriores. Obs.: só temos o status ATUAL — um lead perdido conta só em 'perdidos' (não dá
-    pra saber até onde avançou antes de ser perdido)."""
+    pra saber até onde avançou antes de ser perdido).
+    'periodo' filtra pelos leads que ENTRARAM no período (criado_em)."""
     _ign = Lead.ignorar_relatorios.isnot(True)
+    desde = _inicio_periodo(periodo)
     # "Recebidos" = leads atribuídos à operadora, fora os de teste e os desqualificados (spam/inválidos)
-    leads = (db.query(Lead.atribuido_para, Lead.status)
-             .filter(_ign, Lead.status != StatusLeadEnum.desqualificado).all())
+    q = (db.query(Lead.atribuido_para, Lead.status)
+         .filter(_ign, Lead.status != StatusLeadEnum.desqualificado))
+    if desde is not None:
+        q = q.filter(Lead.criado_em >= desde)
+    leads = q.all()
     operadoras = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario).all()
 
     # Estágios cumulativos (quem fechou também passou por proposta e aprovação)

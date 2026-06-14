@@ -1113,7 +1113,17 @@
         <div class="rel-card admin-only" id="relProdutividadeCard">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
             <h3 style="margin:0">📝 Observações & Follow-ups por operadora</h3>
-            <button onclick="carregarRelatorioProdutividade()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+              <select id="filtroPeriodoProdutividade" onchange="carregarRelatorioProdutividade()"
+                style="border:1px solid var(--border);border-radius:8px;padding:.35rem .7rem;font-size:.82rem;outline:none">
+                <option value="tudo" selected>Tudo</option>
+                <option value="mes">Este mês</option>
+                <option value="semana">Esta semana</option>
+                <option value="7dias">Últimos 7 dias</option>
+                <option value="30dias">Últimos 30 dias</option>
+              </select>
+              <button onclick="carregarRelatorioProdutividade()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
+            </div>
           </div>
           <p style="font-size:.78rem;color:var(--muted);margin:0 0 .75rem">Para cada operadora, quantos dos leads atribuídos a ela já têm <strong>observação</strong> e quantos têm <strong>agendamento (follow-up)</strong> — e quantos ainda não têm.</p>
           <div style="overflow-x:auto">
@@ -1139,7 +1149,17 @@
         <div class="rel-card admin-only" id="relEficienciaCard">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
             <h3 style="margin:0">📈 Eficiência por operadora (funil de conversão)</h3>
-            <button onclick="carregarRelatorioEficiencia()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+              <select id="filtroPeriodoEficiencia" onchange="carregarRelatorioEficiencia()"
+                style="border:1px solid var(--border);border-radius:8px;padding:.35rem .7rem;font-size:.82rem;outline:none">
+                <option value="tudo" selected>Tudo</option>
+                <option value="mes">Este mês</option>
+                <option value="semana">Esta semana</option>
+                <option value="7dias">Últimos 7 dias</option>
+                <option value="30dias">Últimos 30 dias</option>
+              </select>
+              <button onclick="carregarRelatorioEficiencia()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
+            </div>
           </div>
           <p style="font-size:.78rem;color:var(--muted);margin:0 0 .75rem">Funil de cada operadora: dos leads recebidos, quantos chegaram à <strong>proposta</strong>, foram <strong>aprovados</strong> e <strong>fechados</strong> — e quantos foram <strong>perdidos</strong>. Contagem <strong>cumulativa</strong> (quem fechou também passou por proposta/aprovação). <em>Recebidos</em> exclui spam/desqualificados.</p>
           <div style="overflow-x:auto">
@@ -3738,7 +3758,8 @@
     const body = document.getElementById('relProdutividadeBody');
     if (!body) return;
     try {
-      const r = await fetch('/api/relatorio/produtividade');
+      const per = document.getElementById('filtroPeriodoProdutividade')?.value || 'tudo';
+      const r = await fetch('/api/relatorio/produtividade?periodo=' + encodeURIComponent(per));
       if (!r.ok) { body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:1rem;color:var(--muted)">Sem dados.</td></tr>'; return; }
       const d = await r.json();
       const ops = d.operadoras || [];
@@ -3777,7 +3798,8 @@
     const body = document.getElementById('relEficienciaBody');
     if (!body) return;
     try {
-      const r = await fetch('/api/relatorio/eficiencia');
+      const per = document.getElementById('filtroPeriodoEficiencia')?.value || 'tudo';
+      const r = await fetch('/api/relatorio/eficiencia?periodo=' + encodeURIComponent(per));
       if (!r.ok) { body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:1rem;color:var(--muted)">Sem dados.</td></tr>'; return; }
       const d = await r.json();
       const ops = d.operadoras || [];
