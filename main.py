@@ -4659,6 +4659,63 @@ async def relatorio_produtividade(db: Session = Depends(get_db),
     return {"operadoras": lista, "totais": totais}
 
 
+@app.get("/api/relatorio/eficiencia")
+async def relatorio_eficiencia(db: Session = Depends(get_db),
+                               admin: Usuario = Depends(requer_admin)):
+    """Funil de conversão por operadora: recebidos → proposta → aprovados → fechados, + perdidos.
+    Contagem CUMULATIVA por status atual: quem está (ou passou) num estágio à frente conta nos
+    anteriores. Obs.: só temos o status ATUAL — um lead perdido conta só em 'perdidos' (não dá
+    pra saber até onde avançou antes de ser perdido)."""
+    _ign = Lead.ignorar_relatorios.isnot(True)
+    # "Recebidos" = leads atribuídos à operadora, fora os de teste e os desqualificados (spam/inválidos)
+    leads = (db.query(Lead.atribuido_para, Lead.status)
+             .filter(_ign, Lead.status != StatusLeadEnum.desqualificado).all())
+    operadoras = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario).all()
+
+    # Estágios cumulativos (quem fechou também passou por proposta e aprovação)
+    ATINGIU_PROPOSTA = {StatusLeadEnum.proposta_enviada.value,
+                        StatusLeadEnum.proposta_aprovada.value,
+                        StatusLeadEnum.fechado.value}
+    ATINGIU_APROVADA = {StatusLeadEnum.proposta_aprovada.value,
+                        StatusLeadEnum.fechado.value}
+
+    stats = {u.id: {"id": u.id, "nome": u.nome, "_ativo": bool(u.ativo),
+                    "recebidos": 0, "proposta": 0, "aprovados": 0,
+                    "fechados": 0, "perdidos": 0}
+             for u in operadoras}
+
+    for resp, status in leads:
+        s = stats.get(resp)
+        if s is None:
+            continue
+        st = status.value if hasattr(status, "value") else status
+        s["recebidos"] += 1
+        if st in ATINGIU_PROPOSTA:
+            s["proposta"] += 1
+        if st in ATINGIU_APROVADA:
+            s["aprovados"] += 1
+        if st == StatusLeadEnum.fechado.value:
+            s["fechados"] += 1
+        if st == StatusLeadEnum.perdido.value:
+            s["perdidos"] += 1
+
+    lista = [s for s in stats.values() if s["_ativo"] or s["recebidos"] > 0]
+    for s in lista:
+        s.pop("_ativo", None)
+        r = s["recebidos"]
+        s["taxa_fechamento"] = round(s["fechados"] / r * 100, 1) if r > 0 else 0.0
+    lista.sort(key=lambda x: x["recebidos"], reverse=True)
+
+    totais = {"recebidos": 0, "proposta": 0, "aprovados": 0, "fechados": 0, "perdidos": 0}
+    for s in lista:
+        for k in totais:
+            totais[k] += s[k]
+    totais["taxa_fechamento"] = (round(totais["fechados"] / totais["recebidos"] * 100, 1)
+                                 if totais["recebidos"] > 0 else 0.0)
+
+    return {"operadoras": lista, "totais": totais}
+
+
 @app.get("/api/relatorio/parceiros")
 async def relatorio_parceiros(
     db: Session = Depends(get_db),

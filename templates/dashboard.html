@@ -1135,6 +1135,33 @@
           </div>
         </div>
 
+        <!-- ── EFICIÊNCIA / FUNIL DE CONVERSÃO POR OPERADORA (admin only) ── -->
+        <div class="rel-card admin-only" id="relEficienciaCard">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
+            <h3 style="margin:0">📈 Eficiência por operadora (funil de conversão)</h3>
+            <button onclick="carregarRelatorioEficiencia()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
+          </div>
+          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .75rem">Funil de cada operadora: dos leads recebidos, quantos chegaram à <strong>proposta</strong>, foram <strong>aprovados</strong> e <strong>fechados</strong> — e quantos foram <strong>perdidos</strong>. Contagem <strong>cumulativa</strong> (quem fechou também passou por proposta/aprovação). <em>Recebidos</em> exclui spam/desqualificados.</p>
+          <div style="overflow-x:auto">
+            <table class="rel-table" style="min-width:740px">
+              <thead>
+                <tr>
+                  <th>Operadora</th>
+                  <th>Recebidos</th>
+                  <th>Proposta</th>
+                  <th>Aprovados</th>
+                  <th>Fechados</th>
+                  <th>Perdidos</th>
+                  <th>Taxa fech.</th>
+                </tr>
+              </thead>
+              <tbody id="relEficienciaBody">
+                <tr><td colspan="7" style="text-align:center;padding:1rem;color:var(--muted)">Carregando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- ── PERFIL PARA ANÚNCIOS ── -->
         <div class="rel-card" id="relPerfilCard">
           <h3>📊 Perfil dos Clientes — Dados para Anúncios</h3>
@@ -3698,6 +3725,7 @@
       `;
     } catch {}
     await carregarRelatorioProdutividade();
+    await carregarRelatorioEficiencia();
     await carregarRelatorioParceiros();
     await carregarRelatorioContratosMes();
     await carregarRelatorioPerfil();
@@ -3742,6 +3770,48 @@
       body.innerHTML = html;
     } catch {
       body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:1rem;color:#dc2626">Erro ao carregar.</td></tr>';
+    }
+  }
+
+  async function carregarRelatorioEficiencia() {
+    const body = document.getElementById('relEficienciaBody');
+    if (!body) return;
+    try {
+      const r = await fetch('/api/relatorio/eficiencia');
+      if (!r.ok) { body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:1rem;color:var(--muted)">Sem dados.</td></tr>'; return; }
+      const d = await r.json();
+      const ops = d.operadoras || [];
+      if (!ops.length) {
+        body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:1rem;color:var(--muted)">Nenhuma operadora com leads.</td></tr>';
+        return;
+      }
+      const pct = (n, tot) => tot > 0 ? Math.round(n / tot * 100) : 0;
+      const sub = (n, tot) => `<span style="color:var(--muted);font-weight:400">(${pct(n, tot)}%)</span>`;
+      const corTaxa = (t) => t >= 20 ? '#16a34a' : (t >= 8 ? '#d97706' : '#dc2626');
+      let html = ops.map(o => `
+        <tr>
+          <td><strong>${escHtml(o.nome)}</strong></td>
+          <td><strong>${o.recebidos}</strong></td>
+          <td>${o.proposta} ${sub(o.proposta, o.recebidos)}</td>
+          <td>${o.aprovados} ${sub(o.aprovados, o.recebidos)}</td>
+          <td style="color:#16a34a;font-weight:700">${o.fechados} ${sub(o.fechados, o.recebidos)}</td>
+          <td style="color:${o.perdidos > 0 ? '#dc2626' : '#94a3b8'}">${o.perdidos} ${sub(o.perdidos, o.recebidos)}</td>
+          <td style="font-weight:800;color:${corTaxa(o.taxa_fechamento)}">${o.taxa_fechamento}%</td>
+        </tr>`).join('');
+      const t = d.totais || {};
+      html += `
+        <tr style="border-top:2px solid var(--border);font-weight:700;background:#f8fafc">
+          <td>Total</td>
+          <td>${t.recebidos || 0}</td>
+          <td>${t.proposta || 0} ${sub(t.proposta || 0, t.recebidos || 0)}</td>
+          <td>${t.aprovados || 0} ${sub(t.aprovados || 0, t.recebidos || 0)}</td>
+          <td style="color:#16a34a">${t.fechados || 0} ${sub(t.fechados || 0, t.recebidos || 0)}</td>
+          <td style="color:${(t.perdidos || 0) > 0 ? '#dc2626' : '#94a3b8'}">${t.perdidos || 0} ${sub(t.perdidos || 0, t.recebidos || 0)}</td>
+          <td style="font-weight:800;color:${corTaxa(t.taxa_fechamento || 0)}">${t.taxa_fechamento || 0}%</td>
+        </tr>`;
+      body.innerHTML = html;
+    } catch {
+      body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:1rem;color:#dc2626">Erro ao carregar.</td></tr>';
     }
   }
 
