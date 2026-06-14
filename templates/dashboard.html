@@ -343,6 +343,9 @@
     .rel-table th { text-align: left; padding: .5rem .75rem; font-size: .72rem; text-transform: uppercase; color: var(--muted); border-bottom: 1.5px solid var(--border); }
     .rel-table td { padding: .55rem .75rem; border-bottom: 1px solid var(--border); }
     .rel-table tr:last-child td { border-bottom: none; }
+    .rel-subtab { background:#fff; border:1.5px solid var(--border); color:var(--navy); border-radius:999px; padding:.45rem 1rem; font-size:.85rem; font-weight:600; cursor:pointer; transition:all .15s; }
+    .rel-subtab:hover { border-color:var(--navy); }
+    .rel-subtab.active { background:var(--navy); color:#fff; border-color:var(--navy); }
     .progress-bar { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; margin-top: 4px; }
     .progress-fill { height: 100%; background: var(--green); border-radius: 99px; }
 
@@ -1101,7 +1104,14 @@
       <div id="viewRelatorios" style="display:none">
         <div class="stats-row" id="relStatsRow"></div>
 
-        <div class="rel-card">
+        <div id="relSubTabs" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem">
+          <button class="rel-subtab" data-sub="marketing" onclick="showRelSub('marketing')">📣 Marketing</button>
+          <button class="rel-subtab" data-sub="equipe" onclick="showRelSub('equipe')">👥 Equipe</button>
+          <button class="rel-subtab" data-sub="vendas" onclick="showRelSub('vendas')">💰 Vendas</button>
+          <button class="rel-subtab" data-sub="sistema" onclick="showRelSub('sistema')">⚙️ Sistema</button>
+        </div>
+
+        <div class="rel-card" data-relgrupo="marketing">
           <h3>🚗 Leads por Modalidade</h3>
           <table class="rel-table">
             <thead><tr><th>Modalidade</th><th>Total</th></tr></thead>
@@ -1110,7 +1120,7 @@
         </div>
 
         <!-- ── OBSERVAÇÕES & FOLLOW-UPS POR OPERADORA (admin only) ── -->
-        <div class="rel-card admin-only" id="relProdutividadeCard">
+        <div class="rel-card admin-only" data-relgrupo="equipe" id="relProdutividadeCard">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
             <h3 style="margin:0">📝 Observações & Follow-ups por operadora</h3>
             <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
@@ -1146,7 +1156,7 @@
         </div>
 
         <!-- ── EFICIÊNCIA / FUNIL DE CONVERSÃO POR OPERADORA (admin only) ── -->
-        <div class="rel-card admin-only" id="relEficienciaCard">
+        <div class="rel-card admin-only" data-relgrupo="equipe" id="relEficienciaCard">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
             <h3 style="margin:0">📈 Eficiência por operadora (funil de conversão)</h3>
             <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
@@ -1183,13 +1193,13 @@
         </div>
 
         <!-- ── PERFIL PARA ANÚNCIOS ── -->
-        <div class="rel-card" id="relPerfilCard">
+        <div class="rel-card" data-relgrupo="marketing" id="relPerfilCard">
           <h3>📊 Perfil dos Clientes — Dados para Anúncios</h3>
           <div id="relPerfil"><p style="font-size:.83rem;color:var(--muted);text-align:center;padding:1rem">Carregando…</p></div>
         </div>
 
         <!-- ── CONTRATOS FECHADOS ── -->
-        <div class="rel-card">
+        <div class="rel-card" data-relgrupo="vendas">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem">
             <h3 style="margin:0">🏁 Contratos Fechados</h3>
             <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
@@ -1209,7 +1219,7 @@
         </div>
 
         <!-- ── RELATÓRIO POR PARCEIRO ── -->
-        <div class="rel-card">
+        <div class="rel-card" data-relgrupo="marketing">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem">
             <h3 style="margin:0">🤝 Desempenho por Parceiro</h3>
             <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
@@ -1266,7 +1276,7 @@
         </div>
 
         <!-- ── CALENDÁRIO DE LEADS ATENDIDOS ── -->
-        <div class="rel-card" id="relLeadsCalCard">
+        <div class="rel-card" data-relgrupo="equipe" id="relLeadsCalCard">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;flex-wrap:wrap;gap:.5rem">
             <h3 style="margin:0">📅 Leads por funcionária</h3>
             <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
@@ -1289,7 +1299,7 @@
         </div>
 
         <!-- ── MEDIDOR DE VOLUME / ESTIMATIVA API OFICIAL ── -->
-        <div class="rel-card" id="relVolumeCard">
+        <div class="rel-card" data-relgrupo="sistema" id="relVolumeCard">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem;flex-wrap:wrap;gap:.5rem">
             <h3 style="margin:0">📊 Volume & estimativa (API Oficial)</h3>
             <button onclick="carregarVolumeApi()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
@@ -1299,7 +1309,7 @@
         </div>
 
         <!-- ── TEMPO DE 1ª RESPOSTA ── -->
-        <div class="rel-card" id="relRespostaCard">
+        <div class="rel-card" data-relgrupo="equipe" id="relRespostaCard">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem;flex-wrap:wrap;gap:.5rem">
             <h3 style="margin:0">⏱️ Tempo até a 1ª resposta</h3>
             <button onclick="carregarTempoResposta()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
@@ -3727,7 +3737,16 @@
   }
 
   // ═══════ RELATÓRIOS ═══════
+  function showRelSub(grupo) {
+    localStorage.setItem('relSubAba', grupo);
+    document.querySelectorAll('#relSubTabs .rel-subtab').forEach(b =>
+      b.classList.toggle('active', b.dataset.sub === grupo));
+    document.querySelectorAll('#viewRelatorios [data-relgrupo]').forEach(c =>
+      c.style.display = (c.dataset.relgrupo === grupo) ? '' : 'none');
+  }
+
   async function carregarRelatorios() {
+    showRelSub(localStorage.getItem('relSubAba') || 'equipe');
     try {
       const r = await fetch('/api/relatorios');
       const d = await r.json();
