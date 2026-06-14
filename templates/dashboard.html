@@ -1225,6 +1225,15 @@
             <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
               <input id="relParceiroBusca" type="text" placeholder="Buscar parceiro…" oninput="renderTabelaParceiros()"
                 style="border:1.5px solid var(--border);border-radius:7px;padding:.3rem .7rem;font-size:.82rem;outline:none;min-width:160px">
+              <select id="relParceiroSort" onchange="_pagParceiros=0;renderTabelaParceiros()"
+                style="border:1.5px solid var(--border);border-radius:7px;padding:.3rem .6rem;font-size:.82rem;outline:none">
+                <option value="leads">Ordenar: mais leads</option>
+                <option value="propostas">Mais propostas</option>
+                <option value="contratos">Mais contratos</option>
+                <option value="fechados">Mais fechados</option>
+                <option value="taxa">Maior taxa</option>
+                <option value="nome">Nome (A–Z)</option>
+              </select>
               <button onclick="exportarParceirosCSV()" class="btn btn-outline btn-sm">⬇ Excel</button>
             </div>
           </div>
@@ -5015,6 +5024,15 @@
     const filtrado = _dadosParceiros.filter(p =>
       p.nome.toLowerCase().includes(busca) || (p.telefone||'').includes(busca)
     );
+    const ord = document.getElementById('relParceiroSort')?.value || 'leads';
+    filtrado.sort((a, b) => {
+      if (ord === 'nome') return a.nome.localeCompare(b.nome);
+      if (ord === 'propostas') return b.propostas - a.propostas;
+      if (ord === 'contratos') return b.contratos - a.contratos;
+      if (ord === 'fechados') return b.fechados - a.fechados;
+      if (ord === 'taxa') return b.taxa_fechamento - a.taxa_fechamento;
+      return b.total_leads - a.total_leads;   // 'leads' (padrão)
+    });
     const total = filtrado.length;
     const totalPag = Math.ceil(total / _POR_PAG_PARCEIROS) || 1;
     if (_pagParceiros >= totalPag) _pagParceiros = totalPag - 1;
