@@ -420,6 +420,23 @@ class DocumentoCliente(Base):
     usuario = relationship("Usuario")
 
 
+class HistoricoLead(Base):
+    """Linha do tempo do lead: cada mudança de status (de→para, quem moveu, quando).
+    Permite rastrear a jornada, o tempo em cada etapa, o tempo até fechar e quem
+    realmente fechou (resolve o caso do rodízio de horas da dona)."""
+    __tablename__ = "historico_lead"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    lead_id     = Column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
+    de_status   = Column(String(30), nullable=True)    # status anterior (None = criação/origem)
+    para_status = Column(String(30), nullable=False)   # novo status
+    usuario_id  = Column(Integer, ForeignKey("usuarios.id"), nullable=True)  # quem moveu (None = bot/sistema)
+    quando      = Column(DateTime, default=datetime.utcnow, index=True)
+
+    lead    = relationship("Lead")
+    usuario = relationship("Usuario")
+
+
 def criar_tabelas():
     Base.metadata.create_all(bind=engine)
 

@@ -44,7 +44,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, JustificativaPonto, CorrecaoPonto, AtividadePing, Agendamento, MidiaArquivo, DocumentoCliente, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
+from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, JustificativaPonto, CorrecaoPonto, AtividadePing, Agendamento, MidiaArquivo, DocumentoCliente, HistoricoLead, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento, diagnostico_ia
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
 
@@ -1739,6 +1739,21 @@ async def obter_conversa(
     return {"lead": lead_serial, "mensagens": mensagens}
 
 
+def _log_historico(db, lead_id: int, de_status, para_status, usuario_id):
+    """Registra uma transição de status na linha do tempo do lead (HistoricoLead).
+    Best-effort: nunca deve quebrar o fluxo principal. Ignora no-ops (de == para).
+    Deve ser chamado ANTES do db.commit() do endpoint p/ gravar na mesma transação."""
+    try:
+        de = de_status.value if hasattr(de_status, "value") else de_status
+        para = para_status.value if hasattr(para_status, "value") else para_status
+        if de == para:
+            return
+        db.add(HistoricoLead(lead_id=lead_id, de_status=de, para_status=para,
+                             usuario_id=usuario_id, quando=datetime.utcnow()))
+    except Exception:
+        pass
+
+
 @app.post("/api/leads/{lead_id}/assumir")
 async def assumir_lead(
     lead_id: int,
@@ -1750,9 +1765,11 @@ async def assumir_lead(
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     if lead.status not in [StatusLeadEnum.qualificado, StatusLeadEnum.assumido]:
         raise HTTPException(status_code=400, detail="Lead não pode ser assumido neste status")
+    de_status = lead.status
     lead.atribuido_para = usuario.id
     lead.status = StatusLeadEnum.assumido
     lead.assumido_em = datetime.utcnow()
+    _log_historico(db, lead.id, de_status, StatusLeadEnum.assumido, usuario.id)
     db.commit()
     db.refresh(lead)
     return _serial_lead(lead, db)
@@ -1794,6 +1811,7 @@ async def mover_lead(
         raise HTTPException(status_code=403, detail="Apenas administradores podem realizar esta ação.")
 
     era_fechado = lead.status == StatusLeadEnum.fechado.value
+    de_status = lead.status
     lead.status = novo_status
     if novo_status == StatusLeadEnum.assumido and not lead.atribuido_para:
         lead.atribuido_para = usuario.id
@@ -1801,6 +1819,7 @@ async def mover_lead(
     # Marca a data de fechamento ao virar Fechado (estável p/ relatórios)
     if novo_status == StatusLeadEnum.fechado.value and not era_fechado and not lead.fechado_em:
         lead.fechado_em = datetime.utcnow()
+    _log_historico(db, lead.id, de_status, novo_status, usuario.id)
     lead.atualizado_em = datetime.utcnow()
     db.commit()
     db.refresh(lead)
@@ -1829,6 +1848,7 @@ async def fechar_contrato_lead(
     lead.deal_banco     = body.get("deal_banco", "").strip() or None
     lead.deal_conta_pg  = body.get("deal_conta_pg", "").strip() or None
     lead.deal_operadora = body.get("deal_operadora", "").strip() or None
+    de_status          = lead.status
     lead.status        = StatusLeadEnum.fechado
     # Data estável de fechamento (usa a data do negócio se informada, senão agora)
     lead.fechado_em    = _data_br_para_utc(lead.deal_data) or lead.fechado_em or datetime.utcnow()
@@ -1836,6 +1856,7 @@ async def fechar_contrato_lead(
     if not lead.atribuido_para:
         lead.atribuido_para = usuario.id
         lead.assumido_em    = datetime.utcnow()
+    _log_historico(db, lead.id, de_status, StatusLeadEnum.fechado, usuario.id)
     db.commit()
     db.refresh(lead)
     return _serial_lead(lead, db)
@@ -4742,6 +4763,65 @@ async def relatorio_eficiencia(periodo: str = "tudo",
                                  if totais["recebidos"] > 0 else 0.0)
 
     return {"operadoras": lista, "totais": totais}
+
+
+@app.get("/api/leads/{lead_id}/historico")
+async def lead_historico(lead_id: int, db: Session = Depends(get_db),
+                         usuario: Usuario = Depends(obter_usuario_atual)):
+    """Linha do tempo (jornada) de um lead: cada mudança de status, quem moveu e quando."""
+    eventos = (db.query(HistoricoLead)
+               .filter(HistoricoLead.lead_id == lead_id)
+               .order_by(HistoricoLead.quando.asc(), HistoricoLead.id.asc()).all())
+    uids = {e.usuario_id for e in eventos if e.usuario_id}
+    nomes = dict(db.query(Usuario.id, Usuario.nome).filter(Usuario.id.in_(uids)).all()) if uids else {}
+    out = [{
+        "de": e.de_status,
+        "para": e.para_status,
+        "quem": (nomes.get(e.usuario_id) if e.usuario_id else "Sistema/Bot"),
+        "quando": _fmt_br(e.quando, "%d/%m/%Y %H:%M"),
+    } for e in eventos]
+    return {"eventos": out}
+
+
+def _backfill_historico_sync():
+    """Recria a parte recuperável da linha do tempo p/ leads que ainda não têm histórico,
+    a partir das datas já existentes (criado_em, assumido_em, fechado_em) e do status atual.
+    Idempotente: só mexe em leads SEM histórico."""
+    db = next(get_db())
+    try:
+        ja_tem = {lid for (lid,) in db.query(HistoricoLead.lead_id).distinct().all()}
+        leads = db.query(Lead).all()
+        criados = 0
+        for l in leads:
+            if l.id in ja_tem:
+                continue
+            atual = l.status.value if hasattr(l.status, "value") else l.status
+            eventos = [(None, StatusLeadEnum.em_atendimento.value,
+                        l.criado_em or datetime.utcnow(), None)]   # chegada
+            if l.assumido_em:
+                eventos.append((None, StatusLeadEnum.assumido.value, l.assumido_em, l.atribuido_para))
+            if l.fechado_em:
+                eventos.append((None, StatusLeadEnum.fechado.value, l.fechado_em, l.atribuido_para))
+            cobertos = {e[1] for e in eventos}
+            if atual not in cobertos:   # status atual (perdido, proposta, etc.) não coberto acima
+                eventos.append((None, atual,
+                                l.atualizado_em or l.criado_em or datetime.utcnow(),
+                                l.atribuido_para))
+            for de, para, quando, uid in eventos:
+                db.add(HistoricoLead(lead_id=l.id, de_status=de, para_status=para,
+                                     usuario_id=uid, quando=quando))
+                criados += 1
+        db.commit()
+        return {"leads": len(leads), "eventos_criados": criados}
+    finally:
+        db.close()
+
+
+@app.get("/api/admin/backfill-historico")
+async def backfill_historico(admin: Usuario = Depends(requer_admin)):
+    """Roda UMA vez p/ recriar a linha do tempo recuperável dos leads antigos. Idempotente."""
+    res = await asyncio.to_thread(_backfill_historico_sync)
+    return JSONResponse({"status": "ok", **res})
 
 
 @app.get("/api/relatorio/parceiros")
