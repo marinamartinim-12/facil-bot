@@ -1004,7 +1004,7 @@
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
           <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
-            <input id="parceiroBusca" type="text" placeholder="Buscar parceiro…"
+            <input id="parceiroBusca" type="text" placeholder="Buscar por nome, agenda 📒, telefone…"
               oninput="filtrarParceiros()"
               style="padding:.45rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;min-width:220px">
             <select id="parceiroOperadora" onchange="filtrarParceiros()"
@@ -3486,7 +3486,8 @@
       // Busca por texto
       return p.nome.toLowerCase().includes(q) ||
         p.telefone.includes(q) ||
-        (p.cpf || '').includes(q);
+        (p.cpf || '').includes(q) ||
+        (p.nome_agenda || '').toLowerCase().includes(q);
     });
     renderParceiros(lista);
   }
