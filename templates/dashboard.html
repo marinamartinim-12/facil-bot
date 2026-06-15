@@ -1442,6 +1442,11 @@
             <span id="agMsg" style="font-size:.75rem"></span>
           </div>
         </div>
+        <!-- Jornada / linha do tempo -->
+        <div class="modal-section">
+          <h4 style="margin-bottom:.6rem">🗺️ Jornada do lead</h4>
+          <div id="listaJornada" style="font-size:.8rem"></div>
+        </div>
         <!-- Documentos do contrato (pasta do cliente) -->
         <div class="modal-section" id="modalDocsSection" style="display:none">
           <h4 style="margin-bottom:.6rem">📁 Documentos do contrato</h4>
@@ -2095,6 +2100,7 @@
       document.getElementById('agQuando').value = '';
       document.getElementById('agMsg').textContent = '';
       carregarAgendamentos(leadId);
+      carregarJornada(leadId);
 
       // Chat
       const _msgs = (conv && Array.isArray(conv.mensagens)) ? conv.mensagens : [];
@@ -2239,6 +2245,51 @@
             </div>
           </div>
         </div>`;
+      }).join('');
+    } catch {
+      el.innerHTML = '<span style="font-size:.78rem;color:var(--red)">Erro ao carregar.</span>';
+    }
+  }
+
+  async function carregarJornada(leadId) {
+    const el = document.getElementById('listaJornada');
+    if (!el) return;
+    el.innerHTML = '<span style="font-size:.78rem;color:var(--muted)">Carregando…</span>';
+    try {
+      const r = await fetch(`/api/leads/${leadId}/historico`);
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      const evs = d.eventos || [];
+      if (!evs.length) {
+        el.innerHTML = '<span style="font-size:.78rem;color:var(--muted);font-style:italic">Sem histórico ainda.</span>';
+        return;
+      }
+      const meta = {
+        em_atendimento:    ['🟢', 'Chegou (em atendimento)', '#16a34a'],
+        qualificado:       ['✅', 'Qualificado', '#0d9488'],
+        assumido:          ['🙋', 'Assumido', '#2563eb'],
+        pre_analise:       ['🔎', 'Pré-análise', '#14b8a6'],
+        proposta_enviada:  ['📄', 'Proposta enviada', '#f97316'],
+        proposta_aprovada: ['✔️', 'Proposta aprovada', '#10b981'],
+        fechado:           ['🏁', 'Fechado', '#16a34a'],
+        perdido:           ['❌', 'Perdido', '#dc2626'],
+        desqualificado:    ['🚫', 'Desqualificado', '#94a3b8'],
+        parceiro:          ['🤝', 'Parceiro', '#7c3aed'],
+      };
+      el.innerHTML = evs.map((e, i) => {
+        const m = meta[e.para] || ['•', e.para, '#64748b'];
+        const ultimo = i === evs.length - 1;
+        return `
+          <div style="display:flex;gap:.6rem">
+            <div style="display:flex;flex-direction:column;align-items:center">
+              <div style="font-size:1rem;line-height:1.1">${m[0]}</div>
+              ${ultimo ? '' : '<div style="flex:1;width:2px;background:#e2e8f0;margin-top:2px;min-height:10px"></div>'}
+            </div>
+            <div style="flex:1;padding-bottom:${ultimo ? '0' : '.55rem'}">
+              <div style="font-weight:700;color:${m[2]};font-size:.82rem">${escHtml(m[1])}</div>
+              <div style="font-size:.72rem;color:#64748b">${escHtml(e.quando || '—')} · por ${escHtml(e.quem || '—')}</div>
+            </div>
+          </div>`;
       }).join('');
     } catch {
       el.innerHTML = '<span style="font-size:.78rem;color:var(--red)">Erro ao carregar.</span>';
