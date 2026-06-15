@@ -1196,6 +1196,39 @@
           </div>
         </div>
 
+        <!-- ── FECHAMENTOS: QUEM FECHOU + TEMPO MÉDIO (admin only) ── -->
+        <div class="rel-card admin-only" data-relgrupo="equipe" id="relFechamentosCard">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
+            <h3 style="margin:0">🎯 Fechamentos por operadora (quem fechou + tempo médio)</h3>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+              <select id="filtroPeriodoFechamentos" onchange="carregarRelatorioFechamentos()"
+                style="border:1px solid var(--border);border-radius:8px;padding:.35rem .7rem;font-size:.82rem;outline:none">
+                <option value="mes" selected>Este mês</option>
+                <option value="semana">Esta semana</option>
+                <option value="7dias">Últimos 7 dias</option>
+                <option value="30dias">Últimos 30 dias</option>
+                <option value="tudo">Tudo</option>
+              </select>
+              <button onclick="carregarRelatorioFechamentos()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
+            </div>
+          </div>
+          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .75rem">Conta pela <strong>data de fechamento</strong> (quem fechou em maio conta em maio, mesmo que o lead tenha chegado antes). <em>Quem fechou</em> = quem registrou o fechamento no histórico — nos fechamentos do passado é a operadora atribuída; daqui pra frente é exato.</p>
+          <div style="overflow-x:auto">
+            <table class="rel-table" style="min-width:520px">
+              <thead>
+                <tr>
+                  <th>Operadora</th>
+                  <th>Fechou</th>
+                  <th>Tempo médio pra fechar</th>
+                </tr>
+              </thead>
+              <tbody id="relFechamentosBody">
+                <tr><td colspan="3" style="text-align:center;padding:1rem;color:var(--muted)">Carregando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- ── PERFIL PARA ANÚNCIOS ── -->
         <div class="rel-card" data-relgrupo="marketing" id="relPerfilCard">
           <h3>📊 Perfil dos Clientes — Dados para Anúncios</h3>
@@ -3829,6 +3862,7 @@
     } catch {}
     await carregarRelatorioProdutividade();
     await carregarRelatorioEficiencia();
+    await carregarRelatorioFechamentos();
     await carregarRelatorioParceiros();
     await carregarRelatorioContratosMes();
     await carregarRelatorioPerfil();
@@ -3917,6 +3951,38 @@
       body.innerHTML = html;
     } catch {
       body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:1rem;color:#dc2626">Erro ao carregar.</td></tr>';
+    }
+  }
+
+  async function carregarRelatorioFechamentos() {
+    const body = document.getElementById('relFechamentosBody');
+    if (!body) return;
+    try {
+      const per = document.getElementById('filtroPeriodoFechamentos')?.value || 'mes';
+      const r = await fetch('/api/relatorio/fechamentos?periodo=' + encodeURIComponent(per));
+      if (!r.ok) { body.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:1rem;color:var(--muted)">Sem dados.</td></tr>'; return; }
+      const d = await r.json();
+      const fs = d.fechamentos || [];
+      if (!fs.length) {
+        body.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:1rem;color:var(--muted)">Nenhum fechamento no período.</td></tr>';
+        return;
+      }
+      let html = fs.map(f => `
+        <tr>
+          <td><strong>${escHtml(f.nome)}</strong></td>
+          <td style="color:#16a34a;font-weight:700">${f.qtd}</td>
+          <td>${escHtml(f.tempo_medio)}</td>
+        </tr>`).join('');
+      const t = d.total || {};
+      html += `
+        <tr style="border-top:2px solid var(--border);font-weight:700;background:#f8fafc">
+          <td>Total</td>
+          <td style="color:#16a34a">${t.qtd || 0}</td>
+          <td>${escHtml(t.tempo_medio || '—')}</td>
+        </tr>`;
+      body.innerHTML = html;
+    } catch {
+      body.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:1rem;color:#dc2626">Erro ao carregar.</td></tr>';
     }
   }
 

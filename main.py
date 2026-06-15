@@ -1739,17 +1739,19 @@ async def obter_conversa(
     return {"lead": lead_serial, "mensagens": mensagens}
 
 
-def _log_historico(db, lead_id: int, de_status, para_status, usuario_id):
+def _log_historico(db, lead_id: int, de_status, para_status, usuario_id, quando=None):
     """Registra uma transição de status na linha do tempo do lead (HistoricoLead).
     Best-effort: nunca deve quebrar o fluxo principal. Ignora no-ops (de == para).
-    Deve ser chamado ANTES do db.commit() do endpoint p/ gravar na mesma transação."""
+    Deve ser chamado ANTES do db.commit() do endpoint p/ gravar na mesma transação.
+    'quando' usa a data OFICIAL do evento (ex.: fechado_em = data do negócio) em vez do
+    instante do clique — mantém os relatórios coerentes; default = agora."""
     try:
         de = de_status.value if hasattr(de_status, "value") else de_status
         para = para_status.value if hasattr(para_status, "value") else para_status
         if de == para:
             return
         db.add(HistoricoLead(lead_id=lead_id, de_status=de, para_status=para,
-                             usuario_id=usuario_id, quando=datetime.utcnow()))
+                             usuario_id=usuario_id, quando=quando or datetime.utcnow()))
     except Exception:
         pass
 
@@ -1819,7 +1821,9 @@ async def mover_lead(
     # Marca a data de fechamento ao virar Fechado (estável p/ relatórios)
     if novo_status == StatusLeadEnum.fechado.value and not era_fechado and not lead.fechado_em:
         lead.fechado_em = datetime.utcnow()
-    _log_historico(db, lead.id, de_status, novo_status, usuario.id)
+    # Evento de fechamento usa a data OFICIAL (fechado_em); demais usam o instante do clique
+    _quando_ev = lead.fechado_em if novo_status == StatusLeadEnum.fechado.value else None
+    _log_historico(db, lead.id, de_status, novo_status, usuario.id, quando=_quando_ev)
     lead.atualizado_em = datetime.utcnow()
     db.commit()
     db.refresh(lead)
@@ -1856,7 +1860,7 @@ async def fechar_contrato_lead(
     if not lead.atribuido_para:
         lead.atribuido_para = usuario.id
         lead.assumido_em    = datetime.utcnow()
-    _log_historico(db, lead.id, de_status, StatusLeadEnum.fechado, usuario.id)
+    _log_historico(db, lead.id, de_status, StatusLeadEnum.fechado, usuario.id, quando=lead.fechado_em)
     db.commit()
     db.refresh(lead)
     return _serial_lead(lead, db)
@@ -4763,6 +4767,77 @@ async def relatorio_eficiencia(periodo: str = "tudo",
                                  if totais["recebidos"] > 0 else 0.0)
 
     return {"operadoras": lista, "totais": totais}
+
+
+def _dias_horas(seg) -> str:
+    """Formata uma duração (segundos) de forma amigável: '12d 3h', '5h', '40min'."""
+    seg = max(0, int(seg))
+    dias = seg // 86400
+    horas = (seg % 86400) // 3600
+    if dias >= 1:
+        return f"{dias}d {horas}h" if horas else f"{dias}d"
+    if horas >= 1:
+        return f"{horas}h"
+    return f"{max(1, seg // 60)}min"
+
+
+@app.get("/api/relatorio/fechamentos")
+async def relatorio_fechamentos(periodo: str = "mes",
+                                db: Session = Depends(get_db),
+                                admin: Usuario = Depends(requer_admin)):
+    """Quem REALMENTE fechou (pelo histórico) + tempo médio pra fechar.
+    Conta pela DATA DE FECHAMENTO (evento -> 'fechado'), NÃO pela chegada: um lead que
+    chegou em maio e fechou em junho conta no desempenho de junho. 'quem fechou' = quem
+    registrou o fechamento (no passado/backfill = a operadora atribuída; exato daqui pra frente)."""
+    from collections import defaultdict
+    desde = _inicio_periodo(periodo)
+    q = db.query(HistoricoLead).filter(HistoricoLead.para_status == StatusLeadEnum.fechado.value)
+    if desde is not None:
+        q = q.filter(HistoricoLead.quando >= desde)
+    eventos = q.all()
+
+    # Último evento de fechamento por lead (evita duplicar se reabriu e fechou de novo)
+    por_lead = {}
+    for e in eventos:
+        cur = por_lead.get(e.lead_id)
+        if cur is None or (e.quando and cur.quando and e.quando > cur.quando):
+            por_lead[e.lead_id] = e
+    if not por_lead:
+        return {"periodo": periodo, "fechamentos": [], "total": {"qtd": 0, "tempo_medio": "—"}}
+
+    leads = {l.id: l for l in db.query(Lead.id, Lead.criado_em, Lead.ignorar_relatorios)
+             .filter(Lead.id.in_(list(por_lead.keys()))).all()}
+    uids = {e.usuario_id for e in por_lead.values() if e.usuario_id}
+    nomes = dict(db.query(Usuario.id, Usuario.nome).filter(Usuario.id.in_(uids)).all()) if uids else {}
+
+    agg = defaultdict(lambda: {"qtd": 0, "soma_seg": 0, "com_tempo": 0})
+    for lid, e in por_lead.items():
+        l = leads.get(lid)
+        if l is None or l.ignorar_relatorios:
+            continue
+        a = agg[e.usuario_id]
+        a["qtd"] += 1
+        if l.criado_em and e.quando and e.quando >= l.criado_em:
+            a["soma_seg"] += (e.quando - l.criado_em).total_seconds()
+            a["com_tempo"] += 1
+
+    fechamentos = []
+    for uid, a in agg.items():
+        media = (a["soma_seg"] / a["com_tempo"]) if a["com_tempo"] else 0
+        fechamentos.append({
+            "id": uid,
+            "nome": (nomes.get(uid) if uid else "Sistema/Bot") or f"Usuário {uid}",
+            "qtd": a["qtd"],
+            "tempo_medio": _dias_horas(media) if a["com_tempo"] else "—",
+            "tempo_medio_seg": int(media),
+        })
+    fechamentos.sort(key=lambda x: x["qtd"], reverse=True)
+
+    tot_qtd = sum(a["qtd"] for a in agg.values())
+    tot_soma = sum(a["soma_seg"] for a in agg.values())
+    tot_com = sum(a["com_tempo"] for a in agg.values())
+    total = {"qtd": tot_qtd, "tempo_medio": _dias_horas(tot_soma / tot_com) if tot_com else "—"}
+    return {"periodo": periodo, "fechamentos": fechamentos, "total": total}
 
 
 @app.get("/api/leads/{lead_id}/historico")
