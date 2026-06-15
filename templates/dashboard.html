@@ -4751,7 +4751,7 @@
     const periodo = document.getElementById('filtroPeriodoContratos')?.value || 'mes';
     try {
       const r = await fetch(`/api/relatorio/contratos-mes?periodo=${periodo}`);
-      if (!r.ok) return;
+      if (!r.ok) { el.innerHTML = '<p style="font-size:.83rem;color:#dc2626;text-align:center;padding:1rem">Erro ao carregar os contratos. Tente atualizar.</p>'; return; }
       const d = await r.json();
       if (d.contratos) _contratosData = d.contratos;
 
@@ -4818,7 +4818,7 @@
       }
 
       el.innerHTML = resumoHtml + tabelaHtml;
-    } catch {}
+    } catch { el.innerHTML = '<p style="font-size:.83rem;color:#dc2626;text-align:center;padding:1rem">Erro ao carregar os contratos. Tente atualizar.</p>'; }
   }
 
   function _exportarContratosCSV() {

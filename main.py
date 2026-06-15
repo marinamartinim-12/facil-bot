@@ -5209,7 +5209,7 @@ async def relatorio_volume_api(db: Session = Depends(get_db), admin: Usuario = D
     }
 
 
-def _origem_label(o):
+def _origem_label_curto(o):
     return {None: "Bot", "": "Bot", "whatsapp": "Bot",
             "parceiro": "Parceiro", "rede_social": "Rede Social",
             "indicacao": "Indicação", "ex_cliente": "Ex-cliente"}.get(o, o or "Bot")
@@ -5271,7 +5271,7 @@ async def relatorio_leads_calendario(
         r["total"] += 1
         if l.status in _virou_proposta:
             r["propostas"] += 1
-        r["origens"][_origem_label(l.origem)] += 1
+        r["origens"][_origem_label_curto(l.origem)] += 1
         r["resultados"][_resultado_label(l.status)] += 1
 
     # Tempo de 1ª resposta (média/mediana) por funcionária — do mês ou geral
@@ -5353,7 +5353,7 @@ async def relatorio_leads_calendario_xlsx(
             r["perdido"] += 1
         else:
             r["andamento"] += 1
-        ol = _origem_label(l.origem)
+        ol = _origem_label_curto(l.origem)
         r["origens"][ol] += 1
         origens_set.add(ol)
     origens_cols = sorted(origens_set)
