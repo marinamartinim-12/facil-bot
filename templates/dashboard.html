@@ -914,10 +914,14 @@
                 </button>
               </div>
             </div>
-            <div style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">
+            <div style="padding:.5rem .75rem;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:.4rem">
               <input id="inboxBusca" type="search" placeholder="🔍 Buscar conversa…"
                 oninput="renderInboxList()"
                 style="width:100%;padding:.35rem .65rem;border-radius:999px;border:1px solid var(--border);font-size:.8rem;outline:none;background:#f8fafc;color:var(--navy)" />
+              <select id="inboxAtendente" onchange="renderInboxList()"
+                style="width:100%;padding:.35rem .55rem;border-radius:8px;border:1px solid var(--border);font-size:.78rem;outline:none;background:#fff;color:var(--navy);cursor:pointer">
+                <option value="">👤 Todos os atendentes</option>
+              </select>
             </div>
             <div id="inboxList" style="flex:1;overflow-y:auto"></div>
           </div>
@@ -5827,18 +5831,41 @@
     inboxPollingInterval = setInterval(carregarInbox, 12000);  // 12s: alivia o servidor
   }
 
+  function _popularFiltroInbox() {
+    const sel = document.getElementById('inboxAtendente');
+    if (!sel) return;
+    const atual = sel.value;
+    const mapa = new Map();
+    let temSem = false;
+    inboxLeads.forEach(l => {
+      if (l.responsavel?.id != null) mapa.set(l.responsavel.id, l.responsavel.nome);
+      else temSem = true;
+    });
+    const ordenados = [...mapa.entries()].sort((a, b) => (a[1] || '').localeCompare(b[1] || ''));
+    let html = '<option value="">👤 Todos os atendentes</option>';
+    html += ordenados.map(([id, nome]) => `<option value="${id}">${esc(nome || 'Atendente ' + id)}</option>`).join('');
+    if (temSem) html += '<option value="__sem__">— Sem atendente —</option>';
+    sel.innerHTML = html;
+    if (atual && (atual === '__sem__' || mapa.has(Number(atual)))) sel.value = atual;
+  }
+
   function renderInboxList() {
     const list = document.getElementById('inboxList');
     const termo = (document.getElementById('inboxBusca')?.value || '').toLowerCase().trim();
-    const leads = termo
-      ? inboxLeads.filter(l => {
-          const nome = (l.nome && l.nome !== '—' ? l.nome : '').toLowerCase();
-          const tel = (l.telefone || '').toLowerCase();
-          return nome.includes(termo) || tel.includes(termo);
-        })
-      : inboxLeads;
+    _popularFiltroInbox();
+    const atendente = document.getElementById('inboxAtendente')?.value || '';
+    const leads = inboxLeads.filter(l => {
+      if (atendente === '__sem__') { if (l.responsavel?.id != null) return false; }
+      else if (atendente) { if (String(l.responsavel?.id) !== atendente) return false; }
+      if (termo) {
+        const nome = (l.nome && l.nome !== '—' ? l.nome : '').toLowerCase();
+        const tel = (l.telefone || '').toLowerCase();
+        if (!(nome.includes(termo) || tel.includes(termo))) return false;
+      }
+      return true;
+    });
     if (!leads.length) {
-      list.innerHTML = `<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.83rem">${termo ? 'Nenhum resultado para "'+esc(termo)+'"' : 'Nenhuma conversa ainda'}</div>`;
+      list.innerHTML = `<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.83rem">${(termo || atendente) ? 'Nenhuma conversa com esse filtro' : 'Nenhuma conversa ainda'}</div>`;
       return;
     }
     list.innerHTML = leads.map(l => {
