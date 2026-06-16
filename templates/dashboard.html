@@ -1705,8 +1705,14 @@
     carregarFila();        // Fila rotativa de atendimento
     carregarDashboard();   // Métricas da aba Dashboard
     _moverCardsRH();       // tira os cards de RH de Relatórios e leva pra aba RH (antes de renderizar)
-    const ultimaView = localStorage.getItem('ultimaView') || 'funil';
-    showView(ultimaView);
+    // Na 1ª abertura de cada período (manhã/tarde), cai no Dashboard p/ ver o briefing; depois, última aba.
+    const _periodoAtual = new Date().toDateString() + (new Date().getHours() < 13 ? '-m' : '-t');
+    let viewInicial = localStorage.getItem('ultimaView') || 'funil';
+    if (localStorage.getItem('briefingLanding') !== _periodoAtual) {
+      localStorage.setItem('briefingLanding', _periodoAtual);
+      viewInicial = 'dashboard';
+    }
+    showView(viewInicial);
     refresh();
     setInterval(refresh, 30000);
     setInterval(carregarDashboard, 60000); // atualiza dashboard a cada 1min
