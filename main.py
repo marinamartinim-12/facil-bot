@@ -3812,6 +3812,11 @@ async def rh_banco_horas(meses: int = 6, db: Session = Depends(get_db),
                 # Dia com ponto aberto (esqueceu de bater a saída) é ignorado — senão infla.
                 if not any(aberto for _, _, aberto in intervalos):
                     trab = sum(int((f - i).total_seconds()) for i, f, _ in intervalos)
+                    # Almoço não batido: se foi UM bloco contínuo > 6h (entrada→saída direto,
+                    # sem registrar saída/volta do almoço), desconta 1h presumida — senão
+                    # conta o almoço como trabalho e infla ~1h/dia.
+                    if len(intervalos) == 1 and trab > 6 * 3600:
+                        trab -= 3600
                     diff = trab - _segundos_esperados_dia(d)
                     saldo_s += diff
                     k = f"{d.year:04d}-{d.month:02d}"
