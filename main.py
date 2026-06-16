@@ -4840,6 +4840,46 @@ async def relatorio_fechamentos(periodo: str = "mes",
     return {"periodo": periodo, "fechamentos": fechamentos, "total": total}
 
 
+@app.get("/api/relatorio/origem")
+async def relatorio_origem(periodo: str = "tudo",
+                           db: Session = Depends(get_db),
+                           admin: Usuario = Depends(requer_admin)):
+    """Por operadora: quantos leads vieram de PARCEIRO (cartela) x NOVOS (whatsapp/anúncio/etc).
+    Ajuda a comparar volume de forma justa — quem tem cartela de parceiros maior recebe mais.
+    Mesmos filtros do funil de eficiência, então 'Total' bate com 'Recebidos'."""
+    _ign = Lead.ignorar_relatorios.isnot(True)
+    desde = _inicio_periodo(periodo)
+    q = (db.query(Lead.atribuido_para, Lead.parceiro_id, Lead.origem)
+         .filter(_ign, Lead.status != StatusLeadEnum.desqualificado))
+    if desde is not None:
+        q = q.filter(Lead.criado_em >= desde)
+    leads = q.all()
+
+    operadoras = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario).all()
+    stats = {u.id: {"id": u.id, "nome": u.nome, "_ativo": bool(u.ativo),
+                    "total": 0, "de_parceiro": 0, "novos": 0}
+             for u in operadoras}
+    for resp, pid, origem in leads:
+        s = stats.get(resp)
+        if s is None:
+            continue
+        s["total"] += 1
+        if pid is not None or origem == "parceiro":
+            s["de_parceiro"] += 1
+        else:
+            s["novos"] += 1
+
+    lista = [s for s in stats.values() if s["_ativo"] or s["total"] > 0]
+    for s in lista:
+        s.pop("_ativo", None)
+    lista.sort(key=lambda x: x["total"], reverse=True)
+    totais = {"total": 0, "de_parceiro": 0, "novos": 0}
+    for s in lista:
+        for k in totais:
+            totais[k] += s[k]
+    return {"operadoras": lista, "totais": totais}
+
+
 @app.get("/api/leads/{lead_id}/historico")
 async def lead_historico(lead_id: int, db: Session = Depends(get_db),
                          usuario: Usuario = Depends(obter_usuario_atual)):
