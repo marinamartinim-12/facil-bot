@@ -822,11 +822,11 @@
         </div>
         <!-- Banner clicável "Seu dia" → abre o briefing completo no Dashboard -->
         <div id="funilPendencias" onclick="showView('dashboard')" title="Abrir seu briefing completo no Dashboard"
-          onmouseover="this.style.background='#f3e8ff'" onmouseout="this.style.background='linear-gradient(135deg,#faf5ff,#ffffff)'"
-          style="display:none;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem;background:linear-gradient(135deg,#faf5ff,#ffffff);border:1px solid #e9d5ff;border-radius:9px;padding:.5rem .9rem;font-size:.82rem;color:var(--navy);cursor:pointer;transition:background .15s">
-          <span style="font-weight:800;color:#7c3aed">☀️ Seu dia:</span>
+          onmouseover="this.style.filter='brightness(1.08)'" onmouseout="this.style.filter='none'"
+          style="display:none;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem;background:linear-gradient(135deg,#7c3aed,#9333ea);border:none;border-radius:10px;padding:.6rem 1rem;font-size:.85rem;color:#fff;cursor:pointer;transition:filter .15s;box-shadow:0 2px 10px rgba(124,58,237,.35)">
+          <span style="font-weight:800">☀️ Seu dia:</span>
           <span id="funilPendTexto">—</span>
-          <span style="margin-left:auto;font-weight:700;color:#7c3aed;white-space:nowrap">📖 leia seu briefing →</span>
+          <span style="margin-left:auto;font-weight:800;white-space:nowrap;background:rgba(255,255,255,.22);padding:.2rem .65rem;border-radius:99px">📖 leia seu briefing →</span>
         </div>
         <!-- Barra fila rotativa -->
         <div id="filaBarra" style="display:none">
@@ -7213,9 +7213,9 @@
       if (!r.ok) { wrap.style.display = 'none'; return; }
       const d = await r.json();
       const partes = [];
-      if (d.atrasados) partes.push(`<b style="color:#dc2626">${d.atrasados}</b> atrasado(s)`);
-      if (d.hoje)      partes.push(`<b style="color:#d97706">${d.hoje}</b> pra hoje`);
-      if (d.sem_passo) partes.push(`<b style="color:#dc2626">${d.sem_passo}</b> sem próximo passo`);
+      if (d.atrasados) partes.push(`<b style="color:#fde68a">${d.atrasados}</b> atrasado(s)`);
+      if (d.hoje)      partes.push(`<b style="color:#fde68a">${d.hoje}</b> pra hoje`);
+      if (d.sem_passo) partes.push(`<b style="color:#fde68a">${d.sem_passo}</b> sem próximo passo`);
       txt.innerHTML = partes.length ? partes.join(' · ') : 'tudo em dia ✅';
       wrap.style.display = 'flex';
     } catch { wrap.style.display = 'none'; }
