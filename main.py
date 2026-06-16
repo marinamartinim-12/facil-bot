@@ -1875,6 +1875,111 @@ async def fechar_contrato_lead(
     return _serial_lead(lead, db)
 
 
+def _transcricao_lead(db, lead, limite_msgs: int = 150) -> str:
+    """Monta a transcrição (CLIENTE/ATENDIMENTO) das últimas mensagens do lead, em ordem
+    cronológica, p/ alimentar a IA. Limita quantidade e tamanho p/ controlar custo."""
+    msgs = (db.query(MensagemConversa)
+            .filter(MensagemConversa.telefone == lead.telefone)
+            .order_by(MensagemConversa.criado_em.desc())
+            .limit(limite_msgs).all())
+    linhas = []
+    for m in reversed(msgs):   # volta à ordem cronológica
+        c = (m.conteudo or "").strip()
+        if not c:
+            continue
+        cu = c.upper()
+        if cu.startswith("[IMAGE") or cu.startswith("[IMAGEM"):
+            c = "[imagem]"
+        elif cu.startswith("[AUDIO"):
+            c = "[áudio]"
+        elif cu.startswith("[DOC"):
+            c = "[documento]"
+        quem = "CLIENTE" if m.role == "user" else "ATENDIMENTO"
+        linhas.append(f"{quem}: {c}")
+    texto = "\n".join(linhas)
+    return texto[-12000:] if len(texto) > 12000 else texto
+
+
+@app.post("/api/leads/{lead_id}/resumo-ia")
+async def resumo_ia(lead_id: int, db: Session = Depends(get_db),
+                    usuario: Usuario = Depends(obter_usuario_atual)):
+    """IA resume a conversa do lead p/ a operadora pegar o contexto em segundos."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead não encontrado")
+    transcricao = _transcricao_lead(db, lead)
+    if not transcricao.strip():
+        return {"resumo": "Ainda não há conversa para resumir."}
+
+    def _chamar():
+        from bot import client, MODELO_IA
+        prompt = (
+            "Você é assistente INTERNO de uma equipe de F&I (financiamento de veículos). "
+            "Resuma a conversa abaixo para a OPERADORA entender o caso em segundos. "
+            "Máximo 4 linhas curtas, português, objetivo, sem saudação. Cubra: quem é o cliente e o que quer "
+            "(veículo/modalidade), em que etapa está, o que já se sabe (renda, entrada, restrição) e qual o "
+            "PRÓXIMO PASSO. Se faltar algo importante, diga o que falta.\n\n=== CONVERSA ===\n" + transcricao
+        )
+        resp = client.messages.create(model=MODELO_IA, max_tokens=350,
+                                      messages=[{"role": "user", "content": prompt}])
+        return resp.content[0].text.strip()
+
+    try:
+        resumo = await asyncio.to_thread(_chamar)
+    except Exception as e:
+        raise HTTPException(503, f"IA indisponível agora ({type(e).__name__}). Tente de novo.")
+    return {"resumo": resumo}
+
+
+@app.post("/api/leads/{lead_id}/extrair-dados-ia")
+async def extrair_dados_ia(lead_id: int, db: Session = Depends(get_db),
+                           usuario: Usuario = Depends(obter_usuario_atual)):
+    """IA extrai os dados do cliente da conversa p/ a operadora só conferir e salvar."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead não encontrado")
+    transcricao = _transcricao_lead(db, lead)
+    if not transcricao.strip():
+        return {"dados": {}}
+
+    def _chamar():
+        from bot import client, MODELO_IA
+        prompt = (
+            "Extraia os dados do CLIENTE a partir da conversa abaixo. Responda SOMENTE com um JSON válido "
+            "(sem texto fora dele) com EXATAMENTE estas chaves, usando null quando o dado NÃO estiver claro "
+            "na conversa (NUNCA invente):\n"
+            '{"nome": null, "cpf": null, "data_nascimento": null, "carro_interesse": null, '
+            '"modalidade": null, "cidade": null, "renda": null, "profissao": null, "email": null}\n'
+            "Regras: data_nascimento no formato DD/MM/AAAA; modalidade só pode ser 'financiamento' ou "
+            "'refinanciamento'; cpf apenas com os dígitos; renda deve ser EXATAMENTE uma destas faixas "
+            "(ou null): 'Até R$2.000', 'R$2.000 a R$5.000', 'R$5.000 a R$10.000', 'Acima de R$10.000'.\n\n"
+            "=== CONVERSA ===\n" + transcricao
+        )
+        resp = client.messages.create(model=MODELO_IA, max_tokens=400,
+                                      messages=[{"role": "user", "content": prompt}])
+        return resp.content[0].text.strip()
+
+    try:
+        raw = await asyncio.to_thread(_chamar)
+    except Exception as e:
+        raise HTTPException(503, f"IA indisponível agora ({type(e).__name__}). Tente de novo.")
+
+    dados = {}
+    try:
+        i, j = raw.find("{"), raw.rfind("}")
+        if i != -1 and j != -1:
+            dados = json.loads(raw[i:j + 1])
+    except Exception:
+        dados = {}
+    permitidas = {"nome", "cpf", "data_nascimento", "carro_interesse", "modalidade",
+                  "cidade", "renda", "profissao", "email"}
+    # Só aceita valores escalares (string/número), nunca dict/list/bool da IA fora do formato
+    dados = {k: v for k, v in dados.items()
+             if k in permitidas and isinstance(v, (str, int, float)) and not isinstance(v, bool)
+             and str(v).strip() not in ("", "null", "None")}
+    return {"dados": dados}
+
+
 def _calc_idade(data_nasc_str: str | None) -> str:
     """Calcula idade a partir de DD/MM/YYYY."""
     if not data_nasc_str or data_nasc_str == "—":

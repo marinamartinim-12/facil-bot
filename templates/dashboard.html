@@ -1473,6 +1473,13 @@
     <div class="modal-body-lead">
       <!-- Esquerda: dados + obs -->
       <div class="modal-left">
+        <div class="modal-section" id="modalResumoSection">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+            <h4 style="margin:0">✨ Resumo IA</h4>
+            <button class="btn btn-sm btn-outline" id="btnResumoIA" onclick="gerarResumoIA()" style="padding:.3rem .75rem">✨ Gerar resumo</button>
+          </div>
+          <div id="modalResumoIA" style="display:none;font-size:.82rem;color:var(--navy);margin-top:.5rem;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:.6rem .75rem;white-space:pre-wrap;line-height:1.45"></div>
+        </div>
         <div class="modal-section">
           <h4>📋 Dados do Cliente</h4>
           <div class="data-grid" id="modalDados"></div>
@@ -2095,6 +2102,8 @@
   // ═══════ MODAL LEAD COMPLETO ═══════
   async function verLead(leadId) {
     modalLeadId = leadId;
+    const _rb = document.getElementById('modalResumoIA');
+    if (_rb) { _rb.style.display = 'none'; _rb.textContent = ''; }
     // Reativa no funil se estava oculto por inatividade
     fetch(`/api/leads/${leadId}/reativar-funil`, { method: 'POST' }).catch(() => {});
     document.getElementById('modalTitle').textContent = 'Carregando…';
@@ -6936,7 +6945,8 @@
       : `<span>${labMod(lead.modalidade||'')}</span>`;
 
     const btnEditar = editando
-      ? `<div style="display:flex;gap:.5rem;margin-top:.5rem">
+      ? `<div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap">
+           <button class="btn btn-sm" id="btnPreencherIA" style="background:#7c3aed;color:#fff;width:100%" onclick="preencherDadosIA()">🪄 Preencher com IA (confira antes de salvar)</button>
            <button class="btn btn-primary btn-sm" onclick="salvarDadosLead()" style="flex:1">💾 Salvar</button>
            <button class="btn btn-sm" style="background:var(--border);color:var(--navy);flex:1" onclick="renderDadosLead(window._modalLeadData,false)">✕ Cancelar</button>
          </div>`
@@ -7079,6 +7089,62 @@
       const nome = (leadAtualizado.nome && leadAtualizado.nome !== '—') ? leadAtualizado.nome : leadAtualizado.telefone;
       document.getElementById('modalTitle').textContent = nome;
     } catch { alert('Erro de rede.'); }
+  }
+
+  async function gerarResumoIA() {
+    if (!modalLeadId) return;
+    const box = document.getElementById('modalResumoIA');
+    const btn = document.getElementById('btnResumoIA');
+    if (!box) return;
+    box.style.display = 'block';
+    box.textContent = '✨ Lendo a conversa e resumindo…';
+    if (btn) btn.disabled = true;
+    try {
+      const r = await fetch(`/api/leads/${modalLeadId}/resumo-ia`, { method: 'POST' });
+      const d = await r.json();
+      box.textContent = r.ok ? (d.resumo || 'Sem conversa para resumir.')
+                             : ('⚠️ ' + (d.detail || 'Não consegui resumir agora.'));
+    } catch {
+      box.textContent = '⚠️ Erro de conexão.';
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function preencherDadosIA() {
+    if (!modalLeadId) return;
+    const btn = document.getElementById('btnPreencherIA');
+    const orig = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '🪄 Lendo a conversa…'; }
+    try {
+      const r = await fetch(`/api/leads/${modalLeadId}/extrair-dados-ia`, { method: 'POST' });
+      const d = await r.json();
+      if (!r.ok) {
+        if (btn) { btn.textContent = '⚠️ ' + (d.detail || 'Não consegui agora'); setTimeout(() => { if (btn) btn.textContent = orig; }, 3500); }
+        return;
+      }
+      const dados = d.dados || {};
+      const mapa = { nome:'ei_nome', cpf:'ei_cpf', data_nascimento:'ei_nasc', carro_interesse:'ei_carro',
+                     modalidade:'ei_mod', email:'ei_email', profissao:'ei_prof', renda:'ei_renda' };
+      let n = 0;
+      Object.entries(mapa).forEach(([k, id]) => {
+        const v = dados[k];
+        const el = document.getElementById(id);
+        if (el && v != null && String(v).trim() !== '') {
+          el.value = v;
+          if (el.tagName === 'SELECT' && el.value !== String(v)) return;   // opção inexistente → ignora
+          el.style.background = '#fef9c3';   // destaca o que a IA preencheu
+          n++;
+        }
+      });
+      if (btn) btn.textContent = n ? `✅ ${n} campo(s) preenchido(s) — confira e Salve` : 'Nada novo encontrado na conversa';
+      setTimeout(() => { if (btn) btn.textContent = orig; }, 4500);
+    } catch {
+      if (btn) btn.textContent = '⚠️ Erro de conexão';
+      setTimeout(() => { if (btn) btn.textContent = orig; }, 3500);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   // ═══════ SIDEBAR TOGGLE ═══════
