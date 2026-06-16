@@ -820,10 +820,13 @@
           <div id="funilOrigens" class="funil-stats-row"></div>
           <div id="funilMetrics" class="funil-stats-row"></div>
         </div>
-        <!-- Faixa compacta "Seu dia" (números; texto completo fica no Dashboard) -->
-        <div id="funilPendencias" style="display:none;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem;background:linear-gradient(135deg,#faf5ff,#ffffff);border:1px solid #e9d5ff;border-radius:9px;padding:.45rem .85rem;font-size:.82rem;color:var(--navy)">
+        <!-- Banner clicável "Seu dia" → abre o briefing completo no Dashboard -->
+        <div id="funilPendencias" onclick="showView('dashboard')" title="Abrir seu briefing completo no Dashboard"
+          onmouseover="this.style.background='#f3e8ff'" onmouseout="this.style.background='linear-gradient(135deg,#faf5ff,#ffffff)'"
+          style="display:none;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem;background:linear-gradient(135deg,#faf5ff,#ffffff);border:1px solid #e9d5ff;border-radius:9px;padding:.5rem .9rem;font-size:.82rem;color:var(--navy);cursor:pointer;transition:background .15s">
           <span style="font-weight:800;color:#7c3aed">☀️ Seu dia:</span>
           <span id="funilPendTexto">—</span>
+          <span style="margin-left:auto;font-weight:700;color:#7c3aed;white-space:nowrap">📖 leia seu briefing →</span>
         </div>
         <!-- Barra fila rotativa -->
         <div id="filaBarra" style="display:none">
