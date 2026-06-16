@@ -1263,6 +1263,16 @@
           </div>
         </div>
 
+        <!-- ── LEADS SEM PRÓXIMO PASSO (admin only) ── -->
+        <div class="rel-card admin-only" data-relgrupo="equipe" id="relSemPassoCard">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
+            <h3 style="margin:0">🔔 Leads sem próximo passo</h3>
+            <button onclick="carregarRelatorioSemPasso()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
+          </div>
+          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .75rem">Leads que alguém está trabalhando (assumido → proposta) mas <strong>sem nenhum agendamento pendente</strong> — risco de esfriar. Clique num lead pra abrir e <strong>agendar o próximo passo</strong>.</p>
+          <div id="relSemPassoBody"><p style="font-size:.83rem;color:var(--muted);text-align:center;padding:1rem">Carregando…</p></div>
+        </div>
+
         <!-- ── PERFIL PARA ANÚNCIOS ── -->
         <div class="rel-card" data-relgrupo="marketing" id="relPerfilCard">
           <h3>📊 Perfil dos Clientes — Dados para Anúncios</h3>
@@ -3899,6 +3909,7 @@
     await carregarRelatorioEficiencia();
     await carregarRelatorioFechamentos();
     await carregarRelatorioOrigem();
+    await carregarRelatorioSemPasso();
     await carregarRelatorioParceiros();
     await carregarRelatorioContratosMes();
     await carregarRelatorioPerfil();
@@ -4055,6 +4066,38 @@
       body.innerHTML = html;
     } catch {
       body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:1rem;color:#dc2626">Erro ao carregar.</td></tr>';
+    }
+  }
+
+  async function carregarRelatorioSemPasso() {
+    const el = document.getElementById('relSemPassoBody');
+    if (!el) return;
+    try {
+      const r = await fetch('/api/relatorio/sem-proximo-passo');
+      if (!r.ok) { el.innerHTML = '<p style="font-size:.83rem;color:var(--muted);text-align:center;padding:1rem">Sem dados.</p>'; return; }
+      const d = await r.json();
+      const ops = d.operadoras || [];
+      if (!d.total) {
+        el.innerHTML = '<p style="font-size:.83rem;color:#16a34a;text-align:center;padding:1rem;font-weight:600">🎉 Todo lead em atendimento tem próximo passo agendado!</p>';
+        return;
+      }
+      el.innerHTML = ops.map(op => `
+        <div style="margin-bottom:.85rem">
+          <div style="font-weight:700;color:var(--navy);font-size:.85rem;margin-bottom:.35rem">👤 ${escHtml(op.nome)} — <span style="color:#dc2626">${op.qtd}</span> sem próximo passo</div>
+          <div style="display:flex;flex-direction:column;gap:.25rem">
+            ${op.leads.map(l => `
+              <div onclick="verLead(${l.id})" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.35rem .6rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;font-size:.8rem"
+                onmouseover="this.style.background='#eef2f7'" onmouseout="this.style.background='#f8fafc'">
+                <span style="font-weight:600;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(l.nome)}</span>
+                <span style="display:flex;gap:.5rem;align-items:center;flex-shrink:0">
+                  <span class="badge badge-${l.status}" style="font-size:.62rem;padding:1px 5px">${escHtml(typeof labSt === 'function' ? labSt(l.status) : l.status)}</span>
+                  <span style="color:${l.dias >= 3 ? '#dc2626' : '#64748b'};font-size:.72rem;font-weight:600">${l.dias}d</span>
+                </span>
+              </div>`).join('')}
+          </div>
+        </div>`).join('');
+    } catch {
+      el.innerHTML = '<p style="font-size:.83rem;color:#dc2626;text-align:center;padding:1rem">Erro ao carregar.</p>';
     }
   }
 

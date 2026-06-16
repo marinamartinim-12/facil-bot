@@ -4880,6 +4880,47 @@ async def relatorio_origem(periodo: str = "tudo",
     return {"operadoras": lista, "totais": totais}
 
 
+@app.get("/api/relatorio/sem-proximo-passo")
+async def relatorio_sem_proximo_passo(db: Session = Depends(get_db),
+                                      admin: Usuario = Depends(requer_admin)):
+    """Leads que ALGUÉM está trabalhando (assumido/pré-análise/proposta) e que NÃO têm
+    nenhum agendamento PENDENTE = sem próximo passo. Por operadora — risco de esfriar."""
+    ATIVOS = [StatusLeadEnum.assumido.value, StatusLeadEnum.pre_analise.value,
+              StatusLeadEnum.proposta_enviada.value, StatusLeadEnum.proposta_aprovada.value]
+    leads = (db.query(Lead)
+             .filter(Lead.status.in_(ATIVOS),
+                     Lead.ignorar_relatorios.isnot(True),
+                     Lead.atribuido_para.isnot(None)).all())
+    com_pendente = {lid for (lid,) in db.query(Agendamento.lead_id)
+                    .filter(Agendamento.concluido.isnot(True)).distinct().all()}
+    resp_ids = {l.atribuido_para for l in leads}
+    nomes = ({u.id: u.nome for u in db.query(Usuario).filter(Usuario.id.in_(resp_ids)).all()}
+             if resp_ids else {})
+
+    agora = datetime.utcnow()
+    por_op = {}
+    for l in leads:
+        if l.id in com_pendente:
+            continue   # já tem próximo passo agendado
+        op = por_op.setdefault(l.atribuido_para,
+                               {"id": l.atribuido_para,
+                                "nome": nomes.get(l.atribuido_para, "—"),
+                                "qtd": 0, "leads": []})
+        dias = (agora - l.atualizado_em).days if l.atualizado_em else 0
+        op["qtd"] += 1
+        op["leads"].append({
+            "id": l.id,
+            "nome": l.nome if (l.nome and l.nome != "—") else l.telefone,
+            "status": l.status,
+            "dias": dias,
+        })
+    lista = list(por_op.values())
+    for op in lista:
+        op["leads"].sort(key=lambda x: x["dias"], reverse=True)
+    lista.sort(key=lambda x: x["qtd"], reverse=True)
+    return {"operadoras": lista, "total": sum(op["qtd"] for op in lista)}
+
+
 @app.get("/api/leads/{lead_id}/historico")
 async def lead_historico(lead_id: int, db: Session = Depends(get_db),
                          usuario: Usuario = Depends(obter_usuario_atual)):
