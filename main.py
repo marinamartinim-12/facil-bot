@@ -3862,6 +3862,24 @@ async def rh_banco_horas_inicio(request: Request, db: Session = Depends(get_db),
     return {"status": "ok", "inicio_iso": data}
 
 
+@app.get("/api/admin/limpar-ponto")
+async def limpar_ponto(confirmar: str = "", db: Session = Depends(get_db),
+                       admin: Usuario = Depends(requer_admin)):
+    """APAGA PERMANENTEMENTE todos os registros de ponto (e justificativas/correções).
+    Exige ?confirmar=APAGAR-TUDO p/ não disparar por acidente. Admin only. Irreversível."""
+    if confirmar != "APAGAR-TUDO":
+        return JSONResponse(status_code=400, content={
+            "status": "confirmacao_necessaria",
+            "aviso": "Isso APAGA TODOS os registros de ponto PERMANENTEMENTE (sem volta). "
+                     "Para confirmar, adicione ?confirmar=APAGAR-TUDO no final da URL."})
+    n_pontos = db.query(RegistroPonto).delete()
+    n_just = db.query(JustificativaPonto).delete()
+    n_corr = db.query(CorrecaoPonto).delete()
+    db.commit()
+    return JSONResponse({"status": "ok", "pontos_apagados": n_pontos,
+                         "justificativas_apagadas": n_just, "correcoes_apagadas": n_corr})
+
+
 # ─── Perfil do próprio usuário ───────────────────────────────────────────────────
 
 @app.put("/api/me")
