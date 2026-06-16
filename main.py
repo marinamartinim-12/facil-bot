@@ -2026,60 +2026,98 @@ _BRIEFING_CACHE = {}
 @app.get("/api/briefing-dia")
 async def briefing_dia(db: Session = Depends(get_db),
                        usuario: Usuario = Depends(obter_usuario_atual)):
-    """Briefing matinal da operadora: o que priorizar hoje (agendamentos + leads parados)."""
+    """Briefing do dia. Funcionária: o que priorizar (agendamentos + leads parados dela).
+    Admin: visão de GESTÃO (panorama da equipe + seus compromissos). Gera no máx 2x/dia/usuário."""
     agora = datetime.utcnow()
-    hoje_br = _agora_br().strftime("%Y-%m-%d")
+    _br = _agora_br()
+    hoje_br = _br.strftime("%Y-%m-%d")
+    # Seus compromissos (agendamentos) — barato, usado por todos os papéis
     pares = (db.query(Agendamento, Lead).join(Lead, Agendamento.lead_id == Lead.id)
              .filter((Agendamento.criado_por == usuario.id) | (Lead.atribuido_para == usuario.id),
                      Agendamento.concluido.isnot(True)).all())
     atrasados = sum(1 for a, _l in pares if a.quando and a.quando <= agora)
     hoje = sum(1 for a, _l in pares
                if a.quando and a.quando > agora and _fmt_br(a.quando, "%Y-%m-%d") == hoje_br)
-    ATIVOS = [StatusLeadEnum.assumido.value, StatusLeadEnum.pre_analise.value,
-              StatusLeadEnum.proposta_enviada.value, StatusLeadEnum.proposta_aprovada.value]
-    meus_ativos = db.query(Lead.id).filter(Lead.status.in_(ATIVOS),
-                                           Lead.atribuido_para == usuario.id,
-                                           Lead.ignorar_relatorios.isnot(True)).all()
-    com_pend = {lid for (lid,) in db.query(Agendamento.lead_id)
-                .filter(Agendamento.concluido.isnot(True)).distinct().all()}
-    sem_passo = sum(1 for (lid,) in meus_ativos if lid not in com_pend)
     nome = (usuario.nome or "").strip().split(" ")[0] or "tudo bem"
 
-    fatos = (f"- {atrasados} agendamento(s) atrasado(s)\n"
-             f"- {hoje} agendamento(s) para hoje\n"
-             f"- {sem_passo} lead(s) sem próximo passo agendado")
-
-    # Gera no máx 2x/dia por operadora (manhã < 13h e tarde >= 13h); senão reusa o do período.
-    _br = _agora_br()
+    # Cache por período: manhã (< 13h) e tarde (>= 13h); senão reusa
     periodo = "manha" if _br.hour < 13 else "tarde"
-    chave = (usuario.id, _br.strftime("%Y-%m-%d"), periodo)
+    chave = (usuario.id, hoje_br, periodo)
     if _BRIEFING_CACHE.get(chave):
-        return {"briefing": _BRIEFING_CACHE[chave], "atrasados": atrasados, "hoje": hoje,
-                "sem_passo": sem_passo, "periodo": periodo}
+        return {"briefing": _BRIEFING_CACHE[chave], "atrasados": atrasados, "hoje": hoje, "periodo": periodo}
+
+    _ign = Lead.ignorar_relatorios.isnot(True)
+    ATIVOS = [StatusLeadEnum.assumido.value, StatusLeadEnum.pre_analise.value,
+              StatusLeadEnum.proposta_enviada.value, StatusLeadEnum.proposta_aprovada.value]
+    com_pend = {lid for (lid,) in db.query(Agendamento.lead_id)
+                .filter(Agendamento.concluido.isnot(True)).distinct().all()}
+
+    if usuario.role == RoleEnum.admin:
+        from sqlalchemy import func
+        inicio_hoje = datetime(_br.year, _br.month, _br.day, tzinfo=_TZ_BR).astimezone(timezone.utc).replace(tzinfo=None)
+        novos_hoje = db.query(Lead).filter(Lead.criado_em >= inicio_hoje, _ign).count()
+        qualificados = db.query(Lead).filter(Lead.status == StatusLeadEnum.qualificado.value, _ign).count()
+        em_atend = db.query(Lead).filter(Lead.status.in_(ATIVOS), _ign).count()
+        fechados_hoje = db.query(Lead).filter(Lead.status == StatusLeadEnum.fechado.value,
+                                              Lead.fechado_em >= inicio_hoje, _ign).count()
+        ativos_atrib = db.query(Lead.id).filter(Lead.status.in_(ATIVOS),
+                                                Lead.atribuido_para.isnot(None), _ign).all()
+        sem_passo_eq = sum(1 for (lid,) in ativos_atrib if lid not in com_pend)
+        # clientes esperando resposta (última mensagem é do cliente)
+        tels = [t for (t,) in db.query(Lead.telefone)
+                .filter(Lead.status.in_([StatusLeadEnum.qualificado.value] + ATIVOS), _ign).all()]
+        paradas = 0
+        if tels:
+            sub = (db.query(MensagemConversa.telefone, func.max(MensagemConversa.id).label("mid"))
+                   .filter(MensagemConversa.telefone.in_(tels))
+                   .group_by(MensagemConversa.telefone).subquery())
+            ultimas = db.query(MensagemConversa.role).join(sub, MensagemConversa.id == sub.c.mid).all()
+            paradas = sum(1 for (role,) in ultimas if role == "user")
+        fatos = (f"- {novos_hoje} novo(s) lead(s) hoje\n"
+                 f"- {qualificados} qualificado(s) aguardando atendimento\n"
+                 f"- {em_atend} em atendimento (assumidos/proposta)\n"
+                 f"- {paradas} cliente(s) esperando resposta agora\n"
+                 f"- {sem_passo_eq} lead(s) da equipe sem próximo passo\n"
+                 f"- {fechados_hoje} contrato(s) fechado(s) hoje\n"
+                 f"- seus compromissos: {atrasados} atrasado(s), {hoje} para hoje")
+        prompt = (
+            f"Você é assistente de GESTÃO de uma equipe de F&I (financiamento de veículos). Escreva um "
+            f"briefing curto e estratégico para a GESTORA {nome} (dona da operação), com base nos números de "
+            f"HOJE. Comece com 'Bom dia, {nome}!'. 3 a 5 linhas, tom de gestão: dê o panorama e aponte o que "
+            f"merece atenção (gargalos como clientes esperando e leads sem próximo passo); destaque o que está "
+            f"bom. Não use asteriscos. Responda só com o texto.\n\n" + fatos)
+        fallback = (f"Bom dia, {nome}! Hoje: {novos_hoje} novos leads, {qualificados} qualificados aguardando, "
+                    f"{paradas} clientes esperando resposta, {sem_passo_eq} leads da equipe sem próximo passo "
+                    f"e {fechados_hoje} fechado(s).")
+    else:
+        meus_ativos = db.query(Lead.id).filter(Lead.status.in_(ATIVOS),
+                                               Lead.atribuido_para == usuario.id, _ign).all()
+        sem_passo = sum(1 for (lid,) in meus_ativos if lid not in com_pend)
+        fatos = (f"- {atrasados} agendamento(s) atrasado(s)\n"
+                 f"- {hoje} agendamento(s) para hoje\n"
+                 f"- {sem_passo} lead(s) sem próximo passo agendado")
+        prompt = (
+            f"Escreva um BRIEFING matinal curto e motivador para {nome}, operadora de uma equipe de "
+            f"financiamento de veículos, com base nestes números. Comece com 'Bom dia, {nome}!'. 2 a 4 linhas, "
+            f"tom amigável e prático, português. Aponte o que priorizar hoje. Se estiver tudo zerado, parabenize "
+            f"por estar em dia. Não use asteriscos. Responda só com o texto.\n\n" + fatos)
+        fallback = (f"Bom dia, {nome}! Hoje você tem {atrasados} agendamento(s) atrasado(s), "
+                    f"{hoje} para hoje e {sem_passo} lead(s) sem próximo passo.")
 
     def _chamar():
         from bot import client, MODELO_IA
-        prompt = (
-            f"Escreva um BRIEFING matinal curto e motivador para {nome}, operadora de uma equipe de "
-            f"financiamento de veículos, com base nestes números do sistema. Comece com 'Bom dia, {nome}!'. "
-            "2 a 4 linhas, tom amigável e prático, português. Aponte o que priorizar hoje. Se estiver tudo "
-            "zerado, parabenize por estar em dia. Responda só com o texto.\n\n" + fatos
-        )
-        resp = client.messages.create(model=MODELO_IA, max_tokens=220,
+        resp = client.messages.create(model=MODELO_IA, max_tokens=300,
                                       messages=[{"role": "user", "content": prompt}])
         return resp.content[0].text.strip()
 
     try:
         texto = await asyncio.to_thread(_chamar)
-        _hoje = _br.strftime("%Y-%m-%d")
-        for _k in [k for k in _BRIEFING_CACHE if k[1] != _hoje]:   # limpa dias antigos
+        for _k in [k for k in _BRIEFING_CACHE if k[1] != hoje_br]:   # limpa dias antigos
             _BRIEFING_CACHE.pop(_k, None)
-        _BRIEFING_CACHE[chave] = texto                              # guarda só quando a IA respondeu
+        _BRIEFING_CACHE[chave] = texto                                # guarda só quando a IA respondeu
     except Exception:
-        texto = (f"Bom dia, {nome}! Hoje você tem {atrasados} agendamento(s) atrasado(s), "
-                 f"{hoje} para hoje e {sem_passo} lead(s) sem próximo passo.")
-    return {"briefing": texto, "atrasados": atrasados, "hoje": hoje,
-            "sem_passo": sem_passo, "periodo": periodo}
+        texto = fallback
+    return {"briefing": texto, "atrasados": atrasados, "hoje": hoje, "periodo": periodo}
 
 
 @app.get("/api/pendencias")
