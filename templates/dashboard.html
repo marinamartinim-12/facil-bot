@@ -820,6 +820,11 @@
           <div id="funilOrigens" class="funil-stats-row"></div>
           <div id="funilMetrics" class="funil-stats-row"></div>
         </div>
+        <!-- Faixa compacta "Seu dia" (números; texto completo fica no Dashboard) -->
+        <div id="funilPendencias" style="display:none;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem;background:linear-gradient(135deg,#faf5ff,#ffffff);border:1px solid #e9d5ff;border-radius:9px;padding:.45rem .85rem;font-size:.82rem;color:var(--navy)">
+          <span style="font-weight:800;color:#7c3aed">☀️ Seu dia:</span>
+          <span id="funilPendTexto">—</span>
+        </div>
         <!-- Barra fila rotativa -->
         <div id="filaBarra" style="display:none">
           <span class="fila-titulo">Próximo lead:</span>
@@ -1731,6 +1736,7 @@
     document.getElementById('mainContent').classList.toggle('funil-mode', v === 'funil');
     if (v === 'contratos') carregarContratosFechados();
     if (v === 'dashboard') { carregarDashboard(); carregarBriefing(); }
+    if (v === 'funil') carregarPendenciasFunil();
     if (v === 'usuarios') carregarUsuarios();
     if (v === 'relatorios') carregarRelatorios();
     if (v === 'rh') carregarRH();
@@ -7190,6 +7196,23 @@
     } catch {
       el.textContent = 'Não consegui montar o briefing agora.';
     }
+  }
+
+  async function carregarPendenciasFunil() {
+    const wrap = document.getElementById('funilPendencias');
+    const txt = document.getElementById('funilPendTexto');
+    if (!wrap || !txt) return;
+    try {
+      const r = await fetch('/api/pendencias');
+      if (!r.ok) { wrap.style.display = 'none'; return; }
+      const d = await r.json();
+      const partes = [];
+      if (d.atrasados) partes.push(`<b style="color:#dc2626">${d.atrasados}</b> atrasado(s)`);
+      if (d.hoje)      partes.push(`<b style="color:#d97706">${d.hoje}</b> pra hoje`);
+      if (d.sem_passo) partes.push(`<b style="color:#dc2626">${d.sem_passo}</b> sem próximo passo`);
+      txt.innerHTML = partes.length ? partes.join(' · ') : 'tudo em dia ✅';
+      wrap.style.display = 'flex';
+    } catch { wrap.style.display = 'none'; }
   }
 
   // ═══════ SIDEBAR TOGGLE ═══════

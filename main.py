@@ -2065,6 +2065,29 @@ async def briefing_dia(db: Session = Depends(get_db),
     return {"briefing": texto, "atrasados": atrasados, "hoje": hoje, "sem_passo": sem_passo}
 
 
+@app.get("/api/pendencias")
+async def pendencias(db: Session = Depends(get_db),
+                     usuario: Usuario = Depends(obter_usuario_atual)):
+    """Só os contadores de pendências da operadora (SEM IA) — p/ a faixa compacta no funil."""
+    agora = datetime.utcnow()
+    hoje_br = _agora_br().strftime("%Y-%m-%d")
+    pares = (db.query(Agendamento, Lead).join(Lead, Agendamento.lead_id == Lead.id)
+             .filter((Agendamento.criado_por == usuario.id) | (Lead.atribuido_para == usuario.id),
+                     Agendamento.concluido.isnot(True)).all())
+    atrasados = sum(1 for a, _l in pares if a.quando and a.quando <= agora)
+    hoje = sum(1 for a, _l in pares
+               if a.quando and a.quando > agora and _fmt_br(a.quando, "%Y-%m-%d") == hoje_br)
+    ATIVOS = [StatusLeadEnum.assumido.value, StatusLeadEnum.pre_analise.value,
+              StatusLeadEnum.proposta_enviada.value, StatusLeadEnum.proposta_aprovada.value]
+    meus_ativos = db.query(Lead.id).filter(Lead.status.in_(ATIVOS),
+                                           Lead.atribuido_para == usuario.id,
+                                           Lead.ignorar_relatorios.isnot(True)).all()
+    com_pend = {lid for (lid,) in db.query(Agendamento.lead_id)
+                .filter(Agendamento.concluido.isnot(True)).distinct().all()}
+    sem_passo = sum(1 for (lid,) in meus_ativos if lid not in com_pend)
+    return {"atrasados": atrasados, "hoje": hoje, "sem_passo": sem_passo}
+
+
 def _calc_idade(data_nasc_str: str | None) -> str:
     """Calcula idade a partir de DD/MM/YYYY."""
     if not data_nasc_str or data_nasc_str == "—":
