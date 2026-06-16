@@ -738,6 +738,14 @@
         </div>
         <!-- Métricas -->
         <div style="display:flex;flex-direction:column;gap:.75rem">
+          <!-- Briefing do dia (IA) -->
+          <div class="form-card" id="dashBriefingCard" style="padding:.85rem 1.1rem;background:linear-gradient(135deg,#faf5ff,#ffffff);border:1px solid #e9d5ff">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem">
+              <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:#7c3aed">☀️ Seu dia <span style="font-weight:600;color:var(--muted);text-transform:none">· resumo da IA</span></div>
+              <button class="btn btn-sm btn-outline" onclick="carregarBriefing(true)" title="Atualizar" style="padding:.2rem .55rem;font-size:.75rem">🔄</button>
+            </div>
+            <div id="dashBriefingTexto" style="font-size:.86rem;color:var(--navy);line-height:1.5;white-space:pre-wrap">Carregando seu resumo do dia…</div>
+          </div>
           <!-- Tarja admin -->
           <div id="dashTarjaAdmin" style="display:none"></div>
 
@@ -951,6 +959,7 @@
             <!-- Input WhatsApp -->
             <div class="wsp-input-bar" id="inputBarNormal">
               <button class="wsp-send-btn" title="Modelos de mensagem" onclick="abrirModelos(chatLeadAtivo?.id)" style="background:#0d2b4e;margin-right:4px;font-size:1.1rem">📋</button>
+              <button class="wsp-send-btn" id="btnRascunhoIA" title="Sugerir mensagem com IA (você revisa antes de enviar)" onclick="rascunharMensagem()" style="background:#7c3aed;margin-right:4px;font-size:1rem">✍️</button>
               <input id="msgInput" type="text" placeholder="Digite uma mensagem"
                 onkeydown="if(event.key==='Enter')enviarMensagem()" />
               <button class="wsp-send-btn" title="Gravar áudio" onclick="iniciarGravacao()" style="background:#25d366;margin-right:4px">
@@ -1721,7 +1730,7 @@
     document.getElementById('pageTitle').textContent = titles[v] || v;
     document.getElementById('mainContent').classList.toggle('funil-mode', v === 'funil');
     if (v === 'contratos') carregarContratosFechados();
-    if (v === 'dashboard') carregarDashboard();
+    if (v === 'dashboard') { carregarDashboard(); carregarBriefing(); }
     if (v === 'usuarios') carregarUsuarios();
     if (v === 'relatorios') carregarRelatorios();
     if (v === 'rh') carregarRH();
@@ -7144,6 +7153,42 @@
       setTimeout(() => { if (btn) btn.textContent = orig; }, 3500);
     } finally {
       if (btn) btn.disabled = false;
+    }
+  }
+
+  async function rascunharMensagem() {
+    const lead = chatLeadAtivo;
+    if (!lead) { alert('Selecione uma conversa primeiro.'); return; }
+    const input = document.getElementById('msgInput');
+    const btn = document.getElementById('btnRascunhoIA');
+    const ph = input.placeholder;
+    input.disabled = true; input.placeholder = '✍️ IA escrevendo um rascunho…';
+    if (btn) btn.disabled = true;
+    try {
+      const r = await fetch(`/api/leads/${lead.id}/rascunho-ia`, { method: 'POST' });
+      const d = await r.json();
+      if (r.ok && d.rascunho) { input.value = d.rascunho; }
+      else { alert(d.detail || 'Não consegui gerar o rascunho agora.'); }
+    } catch {
+      alert('Erro de conexão.');
+    } finally {
+      input.disabled = false; input.placeholder = ph; if (btn) btn.disabled = false; input.focus();
+    }
+  }
+
+  let _briefingFeito = false;
+  async function carregarBriefing(force) {
+    const el = document.getElementById('dashBriefingTexto');
+    if (!el) return;
+    if (_briefingFeito && !force) return;   // 1x por sessão — evita custo no refresh de 60s
+    _briefingFeito = true;
+    el.textContent = '☀️ Montando seu dia…';
+    try {
+      const r = await fetch('/api/briefing-dia');
+      const d = await r.json();
+      el.textContent = (r.ok && d.briefing) ? d.briefing : 'Não consegui montar o briefing agora.';
+    } catch {
+      el.textContent = 'Não consegui montar o briefing agora.';
     }
   }
 

@@ -1980,6 +1980,91 @@ async def extrair_dados_ia(lead_id: int, db: Session = Depends(get_db),
     return {"dados": dados}
 
 
+@app.post("/api/leads/{lead_id}/rascunho-ia")
+async def rascunho_ia(lead_id: int, tipo: str = "auto", db: Session = Depends(get_db),
+                      usuario: Usuario = Depends(obter_usuario_atual)):
+    """IA escreve um RASCUNHO de mensagem (follow-up/proposta) p/ a operadora revisar e enviar."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead não encontrado")
+    transcricao = _transcricao_lead(db, lead)
+    primeiro_nome = ""
+    if lead.nome and lead.nome != "—":
+        primeiro_nome = lead.nome.strip().split(" ")[0]
+
+    def _chamar():
+        from bot import client, MODELO_IA
+        instr = {
+            "followup": "Escreva um FOLLOW-UP amigável para reengajar o cliente que parou de responder.",
+            "proposta": "Escreva uma mensagem retomando/apresentando a PROPOSTA de financiamento de forma clara e convidativa.",
+        }.get(tipo, "Escreva a PRÓXIMA mensagem natural para dar sequência ao atendimento — follow-up, "
+                    "retomada ou próximo passo, o que fizer mais sentido pela conversa.")
+        prompt = (
+            "Você é a operadora da Fácil Financiamentos escrevendo uma mensagem de WhatsApp PARA O CLIENTE. "
+            + instr + " Tom: cordial, brasileiro, direto e humano (como a equipe fala), sem parecer robô. "
+            "1 a 3 frases curtas. "
+            + (f"Chame o cliente pelo primeiro nome ('{primeiro_nome}'). " if primeiro_nome else "")
+            + "NÃO invente valores, taxas ou condições que não apareceram na conversa. "
+            "Responda SOMENTE com o texto da mensagem, sem aspas e sem explicação.\n\n"
+            "=== CONVERSA ===\n" + (transcricao or "(ainda sem conversa)")
+        )
+        resp = client.messages.create(model=MODELO_IA, max_tokens=300,
+                                      messages=[{"role": "user", "content": prompt}])
+        return resp.content[0].text.strip()
+
+    try:
+        rascunho = await asyncio.to_thread(_chamar)
+    except Exception as e:
+        raise HTTPException(503, f"IA indisponível agora ({type(e).__name__}). Tente de novo.")
+    return {"rascunho": rascunho}
+
+
+@app.get("/api/briefing-dia")
+async def briefing_dia(db: Session = Depends(get_db),
+                       usuario: Usuario = Depends(obter_usuario_atual)):
+    """Briefing matinal da operadora: o que priorizar hoje (agendamentos + leads parados)."""
+    agora = datetime.utcnow()
+    hoje_br = _agora_br().strftime("%Y-%m-%d")
+    pares = (db.query(Agendamento, Lead).join(Lead, Agendamento.lead_id == Lead.id)
+             .filter((Agendamento.criado_por == usuario.id) | (Lead.atribuido_para == usuario.id),
+                     Agendamento.concluido.isnot(True)).all())
+    atrasados = sum(1 for a, _l in pares if a.quando and a.quando <= agora)
+    hoje = sum(1 for a, _l in pares
+               if a.quando and a.quando > agora and _fmt_br(a.quando, "%Y-%m-%d") == hoje_br)
+    ATIVOS = [StatusLeadEnum.assumido.value, StatusLeadEnum.pre_analise.value,
+              StatusLeadEnum.proposta_enviada.value, StatusLeadEnum.proposta_aprovada.value]
+    meus_ativos = db.query(Lead.id).filter(Lead.status.in_(ATIVOS),
+                                           Lead.atribuido_para == usuario.id,
+                                           Lead.ignorar_relatorios.isnot(True)).all()
+    com_pend = {lid for (lid,) in db.query(Agendamento.lead_id)
+                .filter(Agendamento.concluido.isnot(True)).distinct().all()}
+    sem_passo = sum(1 for (lid,) in meus_ativos if lid not in com_pend)
+    nome = (usuario.nome or "").strip().split(" ")[0] or "tudo bem"
+
+    fatos = (f"- {atrasados} agendamento(s) atrasado(s)\n"
+             f"- {hoje} agendamento(s) para hoje\n"
+             f"- {sem_passo} lead(s) sem próximo passo agendado")
+
+    def _chamar():
+        from bot import client, MODELO_IA
+        prompt = (
+            f"Escreva um BRIEFING matinal curto e motivador para {nome}, operadora de uma equipe de "
+            f"financiamento de veículos, com base nestes números do sistema. Comece com 'Bom dia, {nome}!'. "
+            "2 a 4 linhas, tom amigável e prático, português. Aponte o que priorizar hoje. Se estiver tudo "
+            "zerado, parabenize por estar em dia. Responda só com o texto.\n\n" + fatos
+        )
+        resp = client.messages.create(model=MODELO_IA, max_tokens=220,
+                                      messages=[{"role": "user", "content": prompt}])
+        return resp.content[0].text.strip()
+
+    try:
+        texto = await asyncio.to_thread(_chamar)
+    except Exception:
+        texto = (f"Bom dia, {nome}! Hoje você tem {atrasados} agendamento(s) atrasado(s), "
+                 f"{hoje} para hoje e {sem_passo} lead(s) sem próximo passo.")
+    return {"briefing": texto, "atrasados": atrasados, "hoje": hoje, "sem_passo": sem_passo}
+
+
 def _calc_idade(data_nasc_str: str | None) -> str:
     """Calcula idade a partir de DD/MM/YYYY."""
     if not data_nasc_str or data_nasc_str == "—":
