@@ -4384,6 +4384,8 @@ async def bater_ponto(request: Request, db: Session = Depends(get_db),
     tipo = (body.get("tipo") or "").strip()
     if tipo not in _PONTO_LABELS:
         raise HTTPException(400, "Tipo de ponto inválido")
+    if _agora_br().hour < 9:
+        raise HTTPException(400, "O ponto só pode ser batido a partir das 09h.")
     hoje = _agora_br().date()
     pontos = _pontos_do_dia(db, usuario.id, hoje)
     validos = _proximas_acoes_ponto(pontos)
