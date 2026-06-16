@@ -2019,6 +2019,10 @@ async def rascunho_ia(lead_id: int, tipo: str = "auto", db: Session = Depends(ge
     return {"rascunho": rascunho}
 
 
+# Cache em memória do briefing por (usuario, dia, período): gera no MÁX 2x/dia/operadora
+_BRIEFING_CACHE = {}
+
+
 @app.get("/api/briefing-dia")
 async def briefing_dia(db: Session = Depends(get_db),
                        usuario: Usuario = Depends(obter_usuario_atual)):
@@ -2045,6 +2049,14 @@ async def briefing_dia(db: Session = Depends(get_db),
              f"- {hoje} agendamento(s) para hoje\n"
              f"- {sem_passo} lead(s) sem próximo passo agendado")
 
+    # Gera no máx 2x/dia por operadora (manhã < 13h e tarde >= 13h); senão reusa o do período.
+    _br = _agora_br()
+    periodo = "manha" if _br.hour < 13 else "tarde"
+    chave = (usuario.id, _br.strftime("%Y-%m-%d"), periodo)
+    if _BRIEFING_CACHE.get(chave):
+        return {"briefing": _BRIEFING_CACHE[chave], "atrasados": atrasados, "hoje": hoje,
+                "sem_passo": sem_passo, "periodo": periodo}
+
     def _chamar():
         from bot import client, MODELO_IA
         prompt = (
@@ -2059,10 +2071,15 @@ async def briefing_dia(db: Session = Depends(get_db),
 
     try:
         texto = await asyncio.to_thread(_chamar)
+        _hoje = _br.strftime("%Y-%m-%d")
+        for _k in [k for k in _BRIEFING_CACHE if k[1] != _hoje]:   # limpa dias antigos
+            _BRIEFING_CACHE.pop(_k, None)
+        _BRIEFING_CACHE[chave] = texto                              # guarda só quando a IA respondeu
     except Exception:
         texto = (f"Bom dia, {nome}! Hoje você tem {atrasados} agendamento(s) atrasado(s), "
                  f"{hoje} para hoje e {sem_passo} lead(s) sem próximo passo.")
-    return {"briefing": texto, "atrasados": atrasados, "hoje": hoje, "sem_passo": sem_passo}
+    return {"briefing": texto, "atrasados": atrasados, "hoje": hoje,
+            "sem_passo": sem_passo, "periodo": periodo}
 
 
 @app.get("/api/pendencias")

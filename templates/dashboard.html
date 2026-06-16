@@ -7182,12 +7182,14 @@
     }
   }
 
-  let _briefingFeito = false;
+  let _briefingPeriodo = null;
   async function carregarBriefing(force) {
     const el = document.getElementById('dashBriefingTexto');
     if (!el) return;
-    if (_briefingFeito && !force) return;   // 1x por sessão — evita custo no refresh de 60s
-    _briefingFeito = true;
+    const _h = new Date().getHours();
+    const periodo = new Date().toDateString() + (_h < 13 ? '-manha' : '-tarde');
+    if (!force && _briefingPeriodo === periodo) return;   // já carregou neste período (manhã/tarde)
+    _briefingPeriodo = periodo;
     el.textContent = '☀️ Montando seu dia…';
     try {
       const r = await fetch('/api/briefing-dia');
@@ -7195,6 +7197,7 @@
       el.textContent = (r.ok && d.briefing) ? d.briefing : 'Não consegui montar o briefing agora.';
     } catch {
       el.textContent = 'Não consegui montar o briefing agora.';
+      _briefingPeriodo = null;   // deu erro: permite tentar de novo
     }
   }
 
