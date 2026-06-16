@@ -1703,7 +1703,16 @@ async def listar_leads(
     if modalidade:
         query = query.filter(Lead.modalidade == modalidade)
     leads = query.order_by(Lead.criado_em.desc()).all()
-    return [_serial_lead(l, db) for l in leads]
+    result = [_serial_lead(l, db) for l in leads]
+    # Marca "sem próximo passo": lead ativo (assumido→proposta) SEM agendamento pendente.
+    # Uma consulta só (não N+1) p/ o conjunto de leads com agendamento em aberto.
+    com_pendente = {lid for (lid,) in db.query(Agendamento.lead_id)
+                    .filter(Agendamento.concluido.isnot(True)).distinct().all()}
+    _ativos = {StatusLeadEnum.assumido.value, StatusLeadEnum.pre_analise.value,
+               StatusLeadEnum.proposta_enviada.value, StatusLeadEnum.proposta_aprovada.value}
+    for r in result:
+        r["sem_proximo_passo"] = (r["status"] in _ativos and r["id"] not in com_pendente)
+    return result
 
 
 @app.get("/api/leads/{lead_id}/conversa")

@@ -837,6 +837,10 @@
             style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;outline:none;background:#fff;cursor:pointer">
             <option value="">👤 Todos os atendentes</option>
           </select>
+          <label title="Mostra só leads que você está atendendo mas sem nada agendado" style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--navy);cursor:pointer;background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:.42rem .7rem;white-space:nowrap">
+            <input type="checkbox" id="funilSemPasso" onchange="renderKanban()" style="cursor:pointer">
+            ⏰ Sem próximo passo <span id="funilSemPassoCount" style="color:#dc2626;font-weight:700">(0)</span>
+          </label>
         </div>
         <!-- Kanban -->
         <div id="funiKanbanWrapper">
@@ -1914,19 +1918,28 @@
     const termo = (document.getElementById('funilBusca')?.value || '').toLowerCase().trim();
     _popularFiltroAtendente();
     const atendente = document.getElementById('funilAtendente')?.value || '';
-    board.innerHTML = colunas.map(col => {
-      const cards = allLeads.filter(l => {
-        if (l.status !== col.key || l.oculto_funil) return false;
-        // Filtro por atendente
-        if (atendente === '__sem__') {
-          if (l.responsavel?.id != null) return false;
-        } else if (atendente) {
-          if (String(l.responsavel?.id) !== atendente) return false;
-        }
-        if (!termo) return true;
+    const soSemPasso = document.getElementById('funilSemPasso')?.checked || false;
+    // Match dos filtros atendente + busca (reusado pelo contador de "sem próximo passo")
+    const _matchFiltros = l => {
+      if (l.oculto_funil) return false;
+      if (atendente === '__sem__') { if (l.responsavel?.id != null) return false; }
+      else if (atendente) { if (String(l.responsavel?.id) !== atendente) return false; }
+      if (termo) {
         const nome = (l.nome && l.nome !== '—' ? l.nome : '').toLowerCase();
         const tel  = (l.telefone || '').toLowerCase();
-        return nome.includes(termo) || tel.includes(termo);
+        if (!(nome.includes(termo) || tel.includes(termo))) return false;
+      }
+      return true;
+    };
+    // Contador "sem próximo passo" — respeita o filtro de atendente e a busca
+    const _cnt = document.getElementById('funilSemPassoCount');
+    if (_cnt) _cnt.textContent = `(${allLeads.filter(l => _matchFiltros(l) && l.sem_proximo_passo).length})`;
+    board.innerHTML = colunas.map(col => {
+      const cards = allLeads.filter(l => {
+        if (l.status !== col.key) return false;
+        if (!_matchFiltros(l)) return false;
+        if (soSemPasso && !l.sem_proximo_passo) return false;
+        return true;
       });
       return `
         <div class="kanban-col"
@@ -1993,6 +2006,7 @@
         <div class="card-phone">${l.telefone}</div>
         <div class="card-meta">
           <span class="badge badge-${l.modalidade}">${labMod(l.modalidade)}</span>
+          ${l.sem_proximo_passo ? `<span title="Sem próximo passo agendado — abra e agende uma ação" style="font-size:.6rem;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:999px;padding:1px 6px;font-weight:700;white-space:nowrap">⏰ sem próximo passo</span>` : ''}
         </div>
         <div class="card-resp">${respBadge(l.responsavel)}</div>
         <div class="card-time">🕐 ${tempo}</div>
