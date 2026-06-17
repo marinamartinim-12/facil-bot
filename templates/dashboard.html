@@ -2424,6 +2424,12 @@
     }
   }
 
+  // Atualiza o selo "sem próximo passo" no funil + a faixa "Seu dia" (após criar/concluir/remover agendamento)
+  function _atualizarPassoFunil() {
+    carregarLeads();
+    carregarPendenciasFunil();
+  }
+
   async function criarAgendamento() {
     if (!modalLeadId) return;
     const titulo = document.getElementById('agTitulo').value.trim();
@@ -2442,6 +2448,7 @@
       document.getElementById('agQuando').value = '';
       msg.style.color = '#16a34a'; msg.textContent = 'Agendado ✓';
       carregarAgendamentos(modalLeadId);
+      _atualizarPassoFunil();
     } catch {
       msg.style.color = '#dc2626'; msg.textContent = 'Erro de conexão.';
     }
@@ -2455,6 +2462,7 @@
       });
       if (modalLeadId) carregarAgendamentos(modalLeadId);
       _checarAlertasAgendamento();
+      _atualizarPassoFunil();
     } catch {}
   }
 
@@ -2464,6 +2472,7 @@
       await fetch(`/api/agendamentos/${id}`, { method: 'DELETE' });
       if (modalLeadId) carregarAgendamentos(modalLeadId);
       _checarAlertasAgendamento();
+      _atualizarPassoFunil();
     } catch {}
   }
 
