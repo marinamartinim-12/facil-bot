@@ -5223,6 +5223,81 @@ async def relatorio_sem_proximo_passo(db: Session = Depends(get_db),
     return {"operadoras": lista, "total": sum(op["qtd"] for op in lista)}
 
 
+@app.get("/api/relatorio/leads-perdidos-ia")
+async def leads_perdidos_ia(periodo: str = "30dias", db: Session = Depends(get_db),
+                            admin: Usuario = Depends(requer_admin)):
+    """IA faz um apanhado geral dos MOTIVOS de perda dos leads perdidos (sob demanda)."""
+    desde = _inicio_periodo(periodo)
+    q = db.query(Lead).filter(Lead.status == StatusLeadEnum.perdido.value,
+                              Lead.ignorar_relatorios.isnot(True))
+    if desde is not None:
+        q = q.filter(Lead.atualizado_em >= desde)
+    perdidos = q.order_by(Lead.atualizado_em.desc()).limit(35).all()
+    if not perdidos:
+        return {"analise": "Nenhum lead perdido no período.", "total": 0}
+
+    ids = [l.id for l in perdidos]
+    etapa_antes = {}
+    for ev in (db.query(HistoricoLead)
+               .filter(HistoricoLead.lead_id.in_(ids),
+                       HistoricoLead.para_status == StatusLeadEnum.perdido.value)
+               .order_by(HistoricoLead.quando).all()):
+        etapa_antes[ev.lead_id] = ev.de_status   # o último sobrescreve (etapa imediatamente antes de perder)
+    _LAB = {"em_atendimento": "em atendimento (bot)", "qualificado": "qualificado", "assumido": "assumido",
+            "pre_analise": "pré-análise", "proposta_enviada": "proposta enviada",
+            "proposta_aprovada": "proposta aprovada"}
+
+    blocos = []
+    for l in perdidos:
+        ult = (db.query(MensagemConversa)
+               .filter(MensagemConversa.telefone == l.telefone)
+               .order_by(MensagemConversa.criado_em.desc()).limit(5).all())
+        trecho = []
+        for m in reversed(ult):
+            c = (m.conteudo or "").strip()
+            if not c:
+                continue
+            cu = c.upper()
+            if cu.startswith("[IMAGE") or cu.startswith("[IMAGEM"):
+                c = "[imagem]"
+            elif cu.startswith("[AUDIO"):
+                c = "[áudio]"
+            elif cu.startswith("[DOC"):
+                c = "[documento]"
+            quem = "CLIENTE" if m.role == "user" else "ATENDIMENTO"
+            trecho.append(f"{quem}: {c[:200]}")
+        obs = "; ".join(o.get("texto", "") for o in _parse_observacoes(l.observacoes))[:300]
+        etapa = _LAB.get(etapa_antes.get(l.id), etapa_antes.get(l.id) or "—")
+        bloco = f"LEAD: {l.nome or l.telefone} | perdido na etapa: {etapa} | origem: {l.origem or 'whatsapp'}"
+        if obs:
+            bloco += f"\nObs da operadora: {obs}"
+        if trecho:
+            bloco += "\nFinal da conversa:\n" + "\n".join(trecho)
+        blocos.append(bloco)
+    contexto = ("\n\n---\n\n".join(blocos))[:14000]
+
+    def _chamar():
+        from bot import client, MODELO_IA
+        prompt = (
+            "Você é analista de uma operação de F&I (financiamento de veículos). Abaixo estão LEADS PERDIDOS "
+            "(cada um com a etapa em que foi perdido, observações da operadora e o final da conversa). Faça um "
+            "APANHADO GERAL dos MOTIVOS DE PERDA: agrupe por motivo (ex.: parcela/preço alto, crédito negado ou "
+            "restrição, sumiu/parou de responder, comprou em outro lugar, desistiu da compra, faltou documentação, "
+            "etc.), dê a proporção aproximada de cada motivo, aponte padrões (ex.: em que etapa mais se perde) e "
+            "termine com 2 a 3 RECOMENDAÇÕES práticas pra perder menos. Baseie-se SÓ nos dados; quando o motivo não "
+            "estiver claro, classifique como 'sem motivo claro'. Português, organizado, sem asteriscos.\n\n"
+            "=== LEADS PERDIDOS ===\n" + contexto)
+        resp = client.messages.create(model=MODELO_IA, max_tokens=700,
+                                      messages=[{"role": "user", "content": prompt}])
+        return resp.content[0].text.strip()
+
+    try:
+        analise = await asyncio.to_thread(_chamar)
+    except Exception as e:
+        raise HTTPException(503, f"IA indisponível agora ({type(e).__name__}). Tente de novo.")
+    return {"analise": analise, "total": len(perdidos), "periodo": periodo}
+
+
 @app.get("/api/leads/{lead_id}/historico")
 async def lead_historico(lead_id: int, db: Session = Depends(get_db),
                          usuario: Usuario = Depends(obter_usuario_atual)):

@@ -1320,6 +1320,23 @@
           </div>
         </div>
 
+        <!-- ── POR QUE PERDEMOS LEADS (IA) — admin ── -->
+        <div class="rel-card admin-only" data-relgrupo="vendas" id="relPerdidosCard">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
+            <h3 style="margin:0">🔍 Por que perdemos leads (IA)</h3>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+              <select id="filtroPeriodoPerdidos" style="border:1px solid var(--border);border-radius:8px;padding:.35rem .7rem;font-size:.82rem;outline:none">
+                <option value="30dias" selected>Últimos 30 dias</option>
+                <option value="90dias">Últimos 90 dias</option>
+                <option value="tudo">Tudo</option>
+              </select>
+              <button onclick="analisarPerdidos()" class="btn btn-sm" style="background:#7c3aed;color:#fff;padding:.35rem .9rem">🔍 Analisar</button>
+            </div>
+          </div>
+          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .75rem">A IA lê os leads perdidos (final da conversa + observações + etapa em que se perdeu) e faz um apanhado dos motivos + recomendações. Roda só quando você clica (custo controlado).</p>
+          <div id="relPerdidosBody" style="font-size:.86rem;color:var(--navy);line-height:1.55;white-space:pre-wrap;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:.7rem .85rem">Clique em <strong>Analisar</strong> para gerar o apanhado dos leads perdidos.</div>
+        </div>
+
         <!-- ── RELATÓRIO POR PARCEIRO ── -->
         <div class="rel-card" data-relgrupo="marketing">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem">
@@ -5111,6 +5128,25 @@
 
       el.innerHTML = resumoHtml + tabelaHtml;
     } catch { el.innerHTML = '<p style="font-size:.83rem;color:#dc2626;text-align:center;padding:1rem">Erro ao carregar os contratos. Tente atualizar.</p>'; }
+  }
+
+  async function analisarPerdidos() {
+    const el = document.getElementById('relPerdidosBody');
+    if (!el) return;
+    const per = document.getElementById('filtroPeriodoPerdidos')?.value || '30dias';
+    el.textContent = '🔍 Lendo os leads perdidos e analisando… (pode levar alguns segundos)';
+    try {
+      const r = await fetch('/api/relatorio/leads-perdidos-ia?periodo=' + encodeURIComponent(per));
+      const d = await r.json();
+      if (!r.ok) { el.textContent = d.detail || 'Não consegui analisar agora.'; return; }
+      if (!d.total) { el.textContent = d.analise || 'Nenhum lead perdido no período.'; return; }
+      const corpo = (d.analise || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+      el.innerHTML = `<div style="font-size:.72rem;color:var(--muted);margin-bottom:.5rem">Baseado em ${d.total} lead(s) perdido(s).</div>` + corpo;
+    } catch {
+      el.textContent = 'Erro de conexão.';
+    }
   }
 
   function _exportarContratosCSV() {
