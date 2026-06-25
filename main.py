@@ -2617,9 +2617,37 @@ def _buscar_midia(db, filename: str):
     return None, None, None
 
 
+def _resposta_midia_range(request, dados, media_type):
+    """Resposta com suporte a HTTP Range (206) — necessário p/ o player do navegador descobrir a
+    duração, permitir avançar e tocar o áudio COMPLETO (especialmente ogg/webm do WhatsApp)."""
+    total = len(dados)
+    range_header = request.headers.get("range")
+    cabecalho_full = {"Accept-Ranges": "bytes", "Content-Length": str(total)}
+    if not range_header:
+        return Response(content=dados, media_type=media_type, headers=cabecalho_full)
+    m = re.match(r"bytes=(\d*)-(\d*)", range_header.strip())
+    if not m:
+        return Response(content=dados, media_type=media_type, headers=cabecalho_full)
+    ini_s, fim_s = m.group(1), m.group(2)
+    if ini_s == "":   # sufixo: últimos N bytes
+        n = int(fim_s) if fim_s else 0
+        ini, fim = max(0, total - n), total - 1
+    else:
+        ini = int(ini_s)
+        fim = int(fim_s) if fim_s else total - 1
+    if ini >= total or ini > fim:
+        return Response(status_code=416, headers={"Content-Range": f"bytes */{total}"})
+    fim = min(fim, total - 1)
+    chunk = dados[ini:fim + 1]
+    return Response(content=chunk, status_code=206, media_type=media_type,
+                    headers={"Accept-Ranges": "bytes",
+                             "Content-Range": f"bytes {ini}-{fim}/{total}",
+                             "Content-Length": str(len(chunk))})
+
+
 @app.get("/api/audio/{filename}")
-async def servir_audio(filename: str, db: Session = Depends(get_db)):
-    """Serve arquivos de áudio para o Z-API baixar e para reprodução no painel."""
+async def servir_audio(filename: str, request: Request, db: Session = Depends(get_db)):
+    """Serve arquivos de áudio (Z-API baixa + reprodução no painel), agora com suporte a Range."""
     if not re.match(r'^[a-f0-9]{32}\.(webm|ogg|mp3|m4a|mp4|aac)$', filename):
         raise HTTPException(status_code=404)
     dados, mime, _ = _buscar_midia(db, filename)
@@ -2628,7 +2656,7 @@ async def servir_audio(filename: str, db: Session = Depends(get_db)):
     ext = filename.rsplit(".", 1)[-1]
     tipos = {"ogg": "audio/ogg", "webm": "audio/webm", "mp3": "audio/mpeg",
              "m4a": "audio/mp4", "mp4": "audio/mp4", "aac": "audio/aac"}
-    return Response(content=dados, media_type=mime or tipos.get(ext, "audio/ogg"))
+    return _resposta_midia_range(request, dados, mime or tipos.get(ext, "audio/ogg"))
 
 
 @app.get("/api/imagem/{filename}")
