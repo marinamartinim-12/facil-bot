@@ -139,6 +139,7 @@ class Lead(Base):
     ignorar_relatorios = Column(Boolean, default=False)  # True = conversa interna/teste, fora dos relatórios
     carros_proposta = Column(Text, nullable=True)   # JSON: lista de carros em proposta [{placa,modelo,ano,chassi,escolhido}]
     lido_em = Column(DateTime, nullable=True)        # quando alguém abriu a conversa (leitura compartilhada)
+    nao_lido_manual = Column(Boolean, default=False) # marcada manualmente como "não lida" (voltar depois)
     observacoes = Column(Text, nullable=True)
     origem = Column(String(50), nullable=True)        # rede_social | parceiro | ex_cliente | indicacao | whatsapp
     origem_detalhe = Column(String(100), nullable=True) # google | instagram | nome livre (rede_social); ou nome do parceiro
