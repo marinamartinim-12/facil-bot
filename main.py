@@ -1489,6 +1489,82 @@ async def criar_parceiro(
     return _serial_parceiro(p)
 
 
+@app.post("/api/parceiros/importar")
+async def importar_parceiros(
+    arquivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(requer_admin),
+):
+    """Importa parceiros em massa de um CSV (colunas: nome,telefone).
+    Pula quem já existe (telefone comparado de forma robusta) e duplicados internos."""
+    import csv as _csv
+    import io as _io
+    bruto = await arquivo.read()
+    try:
+        conteudo = bruto.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        conteudo = bruto.decode("latin-1", errors="replace")
+    linhas = list(_csv.reader(_io.StringIO(conteudo)))
+    if not linhas:
+        raise HTTPException(status_code=400, detail="Arquivo vazio ou ilegível.")
+
+    # Detecta cabeçalho "nome,telefone"
+    cab = [(c or "").strip().lower() for c in linhas[0]]
+    i_nome, i_tel, inicio = 0, 1, 0
+    if "nome" in cab and "telefone" in cab:
+        i_nome, i_tel, inicio = cab.index("nome"), cab.index("telefone"), 1
+
+    # Telefones canônicos já cadastrados — não duplicar
+    existentes = set()
+    for p in db.query(Parceiro).all():
+        existentes.add(_tel_canonico(p.telefone))
+        try:
+            for e in json.loads(p.telefones_extras or "[]"):
+                existentes.add(_tel_canonico(e))
+        except Exception:
+            pass
+
+    criados = ja_existiam = dup_arquivo = invalidos = 0
+    vistos = set()
+    novos = []
+    for linha in linhas[inicio:]:
+        if not linha or len(linha) <= max(i_nome, i_tel):
+            invalidos += 1
+            continue
+        nome = (linha[i_nome] or "").strip()[:200]
+        tel = (linha[i_tel] or "").strip()
+        canon = _tel_canonico(tel)
+        if not nome or len(canon) < 10:
+            invalidos += 1
+            continue
+        if canon in existentes:
+            ja_existiam += 1
+            continue
+        if canon in vistos:
+            dup_arquivo += 1
+            continue
+        vistos.add(canon)
+        tel_digitos = "".join(c for c in tel if c.isdigit())[:20]
+        novos.append(Parceiro(
+            nome=nome,
+            telefone=tel_digitos or tel[:20],
+            nome_agenda=nome,
+            ativo=True,
+        ))
+        criados += 1
+
+    if novos:
+        db.add_all(novos)
+        db.commit()
+    return {
+        "criados": criados,
+        "ja_existiam": ja_existiam,
+        "duplicados_arquivo": dup_arquivo,
+        "invalidos": invalidos,
+        "total_linhas": len(linhas) - inicio,
+    }
+
+
 @app.put("/api/parceiros/{pid}")
 async def atualizar_parceiro(
     pid: int,

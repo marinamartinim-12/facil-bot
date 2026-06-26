@@ -1034,7 +1034,11 @@
               <option value="">👩‍💼 Todas as carteiras</option>
             </select>
           </div>
-          <button class="btn btn-primary btn-sm" onclick="abrirModalParceiro(null)">＋ Novo Parceiro</button>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <input type="file" id="importParceirosFile" accept=".csv,text/csv" style="display:none" onchange="importarParceiros(this)">
+            <button class="btn btn-outline btn-sm admin-only" style="display:none" onclick="document.getElementById('importParceirosFile').click()" title="Importar parceiros de um arquivo CSV (colunas: nome,telefone)">📥 Importar CSV</button>
+            <button class="btn btn-primary btn-sm" onclick="abrirModalParceiro(null)">＋ Novo Parceiro</button>
+          </div>
         </div>
         <div id="parceirosGrid" class="users-grid"></div>
       </div>
@@ -3540,6 +3544,31 @@
 
   // ═══════ PARCEIROS ═══════
   let _todosParceirosBd = [];
+
+  async function importarParceiros(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (!confirm('Importar parceiros do arquivo:\n"' + file.name + '"?\n\nQuem já está cadastrado (mesmo telefone) será pulado — nada é duplicado.')) {
+      input.value = '';
+      return;
+    }
+    const fd = new FormData();
+    fd.append('arquivo', file);
+    try {
+      const r = await fetch('/api/parceiros/importar', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (!r.ok) { alert('Erro na importação: ' + (d.detail || 'falha')); input.value = ''; return; }
+      alert('✅ Importação concluída!\n\n' +
+            '• Novos parceiros criados: ' + d.criados + '\n' +
+            '• Já existiam (pulados): ' + d.ja_existiam + '\n' +
+            '• Repetidos no arquivo: ' + d.duplicados_arquivo + '\n' +
+            '• Linhas inválidas: ' + d.invalidos);
+      await carregarParceiros();
+    } catch (e) {
+      alert('Erro ao importar: ' + e.message);
+    }
+    input.value = '';
+  }
 
   async function carregarParceiros() {
     try {
