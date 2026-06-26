@@ -734,17 +734,29 @@ def _extrair_texto_zapi(body: dict) -> str:
     ).strip()
 
 
+def _tel_canonico(t) -> str:
+    """Forma comparável de um telefone BR: sem código do país (55) e sem o 9º dígito → DDD + 8 dígitos.
+    Faz '5531999998888', '31999998888' e '3199998888' baterem entre si."""
+    d = "".join(c for c in str(t or "") if c.isdigit())
+    if d.startswith("55") and len(d) >= 12:
+        d = d[2:]                       # remove o código do país
+    if len(d) == 11 and d[2:3] == "9":  # DDD + 9 + 8 → remove o 9º dígito
+        d = d[:2] + d[3:]
+    return d
+
+
 def _buscar_parceiro_por_telefone(telefone: str, db) -> "Parceiro | None":
-    """Retorna o Parceiro ativo cujo telefone principal ou extra bate com o número."""
+    """Retorna o Parceiro ativo cujo telefone (principal ou extra) bate com o número.
+    Comparação robusta: ignora código do país e o 9º dígito (formatos diferentes do WhatsApp)."""
     from models import Parceiro as _Parceiro
-    p = db.query(_Parceiro).filter(_Parceiro.telefone == telefone, _Parceiro.ativo == True).first()
-    if p:
-        return p
-    todos = db.query(_Parceiro).filter(_Parceiro.ativo == True, _Parceiro.telefones_extras != None).all()
-    for p in todos:
+    alvo = _tel_canonico(telefone)
+    if not alvo:
+        return None
+    for p in db.query(_Parceiro).filter(_Parceiro.ativo == True).all():
+        if _tel_canonico(p.telefone) == alvo:
+            return p
         try:
-            extras = json.loads(p.telefones_extras or "[]")
-            if any(str(e).replace("+", "").replace(" ", "") == telefone for e in extras):
+            if any(_tel_canonico(e) == alvo for e in json.loads(p.telefones_extras or "[]")):
                 return p
         except Exception:
             pass
