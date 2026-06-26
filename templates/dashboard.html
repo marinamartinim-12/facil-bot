@@ -2055,6 +2055,7 @@
         <div class="card-phone">${l.telefone}</div>
         <div class="card-meta">
           <span class="badge badge-${l.modalidade}">${labMod(l.modalidade)}</span>
+          ${l.parceiro_id ? `<span title="Lead de parceiro${l.parceiro_nome ? ': ' + esc(l.parceiro_nome) : ''}" style="font-size:.6rem;background:#cffafe;color:#155e75;border:1px solid #22d3ee;border-radius:999px;padding:1px 6px;font-weight:800;white-space:nowrap">🤝 Parceiro</span>` : ''}
           ${l.sem_proximo_passo ? `<span title="Sem próximo passo agendado — abra e agende uma ação" style="font-size:.6rem;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:999px;padding:1px 6px;font-weight:700;white-space:nowrap">⏰ sem próximo passo</span>` : ''}
         </div>
         <div class="card-resp">${respBadge(l.responsavel)}</div>
@@ -6156,7 +6157,7 @@
         <div class="wsp-conv-avatar" style="background:${avatarColor}">${nome[0].toUpperCase()}</div>
         <div class="wsp-conv-body">
           <div class="wsp-conv-top">
-            <span class="wsp-conv-name">${esc(nome)}</span>
+            <span class="wsp-conv-name">${l.parceiro_id ? '🤝 ' : ''}${esc(nome)}</span>
             <span class="wsp-conv-time" style="${l._temNovo?'color:#25D366;font-weight:700':''}">${l.ultima_hora||''}</span>
           </div>
           <div class="wsp-conv-preview" style="display:flex;align-items:center;justify-content:space-between;gap:.25rem">

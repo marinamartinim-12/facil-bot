@@ -1219,27 +1219,14 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
                 StatusLeadEnum.qualificado,
             ]
             if ja_em_atendimento:
-                # Parceiro já transferido — salva mensagem e avisa fora do horário
+                # Parceiro já transferido — só registra a mensagem (SEM resposta automática)
                 _salvar_msg_webhook(db, telefone, texto, role="user")
                 if lead.oculto_funil:
                     lead.oculto_funil = False
                     db.commit()
-                prox = _proximo_horario_atendimento()
-                if prox and not _ha_funcionaria_online(db):
-                    primeiro_nome = parceiro.nome.split()[0]
-                    aviso = (
-                        f"Olá {primeiro_nome}! 😊 No momento estamos fora do horário de atendimento. "
-                        f"Funcionamos seg–sex das 09h às 18h e sábado das 09h às 13h. "
-                        f"Retornaremos seu contato no primeiro horário disponível! 🕘"
-                    )
-                    await enviar_zapi(telefone, aviso)
-                    _salvar_msg_webhook(db, telefone, aviso, role="assistant")
                 return JSONResponse({"status": "parceiro_aguardando_humano"})
 
-            # Primeiro contato do parceiro → boas-vindas e transferência direta
-            primeiro_nome = parceiro.nome.split()[0]
-            msg_boas_vindas = f"Olá {primeiro_nome}! Um momento, já vou te conectar com nossa equipe. 😊"
-
+            # Primeiro contato do parceiro → transfere direto pra equipe, SEM mensagem automática
             if not lead:
                 lead = Lead(telefone=telefone, nome=parceiro.nome, parceiro_id=parceiro.id)
                 db.add(lead)
@@ -1255,19 +1242,6 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
             lead.atualizado_em = datetime.utcnow()
             lead.oculto_funil = False
             db.commit()
-
-            await enviar_zapi(telefone, msg_boas_vindas)
-            _salvar_msg_webhook(db, telefone, msg_boas_vindas, role="assistant")
-
-            prox = _proximo_horario_atendimento()
-            if prox:
-                aviso = (
-                    "No momento estamos fora do horário de atendimento. "
-                    "Funcionamos seg–sex das 09h às 18h e sábado das 09h às 13h. "
-                    "Retornaremos seu contato no primeiro horário disponível! 🕘"
-                )
-                await enviar_zapi(telefone, aviso)
-                _salvar_msg_webhook(db, telefone, aviso, role="assistant")
 
             await _notificar_equipe(telefone, db)
             return JSONResponse({"status": "parceiro_transferido"})
