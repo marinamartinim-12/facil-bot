@@ -745,6 +745,12 @@ def _tel_canonico(t) -> str:
     return d
 
 
+def _nome_so_prefixo(nome) -> bool:
+    """True se o nome é só o prefixo 'Pc'/'Pv' (sem nome real), ex.: 'Pc', 'Pv -', 'Pc/'."""
+    resto = re.sub(r"^p[cv][\s\-/.]*", "", (nome or "").strip(), flags=re.I).strip()
+    return len(resto) < 2
+
+
 def _buscar_parceiro_por_telefone(telefone: str, db) -> "Parceiro | None":
     """Retorna o Parceiro ativo cujo telefone (principal ou extra) bate com o número.
     Comparação robusta: ignora código do país e o 9º dígito (formatos diferentes do WhatsApp)."""
@@ -1514,17 +1520,17 @@ async def importar_parceiros(
     if "nome" in cab and "telefone" in cab:
         i_nome, i_tel, inicio = cab.index("nome"), cab.index("telefone"), 1
 
-    # Telefones canônicos já cadastrados — não duplicar
-    existentes = set()
+    # Mapa telefone canônico -> parceiro já cadastrado (pra não duplicar e corrigir nomes quebrados)
+    por_tel = {}
     for p in db.query(Parceiro).all():
-        existentes.add(_tel_canonico(p.telefone))
+        por_tel.setdefault(_tel_canonico(p.telefone), p)
         try:
             for e in json.loads(p.telefones_extras or "[]"):
-                existentes.add(_tel_canonico(e))
+                por_tel.setdefault(_tel_canonico(e), p)
         except Exception:
             pass
 
-    criados = ja_existiam = dup_arquivo = invalidos = 0
+    criados = ja_existiam = atualizados = dup_arquivo = invalidos = 0
     vistos = set()
     novos = []
     for linha in linhas[inicio:]:
@@ -1537,13 +1543,21 @@ async def importar_parceiros(
         if not nome or len(canon) < 10:
             invalidos += 1
             continue
-        if canon in existentes:
-            ja_existiam += 1
-            continue
         if canon in vistos:
             dup_arquivo += 1
             continue
         vistos.add(canon)
+        existente = por_tel.get(canon)
+        if existente is not None:
+            # Corrige nome quebrado (só "Pc") sem mexer nos nomes bons já curados
+            if _nome_so_prefixo(existente.nome) and not _nome_so_prefixo(nome):
+                existente.nome = nome
+                if _nome_so_prefixo(existente.nome_agenda or ""):
+                    existente.nome_agenda = nome
+                atualizados += 1
+            else:
+                ja_existiam += 1
+            continue
         tel_digitos = "".join(c for c in tel if c.isdigit())[:20]
         novos.append(Parceiro(
             nome=nome,
@@ -1555,9 +1569,10 @@ async def importar_parceiros(
 
     if novos:
         db.add_all(novos)
-        db.commit()
+    db.commit()  # commit sempre — pode haver só correções de nome
     return {
         "criados": criados,
+        "atualizados": atualizados,
         "ja_existiam": ja_existiam,
         "duplicados_arquivo": dup_arquivo,
         "invalidos": invalidos,

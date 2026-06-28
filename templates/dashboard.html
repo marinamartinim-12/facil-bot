@@ -3560,7 +3560,8 @@
       if (!r.ok) { alert('Erro na importação: ' + (d.detail || 'falha')); input.value = ''; return; }
       alert('✅ Importação concluída!\n\n' +
             '• Novos parceiros criados: ' + d.criados + '\n' +
-            '• Já existiam (pulados): ' + d.ja_existiam + '\n' +
+            '• Nomes corrigidos: ' + (d.atualizados || 0) + '\n' +
+            '• Já existiam (sem mudança): ' + d.ja_existiam + '\n' +
             '• Repetidos no arquivo: ' + d.duplicados_arquivo + '\n' +
             '• Linhas inválidas: ' + d.invalidos);
       await carregarParceiros();
