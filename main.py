@@ -3572,7 +3572,21 @@ async def listar_usuarios_opcoes(
 
 @app.get("/api/usuarios")
 async def listar_usuarios(db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
-    return [_serial_usuario(u) for u in db.query(Usuario).order_by(Usuario.criado_em).all()]
+    from sqlalchemy import func
+    usuarios = db.query(Usuario).order_by(Usuario.criado_em).all()
+    # leads em aberto por responsável — pra mostrar quem ainda tem atendimentos parados
+    contagem = dict(
+        db.query(Lead.atribuido_para, func.count(Lead.id))
+        .filter(Lead.atribuido_para.isnot(None), Lead.status.notin_(_STATUS_FINALIZADOS))
+        .group_by(Lead.atribuido_para)
+        .all()
+    )
+    out = []
+    for u in usuarios:
+        d = _serial_usuario(u)
+        d["leads_abertos"] = int(contagem.get(u.id, 0))
+        out.append(d)
+    return out
 
 
 @app.post("/api/usuarios")
