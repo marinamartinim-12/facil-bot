@@ -2625,9 +2625,11 @@ async def enviar_audio_gravado(
     audio_bytes = base64.b64decode(raw_b64)
     print(f"🎤 Áudio para {lead.telefone} | mime={mime} | bytes={len(audio_bytes)}")
 
-    # Converte: ogg/opus para enviar como ÁUDIO DE VOZ no WhatsApp; mp3 para tocar no painel
-    ogg = await _transcode_audio(audio_bytes, "ogg")
-    mp3 = await _transcode_audio(audio_bytes, "mp3")
+    # Converte ogg/opus (voz WhatsApp) e mp3 (player do painel) EM PARALELO — não soma o tempo dos dois
+    ogg, mp3 = await asyncio.gather(
+        _transcode_audio(audio_bytes, "ogg"),
+        _transcode_audio(audio_bytes, "mp3"),
+    )
 
     # O que será enviado ao WhatsApp
     if ogg:
@@ -2646,22 +2648,25 @@ async def enviar_audio_gravado(
         _guardar_blob(db, audio_filename, "audio", (ogg or audio_bytes),
                       mime=("audio/ogg" if ogg else mime), subdir="audios")
 
-    # Envia pelo Z-API enviando base64 diretamente (evita race condition de download de URL)
+    # Envia pelo Z-API com base64 diretamente (evita race condition de download de URL)
+    zapi_ok = False
+    zapi_erro = ""
     if settings.ZAPI_INSTANCE and settings.ZAPI_TOKEN:
         zapi_url = f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE}/token/{settings.ZAPI_TOKEN}/send-audio"
         headers_zapi = {"Client-Token": settings.ZAPI_CLIENT_TOKEN}
         # Monta data URI com o áudio convertido (ogg/opus) para virar nota de voz
         audio_data_uri = f"data:{envio_mime};base64,{envio_b64}"
         payload = {"phone": lead.telefone, "audio": audio_data_uri}
-        zapi_ok = False
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.post(zapi_url, headers=headers_zapi, json=payload, timeout=60)
+                resp = await client.post(zapi_url, headers=headers_zapi, json=payload, timeout=30)
             print(f"🎤 Z-API resposta: {resp.status_code} — {resp.text[:300]}")
             zapi_ok = resp.status_code == 200
             if not zapi_ok:
-                print(f"⚠️ Z-API retornou {resp.status_code}: {resp.text[:200]}")
+                zapi_erro = f"Z-API respondeu {resp.status_code}: {resp.text[:140]}"
+                print(f"⚠️ {zapi_erro}")
         except Exception as e:
+            zapi_erro = f"sem resposta do Z-API ({type(e).__name__})"
             print(f"⚠️ Erro ao chamar Z-API: {e}")
     else:
         zapi_ok = True
@@ -2672,7 +2677,7 @@ async def enviar_audio_gravado(
     _salvar_msg_webhook(db, lead.telefone, f"[{usuario.nome}]: [AUDIO:{audio_filename}]", role="assistant")
 
     if not zapi_ok:
-        raise HTTPException(status_code=502, detail="Áudio salvo, mas falha ao entregar pelo WhatsApp. Tente reenviar.")
+        raise HTTPException(status_code=502, detail=f"Não entregou pelo WhatsApp ({zapi_erro or 'falha desconhecida'}). O áudio ficou salvo no painel — tente reenviar.")
 
     return {"status": "enviado"}
 

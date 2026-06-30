@@ -6506,11 +6506,19 @@
         reader.readAsDataURL(_audioBlob);
       });
 
-      const resp = await fetch(`/api/leads/${chatLeadAtivo.id}/enviar-audio`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio_base64: base64 }),
-      });
+      const ctrl = new AbortController();
+      const tmo = setTimeout(() => ctrl.abort(), 45000);
+      let resp;
+      try {
+        resp = await fetch(`/api/leads/${chatLeadAtivo.id}/enviar-audio`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audio_base64: base64 }),
+          signal: ctrl.signal,
+        });
+      } finally {
+        clearTimeout(tmo);
+      }
 
       if (resp.ok) {
         _audioBlob = null;
@@ -6525,7 +6533,9 @@
       }
     } catch (err) {
       console.error('Erro ao enviar áudio:', err);
-      alert('Erro ao enviar áudio. Verifique a conexão e tente novamente.');
+      alert(err.name === 'AbortError'
+        ? 'O envio do áudio demorou demais e foi cancelado. Tente de novo — se persistir, me avise.'
+        : 'Erro ao enviar áudio. Verifique a conexão e tente novamente.');
       btn.disabled = false;
       btn.textContent = 'Enviar 🎤';
     }
@@ -6615,10 +6625,13 @@
     const reader = new FileReader();
     reader.readAsDataURL(_audioBlobModal);
     reader.onloadend = async () => {
+      const ctrl = new AbortController();
+      const tmo = setTimeout(() => ctrl.abort(), 45000);
       try {
         const resp = await fetch(`/api/leads/${modalLeadId}/enviar-audio`, {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({ audio_base64: reader.result }),
+          signal: ctrl.signal,
         });
         if (resp.ok) {
           _audioBlobModal = null;
@@ -6628,9 +6641,21 @@
           const chat = document.getElementById('modalChat');
           chat.innerHTML = renderMensagens(d.mensagens);
           chat.scrollTop = chat.scrollHeight;
-        } else { alert('Erro ao enviar áudio.'); btn.disabled = false; btn.textContent = 'Enviar 🎤'; }
-      } catch { btn.disabled = false; btn.textContent = 'Enviar 🎤'; }
+        } else {
+          const e = await resp.json().catch(() => ({}));
+          alert('Erro ao enviar áudio: ' + (e.detail || 'tente novamente.'));
+          btn.disabled = false; btn.textContent = 'Enviar 🎤';
+        }
+      } catch (err) {
+        alert(err.name === 'AbortError'
+          ? 'O envio do áudio demorou demais e foi cancelado. Tente de novo — se persistir, me avise.'
+          : 'Erro ao enviar áudio. Verifique a conexão e tente novamente.');
+        btn.disabled = false; btn.textContent = 'Enviar 🎤';
+      } finally {
+        clearTimeout(tmo);
+      }
     };
+    reader.onerror = () => { alert('Falha ao ler o áudio gravado.'); btn.disabled = false; btn.textContent = 'Enviar 🎤'; };
   }
 
   function _mostrarBarraModal(modo) {
