@@ -3629,6 +3629,109 @@ async def desativar_usuario(uid: int, db: Session = Depends(get_db), admin: Usua
     return {"status": "desativado"}
 
 
+_STATUS_FINALIZADOS = [
+    StatusLeadEnum.fechado.value,
+    StatusLeadEnum.perdido.value,
+    StatusLeadEnum.desqualificado.value,
+]
+
+
+@app.get("/api/usuarios/{uid}/desligamento")
+async def preview_desligamento(uid: int, db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
+    """Prévia do desligamento: quantos leads em aberto a pessoa tem e quem pode herdá-los."""
+    u = db.query(Usuario).filter(Usuario.id == uid).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if u.role == RoleEnum.admin:
+        raise HTTPException(status_code=400, detail="Não é possível desligar um administrador por aqui.")
+    abertos = db.query(Lead).filter(
+        Lead.atribuido_para == uid,
+        Lead.status.notin_(_STATUS_FINALIZADOS),
+    ).count()
+    equipe = db.query(Usuario).filter(
+        Usuario.role == RoleEnum.funcionario, Usuario.ativo == True, Usuario.id != uid
+    ).order_by(Usuario.nome).all()
+    return {
+        "nome": u.nome,
+        "leads_abertos": abertos,
+        "equipe": [{"id": x.id, "nome": x.nome} for x in equipe],
+    }
+
+
+@app.post("/api/usuarios/{uid}/desligar")
+async def desligar_usuario(uid: int, request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
+    """Desliga a funcionária: redistribui os leads em aberto e desativa o acesso.
+    Preserva todo o histórico (vendas fechadas, ponto, relatórios). modo:
+    dividir (round-robin no time) | uma_pessoa (destino_id) | fila (sem dono) | admin."""
+    u = db.query(Usuario).filter(Usuario.id == uid).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if u.id == admin.id:
+        raise HTTPException(status_code=400, detail="Você não pode desligar a si mesma.")
+    if u.role == RoleEnum.admin:
+        raise HTTPException(status_code=400, detail="Não é possível desligar um administrador por aqui. Use Editar para desativar.")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    modo = (body.get("modo") or "dividir").strip()
+    destino_id = body.get("destino_id")
+
+    abertos = db.query(Lead).filter(
+        Lead.atribuido_para == uid,
+        Lead.status.notin_(_STATUS_FINALIZADOS),
+    ).all()
+    distribuicao = {}
+
+    def _add(nome, n=1):
+        distribuicao[nome] = distribuicao.get(nome, 0) + n
+
+    if modo == "fila":
+        for lead in abertos:
+            lead.atribuido_para = None
+        if abertos:
+            _add("Fila (sem dono)", len(abertos))
+    elif modo == "uma_pessoa":
+        alvo = db.query(Usuario).filter(
+            Usuario.id == destino_id, Usuario.id != uid,
+            Usuario.ativo == True, Usuario.role == RoleEnum.funcionario
+        ).first() if destino_id else None
+        if not alvo:
+            raise HTTPException(status_code=400, detail="Escolha uma operadora válida para receber os leads.")
+        for lead in abertos:
+            lead.atribuido_para = alvo.id
+        if abertos:
+            _add(alvo.nome, len(abertos))
+    elif modo == "admin":
+        for lead in abertos:
+            lead.atribuido_para = admin.id
+        if abertos:
+            _add(admin.nome, len(abertos))
+    else:  # "dividir" — round-robin entre as operadoras ativas
+        equipe = db.query(Usuario).filter(
+            Usuario.role == RoleEnum.funcionario, Usuario.ativo == True, Usuario.id != uid
+        ).order_by(Usuario.nome).all()
+        if equipe:
+            for i, lead in enumerate(abertos):
+                alvo = equipe[i % len(equipe)]
+                lead.atribuido_para = alvo.id
+                _add(alvo.nome)
+        else:  # ninguém no time → fica com quem está desligando
+            for lead in abertos:
+                lead.atribuido_para = admin.id
+            if abertos:
+                _add(admin.nome, len(abertos))
+
+    u.ativo = False
+    db.commit()
+    return {
+        "status": "ok",
+        "nome": u.nome,
+        "leads_reatribuidos": len(abertos),
+        "distribuicao": distribuicao,
+    }
+
+
 # ─── Ausências / Disponibilidade de Funcionárias ────────────────────────────────
 
 @app.get("/api/usuarios/{uid}/ausencias")

@@ -3331,7 +3331,7 @@
           <div class="uc-actions">
             <button class="btn btn-sm btn-outline" onclick="abrirEditarUsuario(${u.id},'${esc(u.nome)}','${esc(u.email)}','${u.role}',${u.ativo})">✏️ Editar</button>
             <button class="btn btn-sm" style="background:#e8f4fd;color:#1a5276;border:1px solid #aed6f1" onclick="abrirAgendaFuncionaria(${u.id},'${esc(u.nome)}')">📅 Agenda</button>
-            ${u.ativo && u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger" onclick="toggleUsuario(${u.id},false)">Desativar</button>` : ''}
+            ${u.ativo && u.id !== currentUser.id && u.role !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="abrirDesligar(${u.id},'${esc(u.nome)}')">Desligar</button>` : ''}
             ${!u.ativo ? `<button class="btn btn-sm btn-primary" onclick="toggleUsuario(${u.id},true)">Reativar</button>` : ''}
           </div>
         </div>`).join('');
@@ -3364,6 +3364,92 @@
       await fetch(`/api/usuarios/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ativo}) });
       carregarUsuarios();
     } catch {}
+  }
+
+  async function abrirDesligar(uid, nome) {
+    let prev;
+    try {
+      const r = await fetch(`/api/usuarios/${uid}/desligamento`);
+      prev = await r.json();
+      if (!r.ok) { alert('Erro: ' + (prev.detail || 'falha')); return; }
+    } catch { alert('Erro ao carregar os dados do desligamento.'); return; }
+
+    const abertos = prev.leads_abertos || 0;
+    const equipe = prev.equipe || [];
+    const temTime = equipe.length > 0;
+    const opcoesPessoa = equipe.map(e => `<option value="${e.id}">${escHtml(e.nome)}</option>`).join('');
+    const modoOpcoes = temTime
+      ? `<option value="dividir">Dividir entre o time (recomendado)</option>
+         <option value="uma_pessoa">Passar tudo pra uma pessoa</option>
+         <option value="fila">Soltar pra fila (sem dono)</option>
+         <option value="admin">Ficar comigo</option>`
+      : `<option value="admin">Ficar comigo (não há outras operadoras ativas)</option>
+         <option value="fila">Soltar pra fila (sem dono)</option>`;
+
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:99999;padding:1rem';
+    ov.innerHTML = `
+      <div style="background:#fff;border-radius:12px;max-width:440px;width:100%;padding:1.25rem 1.4rem;box-shadow:0 12px 44px rgba(0,0,0,.28)">
+        <h3 style="margin:0 0 .5rem;color:#0f172a">Desligar ${escHtml(nome)}</h3>
+        <p style="margin:.2rem 0 .9rem;font-size:.9rem;color:#475569">
+          ${abertos > 0
+            ? `Ela tem <b>${abertos} lead${abertos>1?'s':''} em aberto</b>. Pra onde vão?`
+            : 'Ela não tem nenhum lead em aberto. É só confirmar o desligamento.'}
+        </p>
+        ${abertos > 0 ? `
+        <select id="dlgModo" style="width:100%;padding:.5rem;border:1.5px solid #cbd5e1;border-radius:8px;margin-bottom:.6rem;font-size:.88rem">
+          ${modoOpcoes}
+        </select>
+        <div id="dlgPessoaWrap" style="display:none;margin-bottom:.6rem">
+          <select id="dlgPessoa" style="width:100%;padding:.5rem;border:1.5px solid #cbd5e1;border-radius:8px;font-size:.88rem">
+            ${opcoesPessoa || '<option value="">(ninguém ativo no time)</option>'}
+          </select>
+        </div>` : ''}
+        <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:.5rem .7rem;font-size:.78rem;color:#9a3412;margin-bottom:.95rem">
+          ⚠️ O acesso dela é cortado na hora. <b>Nada é apagado</b> — histórico, vendas fechadas e banco de horas ficam guardados. Dá pra reativar depois.
+        </div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end">
+          <button class="btn btn-sm btn-outline" id="dlgCancelar">Cancelar</button>
+          <button class="btn btn-sm btn-danger" id="dlgConfirmar">Desligar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+
+    const fechar = () => ov.remove();
+    ov.querySelector('#dlgCancelar').onclick = fechar;
+    ov.addEventListener('click', e => { if (e.target === ov) fechar(); });
+
+    const modoSel = ov.querySelector('#dlgModo');
+    if (modoSel) modoSel.addEventListener('change', () => {
+      ov.querySelector('#dlgPessoaWrap').style.display = (modoSel.value === 'uma_pessoa') ? 'block' : 'none';
+    });
+
+    ov.querySelector('#dlgConfirmar').onclick = async () => {
+      const modo = abertos > 0 ? modoSel.value : 'dividir';
+      const destino_id = (modo === 'uma_pessoa') ? (ov.querySelector('#dlgPessoa').value || null) : null;
+      if (modo === 'uma_pessoa' && !destino_id) { alert('Escolha uma operadora para receber os leads.'); return; }
+      const btn = ov.querySelector('#dlgConfirmar');
+      btn.disabled = true; btn.textContent = 'Desligando…';
+      try {
+        const r = await fetch(`/api/usuarios/${uid}/desligar`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ modo, destino_id })
+        });
+        const d = await r.json();
+        if (!r.ok) { alert('Erro: ' + (d.detail || 'falha')); btn.disabled = false; btn.textContent = 'Desligar'; return; }
+        fechar();
+        const dist = d.distribuicao || {};
+        const linhas = Object.keys(dist).map(k => `• ${k}: +${dist[k]}`).join('\n');
+        alert('✅ ' + nome + ' desligada.\n\n' +
+              (d.leads_reatribuidos > 0
+                ? d.leads_reatribuidos + ' lead(s) redistribuído(s):\n' + linhas
+                : 'Não havia leads em aberto.'));
+        carregarUsuarios();
+      } catch (e) {
+        alert('Erro ao desligar: ' + e.message);
+        btn.disabled = false; btn.textContent = 'Desligar';
+      }
+    };
   }
 
   // ═══════ NOVO LEAD MANUAL ═══════
