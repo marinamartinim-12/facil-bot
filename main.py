@@ -3700,9 +3700,20 @@ async def desligar_usuario(uid: int, request: Request, db: Session = Depends(get
     def _add(nome, n=1):
         distribuicao[nome] = distribuicao.get(nome, 0) + n
 
+    def _marcar(lead, destino_txt):
+        """Registra nas observações internas que o lead veio da redistribuição."""
+        lst = _parse_observacoes(lead.observacoes)
+        lst.append({
+            "texto": f"🔄 Redistribuído de {u.nome}{destino_txt}",
+            "usuario": admin.nome,
+            "em": datetime.utcnow().strftime("%d/%m/%Y %H:%M"),
+        })
+        lead.observacoes = json.dumps(lst, ensure_ascii=False)
+
     if modo == "fila":
         for lead in abertos:
             lead.atribuido_para = None
+            _marcar(lead, " (devolvido à fila)")
         if abertos:
             _add("Fila (sem dono)", len(abertos))
     elif modo == "uma_pessoa":
@@ -3714,11 +3725,13 @@ async def desligar_usuario(uid: int, request: Request, db: Session = Depends(get
             raise HTTPException(status_code=400, detail="Escolha uma operadora válida para receber os leads.")
         for lead in abertos:
             lead.atribuido_para = alvo.id
+            _marcar(lead, f" → {alvo.nome}")
         if abertos:
             _add(alvo.nome, len(abertos))
     elif modo == "admin":
         for lead in abertos:
             lead.atribuido_para = admin.id
+            _marcar(lead, f" → {admin.nome}")
         if abertos:
             _add(admin.nome, len(abertos))
     else:  # "dividir" — round-robin entre as operadoras ativas
@@ -3729,10 +3742,12 @@ async def desligar_usuario(uid: int, request: Request, db: Session = Depends(get
             for i, lead in enumerate(abertos):
                 alvo = equipe[i % len(equipe)]
                 lead.atribuido_para = alvo.id
+                _marcar(lead, f" → {alvo.nome}")
                 _add(alvo.nome)
         else:  # ninguém no time → fica com quem está desligando
             for lead in abertos:
                 lead.atribuido_para = admin.id
+                _marcar(lead, f" → {admin.nome}")
             if abertos:
                 _add(admin.nome, len(abertos))
 
