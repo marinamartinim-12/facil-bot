@@ -6341,6 +6341,12 @@
 
   async function carregarMensagensChat(forcarBaixo = false) {
     if (!chatLeadAtivo) return;
+    // Não recarrega o chat enquanto a atendente está OUVINDO um áudio — senão o polling
+    // (a cada 8s) substitui o innerHTML e destrói o player no meio (o áudio "parava" cedo).
+    if (forcarBaixo !== true) {
+      const _box = document.getElementById('chatMessages');
+      if (_box && Array.from(_box.querySelectorAll('audio')).some(a => !a.paused && !a.ended)) return;
+    }
     try {
       const r = await fetch(`/api/leads/${chatLeadAtivo.id}/conversa`);
       const d = await r.json();
