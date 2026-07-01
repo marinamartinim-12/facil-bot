@@ -2665,6 +2665,7 @@ async def enviar_audio_gravado(
     zapi_ok = False
     zapi_erro = ""
     zapi_status = None
+    zapi_resp = ""
     _ms_zapi = 0
     if settings.ZAPI_INSTANCE and settings.ZAPI_TOKEN:
         zapi_url = f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE}/token/{settings.ZAPI_TOKEN}/send-audio"
@@ -2677,6 +2678,7 @@ async def enviar_audio_gravado(
             async with httpx.AsyncClient() as client:
                 resp = await client.post(zapi_url, headers=headers_zapi, json=payload, timeout=30)
             zapi_status = resp.status_code
+            zapi_resp = resp.text[:200]
             print(f"🎤 Z-API resposta: {resp.status_code} — {resp.text[:300]}")
             zapi_ok = resp.status_code == 200
             if not zapi_ok:
@@ -2703,6 +2705,7 @@ async def enviar_audio_gravado(
         "ffmpeg_mp3_ok": bool(mp3),
         "ms_transcode": _ms_transcode,
         "zapi_status": zapi_status,
+        "zapi_resposta": zapi_resp,
         "ms_zapi": _ms_zapi,
         "entregou": zapi_ok,
         "erro": zapi_erro,
