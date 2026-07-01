@@ -2598,6 +2598,15 @@ async def reativar_funil(
     return {"status": "ok"}
 
 
+_AUDIO_DIAG = []
+
+
+def _registrar_diag_audio(d):
+    """Guarda o raio-x dos últimos envios de áudio (visível em /api/diag/audio)."""
+    _AUDIO_DIAG.append(d)
+    del _AUDIO_DIAG[:-8]   # mantém só os 8 últimos
+
+
 @app.post("/api/leads/{lead_id}/enviar-audio")
 async def enviar_audio_gravado(
     lead_id: int,
@@ -2622,6 +2631,9 @@ async def enviar_audio_gravado(
         header, raw_b64 = audio_base64_raw.split(",", 1)
         mime = header.split(":")[1].split(";")[0] if ":" in header else mime
 
+    import time
+    _t0 = time.monotonic()
+    _tam_b64 = len(audio_base64_raw)
     audio_bytes = base64.b64decode(raw_b64)
     print(f"🎤 Áudio para {lead.telefone} | mime={mime} | bytes={len(audio_bytes)}")
 
@@ -2630,6 +2642,7 @@ async def enviar_audio_gravado(
         _transcode_audio(audio_bytes, "ogg"),
         _transcode_audio(audio_bytes, "mp3"),
     )
+    _ms_transcode = int((time.monotonic() - _t0) * 1000)
 
     # O que será enviado ao WhatsApp
     if ogg:
@@ -2651,26 +2664,50 @@ async def enviar_audio_gravado(
     # Envia pelo Z-API com base64 diretamente (evita race condition de download de URL)
     zapi_ok = False
     zapi_erro = ""
+    zapi_status = None
+    _ms_zapi = 0
     if settings.ZAPI_INSTANCE and settings.ZAPI_TOKEN:
         zapi_url = f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE}/token/{settings.ZAPI_TOKEN}/send-audio"
         headers_zapi = {"Client-Token": settings.ZAPI_CLIENT_TOKEN}
         # Monta data URI com o áudio convertido (ogg/opus) para virar nota de voz
         audio_data_uri = f"data:{envio_mime};base64,{envio_b64}"
         payload = {"phone": lead.telefone, "audio": audio_data_uri}
+        _tz = time.monotonic()
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(zapi_url, headers=headers_zapi, json=payload, timeout=30)
+            zapi_status = resp.status_code
             print(f"🎤 Z-API resposta: {resp.status_code} — {resp.text[:300]}")
             zapi_ok = resp.status_code == 200
             if not zapi_ok:
                 zapi_erro = f"Z-API respondeu {resp.status_code}: {resp.text[:140]}"
                 print(f"⚠️ {zapi_erro}")
         except Exception as e:
-            zapi_erro = f"sem resposta do Z-API ({type(e).__name__})"
+            zapi_erro = f"sem resposta do Z-API ({type(e).__name__}: {str(e)[:80]})"
             print(f"⚠️ Erro ao chamar Z-API: {e}")
+        _ms_zapi = int((time.monotonic() - _tz) * 1000)
     else:
         zapi_ok = True
         print(f"[Z-API SIMULADO] Áudio para {lead.telefone}")
+
+    # Raio-x deste envio (visível em /api/diag/audio) — pra diagnosticar travamentos
+    _registrar_diag_audio({
+        "em": datetime.utcnow().strftime("%d/%m %H:%M:%S") + " UTC",
+        "telefone": lead.telefone,
+        "por": usuario.nome,
+        "mime_entrada": mime,
+        "kb_audio": round(len(audio_bytes) / 1024, 1),
+        "kb_base64_recebido": round(_tam_b64 / 1024, 1),
+        "ffmpeg_ogg_ok": bool(ogg),
+        "kb_ogg": round(len(ogg) / 1024, 1) if ogg else 0,
+        "ffmpeg_mp3_ok": bool(mp3),
+        "ms_transcode": _ms_transcode,
+        "zapi_status": zapi_status,
+        "ms_zapi": _ms_zapi,
+        "entregou": zapi_ok,
+        "erro": zapi_erro,
+        "ms_total": int((time.monotonic() - _t0) * 1000),
+    })
 
     # Salva no histórico com referência ao arquivo (para reprodução no painel)
     # Mesmo se Z-API falhou, o arquivo está salvo — o painel pode reproduzir
@@ -2680,6 +2717,19 @@ async def enviar_audio_gravado(
         raise HTTPException(status_code=502, detail=f"Não entregou pelo WhatsApp ({zapi_erro or 'falha desconhecida'}). O áudio ficou salvo no painel — tente reenviar.")
 
     return {"status": "enviado"}
+
+
+@app.get("/api/diag/audio")
+async def diag_audio(admin: Usuario = Depends(requer_admin)):
+    """Raio-x dos últimos envios de áudio — abra no navegador pra diagnosticar."""
+    import json as _json
+    linhas = ["RAIO-X DOS ULTIMOS ENVIOS DE AUDIO (o mais recente fica embaixo)",
+              "=" * 55]
+    if not _AUDIO_DIAG:
+        linhas.append("(nada registrado ainda — envie um audio e recarregue esta pagina)")
+    for d in _AUDIO_DIAG:
+        linhas.append(_json.dumps(d, ensure_ascii=False))
+    return PlainTextResponse("\n".join(linhas))
 
 
 def _buscar_midia(db, filename: str):
