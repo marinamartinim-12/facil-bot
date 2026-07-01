@@ -6494,16 +6494,11 @@
     _mostrarBarra('normal');
   }
 
-  function _logAudioFront(o) {
-    try { fetch('/api/diag/audio-front', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) }); } catch (e) {}
-  }
-
   async function enviarAudio() {
     if (!_audioBlob || !chatLeadAtivo) return;
     const btn = document.getElementById('btnEnviarAudio');
     btn.disabled = true;
     btn.textContent = 'Enviando…';
-    let _t0 = Date.now();
     try {
       // Converte Blob → base64 usando Promise (evita erros silenciosos no onloadend)
       const base64 = await new Promise((resolve, reject) => {
@@ -6513,7 +6508,6 @@
         reader.readAsDataURL(_audioBlob);
       });
 
-      _t0 = Date.now();
       const ctrl = new AbortController();
       const tmo = setTimeout(() => ctrl.abort(), 45000);
       let resp;
@@ -6527,7 +6521,6 @@
       } finally {
         clearTimeout(tmo);
       }
-      _logAudioFront({ fase: 'recebeu_resposta', status: resp.status, ms: Date.now() - _t0, kb_enviado: Math.round(base64.length / 1024) });
 
       if (resp.ok) {
         _audioBlob = null;
@@ -6544,7 +6537,6 @@
       }
     } catch (err) {
       console.error('Erro ao enviar áudio:', err);
-      _logAudioFront({ fase: 'erro_js', nome: String(err && err.name), ms: Date.now() - _t0 });
       alert(err.name === 'AbortError'
         ? 'O envio do áudio demorou demais e foi cancelado. Tente de novo — se persistir, me avise.'
         : 'Erro ao enviar áudio. Verifique a conexão e tente novamente.');
