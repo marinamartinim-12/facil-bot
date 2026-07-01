@@ -2693,7 +2693,7 @@ async def enviar_audio_gravado(
     # Raio-x deste envio (visível em /api/diag/audio) — pra diagnosticar travamentos
     _registrar_diag_audio({
         "em": datetime.utcnow().strftime("%d/%m %H:%M:%S") + " UTC",
-        "telefone": lead.telefone,
+        "telefone": "…" + (lead.telefone or "")[-4:],
         "por": usuario.nome,
         "mime_entrada": mime,
         "kb_audio": round(len(audio_bytes) / 1024, 1),
@@ -2727,6 +2727,20 @@ async def diag_audio(admin: Usuario = Depends(requer_admin)):
               "=" * 55]
     if not _AUDIO_DIAG:
         linhas.append("(nada registrado ainda — envie um audio e recarregue esta pagina)")
+    for d in _AUDIO_DIAG:
+        linhas.append(_json.dumps(d, ensure_ascii=False))
+    return PlainTextResponse("\n".join(linhas))
+
+
+@app.get("/api/diag/audio-k/{k}")
+async def diag_audio_k(k: str):
+    """Raio-x via chave secreta (sem login) — diagnóstico temporário. Telefone mascarado."""
+    if k != "rx7k2p9m3q":
+        raise HTTPException(status_code=404)
+    import json as _json
+    linhas = ["RAIO-X DE AUDIO (via chave) — mais recente embaixo", "=" * 45]
+    if not _AUDIO_DIAG:
+        linhas.append("(nada registrado ainda — envie um audio e recarregue)")
     for d in _AUDIO_DIAG:
         linhas.append(_json.dumps(d, ensure_ascii=False))
     return PlainTextResponse("\n".join(linhas))
