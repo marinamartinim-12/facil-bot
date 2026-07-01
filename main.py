@@ -2732,6 +2732,21 @@ async def diag_audio(admin: Usuario = Depends(requer_admin)):
     return PlainTextResponse("\n".join(linhas))
 
 
+@app.post("/api/diag/audio-front")
+async def diag_audio_front(request: Request):
+    """Recebe o desfecho do lado do NAVEGADOR — pra cruzar com o do servidor."""
+    try:
+        d = await request.json()
+    except Exception:
+        d = {}
+    if not isinstance(d, dict):
+        d = {"raw": str(d)[:120]}
+    d["_LADO"] = "NAVEGADOR"
+    d["em"] = datetime.utcnow().strftime("%d/%m %H:%M:%S") + " UTC"
+    _registrar_diag_audio(d)
+    return {"ok": True}
+
+
 @app.get("/api/diag/audio-k/{k}")
 async def diag_audio_k(k: str):
     """Raio-x via chave secreta (sem login) — diagnóstico temporário. Telefone mascarado."""
