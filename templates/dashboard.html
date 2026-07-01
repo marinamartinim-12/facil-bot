@@ -6452,6 +6452,8 @@
         _audioBlob = new Blob(_audioChunks, { type: tipoReal });
         const url = URL.createObjectURL(_audioBlob);
         document.getElementById('audioPreview').src = url;
+        const _b = document.getElementById('btnEnviarAudio');
+        if (_b) { _b.disabled = false; _b.textContent = 'Enviar 🎤'; }
         _mostrarBarra('preview');
       };
 
@@ -6531,6 +6533,8 @@
         _audioBlob = null;
         _audioChunks = [];
         _mostrarBarra('normal');
+        btn.disabled = false;
+        btn.textContent = 'Enviar 🎤';
         await carregarMensagensChat();
       } else {
         const errData = await resp.json().catch(() => ({}));
@@ -6596,6 +6600,8 @@
         stream.getTracks().forEach(t => t.stop());
         _audioBlobModal = new Blob(_audioChunksModal, { type: tipoReal });
         document.getElementById('audioPreviewModal').src = URL.createObjectURL(_audioBlobModal);
+        const _bm = document.getElementById('btnEnviarAudioModal');
+        if (_bm) { _bm.disabled = false; _bm.textContent = 'Enviar 🎤'; }
         _mostrarBarraModal('preview');
       };
       _mediaRecorderModal.start(200);
@@ -6644,6 +6650,7 @@
         if (resp.ok) {
           _audioBlobModal = null;
           _mostrarBarraModal('normal');
+          btn.disabled = false; btn.textContent = 'Enviar 🎤';
           const r = await fetch(`/api/leads/${modalLeadId}/conversa`);
           const d = await r.json();
           const chat = document.getElementById('modalChat');
