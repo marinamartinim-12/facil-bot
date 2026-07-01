@@ -836,31 +836,40 @@ def _tamanho_legivel(n: int) -> str:
 
 def _transcode_audio_sync(audio_bytes: bytes, fmt: str) -> bytes | None:
     """Converte bytes de áudio para 'ogg' (voz WhatsApp) ou 'mp3' (player universal) via ffmpeg.
-    Usa arquivo temporário de entrada (formatos como mp4 do iPhone não funcionam por pipe)."""
-    fd, inpath = tempfile.mkstemp(suffix=".bin")
+    Grava a SAÍDA em arquivo temporário (não em pipe): assim o MP3 sai com o cabeçalho de
+    duração (Xing/LAME). Sem ele o player do navegador não sabe o tamanho do áudio, a barra
+    de progresso não funciona e parece que não toca completo — a operadora precisava baixar.
+    Entrada também em arquivo (mp4 do iPhone não vai por pipe)."""
+    fd_in, inpath = tempfile.mkstemp(suffix=".bin")
+    fd_out, outpath = tempfile.mkstemp(suffix="." + fmt)
+    os.close(fd_out)   # o ffmpeg escreve o arquivo de saída
     try:
-        with os.fdopen(fd, "wb") as f:
+        with os.fdopen(fd_in, "wb") as f:
             f.write(audio_bytes)
         if fmt == "ogg":
             args = ["ffmpeg", "-y", "-i", inpath, "-c:a", "libopus",
                     "-b:a", "32k", "-ac", "1", "-ar", "48000",
-                    "-application", "voip", "-f", "ogg", "pipe:1"]
-        else:  # mp3
+                    "-application", "voip", "-f", "ogg", outpath]
+        else:  # mp3 — -write_xing 1 grava a duração no cabeçalho (player toca completo)
             args = ["ffmpeg", "-y", "-i", inpath, "-c:a", "libmp3lame",
-                    "-b:a", "64k", "-ac", "1", "-f", "mp3", "pipe:1"]
+                    "-b:a", "64k", "-ac", "1", "-write_xing", "1", "-f", "mp3", outpath]
         proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
-        if proc.returncode == 0 and proc.stdout:
-            return proc.stdout
+        if proc.returncode == 0:
+            with open(outpath, "rb") as f:
+                dados = f.read()
+            if dados:
+                return dados
         print(f"⚠️ ffmpeg falhou ({fmt}) rc={proc.returncode}: {proc.stderr[:300]}")
     except FileNotFoundError:
         print("⚠️ ffmpeg não está instalado — usando áudio original")
     except Exception as e:
         print(f"⚠️ Erro no transcode de áudio ({fmt}): {e}")
     finally:
-        try:
-            os.remove(inpath)
-        except Exception:
-            pass
+        for p in (inpath, outpath):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
     return None
 
 
