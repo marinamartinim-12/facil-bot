@@ -969,6 +969,7 @@
             <div class="wsp-input-bar" id="inputBarNormal">
               <button class="wsp-send-btn" title="Modelos de mensagem" onclick="abrirModelos(chatLeadAtivo?.id)" style="background:#0d2b4e;margin-right:4px;font-size:1.1rem">📋</button>
               <button class="wsp-send-btn" id="btnRascunhoIA" title="Sugerir mensagem com IA (você revisa antes de enviar)" onclick="rascunharMensagem()" style="background:#7c3aed;margin-right:4px;font-size:1rem">✍️</button>
+              <button type="button" class="wsp-send-btn" title="Emoji" onclick="_toggleEmoji('msgInput', this)" style="background:#f59e0b;margin-right:4px;font-size:1.15rem">😊</button>
               <input id="msgInput" type="text" placeholder="Digite uma mensagem"
                 onkeydown="if(event.key==='Enter')enviarMensagem()" />
               <button class="wsp-send-btn" title="Gravar áudio" onclick="iniciarGravacao()" style="background:#25d366;margin-right:4px">
@@ -1601,6 +1602,7 @@
         <!-- Input de resposta direto no modal -->
         <div class="wsp-input-bar" id="modalInputBar" style="border-top:1px solid var(--border)">
           <button class="wsp-send-btn" title="Modelos de mensagem" onclick="abrirModelos(modalLeadId)" style="background:#0d2b4e;margin-right:4px;font-size:1.1rem">📋</button>
+          <button type="button" class="wsp-send-btn" title="Emoji" onclick="_toggleEmoji('modalMsgInput', this)" style="background:#f59e0b;margin-right:4px;font-size:1.15rem">😊</button>
           <input id="modalMsgInput" type="text" placeholder="Digite uma mensagem"
             onkeydown="if(event.key==='Enter')enviarMensagemModal()" />
           <button class="wsp-send-btn" title="Gravar áudio" onclick="iniciarGravacaoModal()" style="background:#25d366;margin-right:4px">
@@ -6408,6 +6410,54 @@
           const chat = document.getElementById('modalChat'); if (chat) { chat.innerHTML = renderMensagens(d.mensagens); chat.scrollTop = chat.scrollHeight; } } catch {}
       }
     } catch { alert('Erro de conexão.'); }
+  }
+
+  // ── Seletor de emoji (próprio, sem biblioteca externa) ──────────────────────
+  const _EMOJIS = ['😀','😁','😂','🤣','😊','😍','🥰','😘','😉','🙂','😎','🤗','🤔','😴','😅','😇','🥳','😢','😭','😡','😱','🙄','😬','😳','👍','👎','👏','🙏','🙌','👌','💪','👋','✌️','🤞','☝️','🤝','❤️','🧡','💛','💚','💙','💜','🔥','✨','⭐','🎉','🎊','💯','✅','❌','⚠️','❗','❓','⏰','📅','💰','💵','💳','🏦','📄','📝','📋','📌','📎','📞','📱','💬','🚗','🚙','🔑'];
+
+  function _inserirEmoji(input, emoji) {
+    const start = (typeof input.selectionStart === 'number') ? input.selectionStart : input.value.length;
+    const end   = (typeof input.selectionEnd === 'number') ? input.selectionEnd : input.value.length;
+    input.value = input.value.slice(0, start) + emoji + input.value.slice(end);
+    const pos = start + emoji.length;
+    input.focus();
+    try { input.setSelectionRange(pos, pos); } catch (e) {}
+  }
+
+  function _toggleEmoji(inputId, btnEl) {
+    const aberto = document.getElementById('emojiPop');
+    if (aberto) { aberto.remove(); return; }
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const pop = document.createElement('div');
+    pop.id = 'emojiPop';
+    pop.style.cssText = 'position:fixed;z-index:100000;background:#fff;border:1px solid #d1d5db;border-radius:12px;box-shadow:0 10px 34px rgba(0,0,0,.20);padding:8px;width:296px;max-height:220px;overflow-y:auto;display:grid;grid-template-columns:repeat(8,1fr);gap:2px';
+    _EMOJIS.forEach(e => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = e;
+      b.style.cssText = 'font-size:1.3rem;line-height:1;background:none;border:none;cursor:pointer;padding:5px;border-radius:8px';
+      b.onmouseenter = () => b.style.background = '#f1f5f9';
+      b.onmouseleave = () => b.style.background = 'none';
+      b.onclick = (ev) => { ev.stopPropagation(); _inserirEmoji(input, e); };
+      pop.appendChild(b);
+    });
+    document.body.appendChild(pop);
+    const r = btnEl.getBoundingClientRect();
+    const h = pop.offsetHeight || 220;
+    let top = r.top - h - 6;
+    if (top < 6) top = Math.min(r.bottom + 6, window.innerHeight - h - 6);
+    let left = r.left;
+    if (left + 296 > window.innerWidth - 8) left = window.innerWidth - 304;
+    pop.style.top = Math.max(6, top) + 'px';
+    pop.style.left = Math.max(8, left) + 'px';
+    setTimeout(() => {
+      const fechar = (ev) => {
+        if (!pop.contains(ev.target) && ev.target !== btnEl) {
+          pop.remove(); document.removeEventListener('mousedown', fechar);
+        }
+      };
+      document.addEventListener('mousedown', fechar);
+    }, 0);
   }
 
   async function enviarMensagem() {
