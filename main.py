@@ -1022,6 +1022,21 @@ def _ha_funcionaria_online(db) -> bool:
     ).first() is not None
 
 
+def _humano_respondeu_recente(db, telefone: str, horas: int = 1) -> bool:
+    """True se um humano (operador/admin) respondeu a ESTE cliente nas últimas `horas`.
+    Mensagens de humano são salvas com prefixo '[Nome]: '; as do bot/automáticas não.
+    Serve para PARAR de mandar 'fora do horário' quando alguém já está atendendo o cliente
+    (ex.: admin trabalhando fora do horário) — por conversa, sem afetar clientes novos."""
+    from models import MensagemConversa
+    limite = datetime.utcnow() - timedelta(hours=horas)
+    return db.query(MensagemConversa).filter(
+        MensagemConversa.telefone == telefone,
+        MensagemConversa.role == "assistant",
+        MensagemConversa.conteudo.like("[%]: %"),
+        MensagemConversa.criado_em >= limite,
+    ).first() is not None
+
+
 @app.get("/api/online")
 async def usuarios_online(db: Session = Depends(get_db),
                           usuario: Usuario = Depends(obter_usuario_atual)):
@@ -1286,8 +1301,9 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
                 db.commit()
             _salvar_msg_webhook(db, telefone, texto)
             prox = _proximo_horario_atendimento()
-            # Só avisa "fora do horário" se NÃO houver nenhuma funcionária online
-            if prox and not _ha_funcionaria_online(db):
+            # Só avisa "fora do horário" se NÃO houver funcionária online E ninguém já
+            # estiver respondendo este cliente (admin/operador respondeu na última 1h)
+            if prox and not _ha_funcionaria_online(db) and not _humano_respondeu_recente(db, telefone):
                 nome = f" {lead.nome}" if lead.nome else ""
                 aviso = (
                     f"Olá{nome}! 😊 No momento estamos fora do horário de atendimento. "
@@ -1360,7 +1376,7 @@ async def receber_webhook_meta(request: Request, db: Session = Depends(get_db)):
             ]:
                 _salvar_msg_webhook(db, telefone, texto)
                 prox = _proximo_horario_atendimento()
-                if prox:
+                if prox and not _humano_respondeu_recente(db, telefone):
                     nome = f" {lead.nome}" if lead.nome else ""
                     aviso = (
                         f"Olá{nome}! 😊 No momento estamos fora do horário de atendimento. "
