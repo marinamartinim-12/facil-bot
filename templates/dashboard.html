@@ -1039,6 +1039,7 @@
             <input type="file" id="importParceirosFile" accept=".csv,text/csv" style="display:none" onchange="importarParceiros(this)">
             <button class="btn btn-outline btn-sm admin-only" style="display:none" onclick="document.getElementById('importParceirosFile').click()" title="Importar parceiros de um arquivo CSV (colunas: nome,telefone)">📥 Importar CSV</button>
             <button class="btn btn-outline btn-sm" onclick="exportarCadastroParceiros()" title="Baixar planilha (Excel/CSV) dos parceiros do filtro atual, com a operadora responsável">⬇ Exportar</button>
+            <button class="btn btn-outline btn-sm admin-only" style="display:none" onclick="transferirCarteira()" title="Passar todos os parceiros de uma carteira para outra operadora (ex.: de quem foi desligada)">🔄 Transferir carteira</button>
             <button class="btn btn-primary btn-sm" onclick="abrirModalParceiro(null)">＋ Novo Parceiro</button>
           </div>
         </div>
@@ -3753,6 +3754,71 @@
     a.download = `parceiros${suf}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function transferirCarteira() {
+    // Monta as carteiras de ORIGEM a partir dos parceiros carregados (inclui operadoras já desligadas)
+    const carteiras = {};
+    (_todosParceirosBd || []).forEach(p => {
+      const key = (p.operadora_id == null) ? '' : String(p.operadora_id);
+      if (!carteiras[key]) carteiras[key] = { nome: p.operadora_nome || '(sem carteira)', count: 0 };
+      carteiras[key].count++;
+    });
+    const keys = Object.keys(carteiras).sort((a, b) => carteiras[b].count - carteiras[a].count);
+    if (!keys.length) { alert('Não há parceiros cadastrados para transferir.'); return; }
+
+    let ativos = [];
+    try { ativos = await fetch('/api/usuarios/opcoes').then(r => r.json()); }
+    catch { alert('Erro ao carregar as operadoras.'); return; }
+    if (!ativos.length) { alert('Não há operadora ativa para receber a carteira.'); return; }
+
+    const deOpts = keys.map(k => `<option value="${k}">${escHtml(carteiras[k].nome)} — ${carteiras[k].count} parceiro(s)</option>`).join('');
+    const paraOpts = ativos.map(u => `<option value="${u.id}">${escHtml(u.nome)}</option>`).join('');
+
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:99999;padding:1rem';
+    ov.innerHTML = `
+      <div style="background:#fff;border-radius:12px;max-width:460px;width:100%;padding:1.25rem 1.4rem;box-shadow:0 12px 44px rgba(0,0,0,.28)">
+        <h3 style="margin:0 0 .8rem;color:#0f172a">🔄 Transferir carteira de parceiros</h3>
+        <label style="font-size:.82rem;color:#475569;display:block;margin-bottom:.2rem">De qual carteira (origem):</label>
+        <select id="tcDe" style="width:100%;padding:.5rem;border:1.5px solid #cbd5e1;border-radius:8px;margin-bottom:.7rem;font-size:.9rem">${deOpts}</select>
+        <label style="font-size:.82rem;color:#475569;display:block;margin-bottom:.2rem">Para qual operadora (destino):</label>
+        <select id="tcPara" style="width:100%;padding:.5rem;border:1.5px solid #cbd5e1;border-radius:8px;margin-bottom:.9rem;font-size:.9rem">${paraOpts}</select>
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.5rem .7rem;font-size:.8rem;color:#1e40af;margin-bottom:.95rem">
+          Todos os parceiros da carteira escolhida passam para a operadora de destino. Nada é apagado — só muda o responsável.
+        </div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end">
+          <button class="btn btn-sm btn-outline" id="tcCancelar">Cancelar</button>
+          <button class="btn btn-sm btn-primary" id="tcConfirmar">Transferir</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const fechar = () => ov.remove();
+    ov.querySelector('#tcCancelar').onclick = fechar;
+    ov.addEventListener('click', e => { if (e.target === ov) fechar(); });
+
+    ov.querySelector('#tcConfirmar').onclick = async () => {
+      const deVal = ov.querySelector('#tcDe').value;      // '' = sem carteira
+      const paraVal = ov.querySelector('#tcPara').value;
+      if (!paraVal) { alert('Escolha a operadora de destino.'); return; }
+      if (deVal && deVal === paraVal) { alert('A carteira de origem e destino são a mesma.'); return; }
+      const btn = ov.querySelector('#tcConfirmar');
+      btn.disabled = true; btn.textContent = 'Transferindo…';
+      try {
+        const r = await fetch('/api/parceiros/transferir-carteira', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ de_id: deVal === '' ? null : Number(deVal), para_id: Number(paraVal) })
+        });
+        const d = await r.json();
+        if (!r.ok) { alert('Erro: ' + (d.detail || 'falha')); btn.disabled = false; btn.textContent = 'Transferir'; return; }
+        fechar();
+        alert('✅ ' + d.transferidos + ' parceiro(s) transferido(s) para ' + d.para + '.');
+        await carregarParceiros();
+      } catch (e) {
+        alert('Erro ao transferir: ' + e.message);
+        btn.disabled = false; btn.textContent = 'Transferir';
+      }
+    };
   }
 
   function filtrarParceiros() {

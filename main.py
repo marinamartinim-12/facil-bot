@@ -1605,6 +1605,31 @@ async def importar_parceiros(
     }
 
 
+@app.post("/api/parceiros/transferir-carteira")
+async def transferir_carteira_parceiros(request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
+    """Passa TODOS os parceiros de uma carteira (operadora de origem, ou 'sem carteira')
+    para outra operadora ativa. Usado quando alguém é desligada e a carteira precisa ir
+    para outra pessoa (ex.: parceiros da Camila → Luana). Só muda o responsável."""
+    body = await request.json()
+    de_id = body.get("de_id")      # int (operadora origem) ou None (sem carteira)
+    para_id = body.get("para_id")
+    if not para_id:
+        raise HTTPException(status_code=400, detail="Escolha a operadora de destino.")
+    para = db.query(Usuario).filter(Usuario.id == int(para_id), Usuario.ativo == True).first()
+    if not para:
+        raise HTTPException(status_code=400, detail="Operadora de destino inválida ou inativa.")
+    if de_id is not None and int(de_id) == int(para_id):
+        raise HTTPException(status_code=400, detail="A carteira de origem e destino são a mesma.")
+    if de_id is None:
+        parceiros = db.query(Parceiro).filter(Parceiro.operadora_id.is_(None)).all()
+    else:
+        parceiros = db.query(Parceiro).filter(Parceiro.operadora_id == int(de_id)).all()
+    for p in parceiros:
+        p.operadora_id = para.id
+    db.commit()
+    return {"transferidos": len(parceiros), "para": para.nome}
+
+
 @app.put("/api/parceiros/{pid}")
 async def atualizar_parceiro(
     pid: int,
