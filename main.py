@@ -3698,6 +3698,50 @@ async def desativar_usuario(uid: int, db: Session = Depends(get_db), admin: Usua
     return {"status": "desativado"}
 
 
+@app.delete("/api/usuarios/{uid}/excluir")
+async def excluir_usuario_definitivo(uid: int, db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
+    """Exclui DEFINITIVAMENTE um usuário — só se estiver desligado E sem histórico de negócio.
+    Se tiver leads/ponto/contratos/etc., recusa: deve permanecer desligado p/ preservar os dados."""
+    u = db.query(Usuario).filter(Usuario.id == uid).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if u.id == admin.id:
+        raise HTTPException(status_code=400, detail="Você não pode excluir a si mesma.")
+    if u.ativo:
+        raise HTTPException(status_code=400, detail="Só dá para excluir um usuário já desligado. Desligue primeiro.")
+    nome = u.nome
+    refs = {
+        "leads atendidos": db.query(Lead).filter(Lead.atribuido_para == uid).count(),
+        "parceiros na carteira": db.query(Parceiro).filter(Parceiro.operadora_id == uid).count(),
+        "contratos": db.query(Contrato).filter(Contrato.criado_por_id == uid).count(),
+        "registros de ponto": db.query(RegistroPonto).filter(RegistroPonto.usuario_id == uid).count(),
+        "férias/folgas": db.query(AusenciaFuncionaria).filter(AusenciaFuncionaria.usuario_id == uid).count(),
+        "agendamentos": db.query(Agendamento).filter(Agendamento.criado_por == uid).count(),
+        "histórico de leads": db.query(HistoricoLead).filter(HistoricoLead.usuario_id == uid).count(),
+        "justificativas de ponto": db.query(JustificativaPonto).filter(JustificativaPonto.usuario_id == uid).count(),
+        "correções de ponto": db.query(CorrecaoPonto).filter(CorrecaoPonto.usuario_id == uid).count(),
+    }
+    bloqueios = {k: v for k, v in refs.items() if v}
+    if bloqueios:
+        detalhe = "; ".join(f"{k}: {v}" for k, v in bloqueios.items())
+        raise HTTPException(
+            status_code=400,
+            detail=(f"Não dá para EXCLUIR: essa pessoa tem histórico no sistema ({detalhe}). "
+                    f"Mantenha DESLIGADA — o acesso já está cortado e os dados ficam preservados."),
+        )
+    # Conta sem histórico de negócio → limpa logs de sessão/atividade e exclui
+    try:
+        db.query(SessaoUsuario).filter(SessaoUsuario.usuario_id == uid).delete(synchronize_session=False)
+        db.query(AtividadePing).filter(AtividadePing.usuario_id == uid).delete(synchronize_session=False)
+        db.delete(u)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"⚠️ Falha ao excluir usuário {uid}: {e}")
+        raise HTTPException(status_code=400, detail="Não foi possível excluir com segurança (há registros ligados). Mantenha a pessoa desligada.")
+    return {"status": "excluido", "nome": nome}
+
+
 _STATUS_FINALIZADOS = [
     StatusLeadEnum.fechado.value,
     StatusLeadEnum.perdido.value,
@@ -3961,8 +4005,11 @@ def _serial_ausencia(a):
 @app.get("/api/rh/ausencias")
 async def rh_listar_ausencias(db: Session = Depends(get_db),
                               usuario: Usuario = Depends(obter_usuario_atual)):
-    """Todas as férias/folgas — visível a todos (calendário compartilhado)."""
+    """Todas as férias/folgas de quem está ATIVO — visível a todos (calendário compartilhado).
+    Desligados não aparecem mais aqui (mas o histórico deles fica preservado)."""
     aus = (db.query(AusenciaFuncionaria)
+           .join(Usuario, Usuario.id == AusenciaFuncionaria.usuario_id)
+           .filter(Usuario.ativo == True)
            .order_by(AusenciaFuncionaria.data_inicio.desc()).all())
     return [_serial_ausencia(a) for a in aus]
 

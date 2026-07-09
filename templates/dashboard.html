@@ -916,6 +916,17 @@
           <span id="usuarioMsg" style="margin-left:.75rem;font-size:.82rem;"></span>
         </div>
         <div class="users-grid" id="usersGrid"></div>
+
+        <!-- ── Desligados / Sem acesso ── -->
+        <div id="desligadosSecao" style="display:none;margin-top:1.6rem">
+          <h3 style="font-size:.95rem;color:#475569;border-top:1px solid var(--border);padding-top:1rem;margin-bottom:.35rem">
+            🚫 Sem acesso — desligados <span id="desligadosCount" style="color:#94a3b8;font-weight:400"></span>
+          </h3>
+          <p style="font-size:.78rem;color:#94a3b8;margin:0 0 .85rem">
+            Acesso cortado, mas o histórico fica preservado. Você pode <b>reativar</b>, <b>redistribuir</b> os leads que sobraram, ou <b>excluir de vez</b> (só para contas sem histórico).
+          </p>
+          <div class="users-grid" id="desligadosGrid"></div>
+        </div>
       </div>
 
       <!-- ── ATENDIMENTO / INBOX ── -->
@@ -3319,7 +3330,10 @@
     try {
       const r = await fetch('/api/usuarios');
       const users = await r.json();
-      document.getElementById('usersGrid').innerHTML = users.map(u => `
+      const ativos = users.filter(u => u.ativo);
+      const inativos = users.filter(u => !u.ativo);
+
+      const cardAtivo = u => `
         <div class="user-card">
           <div class="uc-top">
             <div class="uc-avatar ${u.role === 'admin' ? 'admin' : ''}">${u.nome[0].toUpperCase()}</div>
@@ -3328,19 +3342,55 @@
               <span>${esc(u.email)}</span>
               <div style="margin-top:.35rem;display:flex;gap:.3rem;flex-wrap:wrap">
                 <span class="badge badge-${u.role}">${u.role === 'admin' ? 'Admin' : 'Funcionário'}</span>
-                ${!u.ativo ? '<span class="badge badge-inativo">Inativo</span>' : ''}
               </div>
             </div>
           </div>
           <div class="uc-actions">
             <button class="btn btn-sm btn-outline" onclick="abrirEditarUsuario(${u.id},'${esc(u.nome)}','${esc(u.email)}','${u.role}',${u.ativo})">✏️ Editar</button>
             <button class="btn btn-sm" style="background:#e8f4fd;color:#1a5276;border:1px solid #aed6f1" onclick="abrirAgendaFuncionaria(${u.id},'${esc(u.nome)}')">📅 Agenda</button>
-            ${u.ativo && u.id !== currentUser.id && u.role !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="abrirDesligar(${u.id},'${esc(u.nome)}',false)">Desligar</button>` : ''}
-            ${!u.ativo && u.role !== 'admin' && (u.leads_abertos||0) > 0 ? `<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="abrirDesligar(${u.id},'${esc(u.nome)}',true)">↩ Redistribuir ${u.leads_abertos} lead${u.leads_abertos>1?'s':''}</button>` : ''}
-            ${!u.ativo ? `<button class="btn btn-sm btn-primary" onclick="toggleUsuario(${u.id},true)">Reativar</button>` : ''}
+            ${u.id !== currentUser.id && u.role !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="abrirDesligar(${u.id},'${esc(u.nome)}',false)">Desligar</button>` : ''}
           </div>
-        </div>`).join('');
+        </div>`;
+
+      const cardInativo = u => `
+        <div class="user-card" style="opacity:.9">
+          <div class="uc-top">
+            <div class="uc-avatar" style="filter:grayscale(1)">${u.nome[0].toUpperCase()}</div>
+            <div class="uc-info">
+              <strong>${esc(u.nome)}</strong>
+              <span>${esc(u.email)}</span>
+              <div style="margin-top:.35rem;display:flex;gap:.3rem;flex-wrap:wrap">
+                <span class="badge badge-${u.role}">${u.role === 'admin' ? 'Admin' : 'Funcionário'}</span>
+                <span class="badge badge-inativo">Sem acesso</span>
+                ${(u.leads_abertos||0) > 0 ? `<span class="badge" style="background:#fef3c7;color:#92400e">${u.leads_abertos} lead(s) em aberto</span>` : ''}
+              </div>
+            </div>
+          </div>
+          <div class="uc-actions">
+            ${u.role !== 'admin' && (u.leads_abertos||0) > 0 ? `<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="abrirDesligar(${u.id},'${esc(u.nome)}',true)">↩ Redistribuir</button>` : ''}
+            <button class="btn btn-sm btn-primary" onclick="toggleUsuario(${u.id},true)">↩ Reativar</button>
+            <button class="btn btn-sm btn-outline" style="color:#b91c1c;border-color:#fecaca" onclick="excluirUsuarioDefinitivo(${u.id},'${esc(u.nome)}')" title="Excluir de vez — só funciona p/ contas sem histórico">🗑 Excluir</button>
+          </div>
+        </div>`;
+
+      document.getElementById('usersGrid').innerHTML = ativos.map(cardAtivo).join('');
+      document.getElementById('desligadosGrid').innerHTML = inativos.map(cardInativo).join('');
+      document.getElementById('desligadosCount').textContent = inativos.length ? `(${inativos.length})` : '';
+      document.getElementById('desligadosSecao').style.display = inativos.length ? 'block' : 'none';
     } catch {}
+  }
+
+  async function excluirUsuarioDefinitivo(id, nome) {
+    if (!confirm(`⚠️ EXCLUIR DE VEZ "${nome}"?\n\nIsso é PERMANENTE e só funciona se a pessoa NÃO tiver histórico (leads, ponto, vendas, etc.).\n\nSe ela trabalhou de verdade, o certo é manter DESLIGADA — o acesso já está cortado e os dados ficam guardados.\n\nContinuar?`)) return;
+    const conf = prompt(`Para confirmar a exclusão de "${nome}", digite EXCLUIR (em maiúsculas):`);
+    if (conf !== 'EXCLUIR') { alert('Exclusão cancelada.'); return; }
+    try {
+      const r = await fetch(`/api/usuarios/${id}/excluir`, { method: 'DELETE' });
+      const d = await r.json();
+      if (!r.ok) { alert('❌ ' + (d.detail || 'Não foi possível excluir.')); return; }
+      alert(`✅ "${nome}" foi excluída definitivamente.`);
+      carregarUsuarios();
+    } catch (e) { alert('Erro ao excluir: ' + e.message); }
   }
 
   async function criarUsuario() {
