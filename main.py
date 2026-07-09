@@ -586,13 +586,17 @@ async def login(request: Request, response: Response, db: Session = Depends(get_
 
 
 @app.post("/auth/logout")
-async def logout(request: Request, response: Response, db: Session = Depends(get_db)):
-    # Fecha sessão aberta
+async def logout(request: Request, response: Response, db: Session = Depends(get_db),
+                 usuario: Usuario = Depends(obter_usuario_atual)):
+    # Fecha apenas a PRÓPRIA sessão aberta.
+    # Segurança (IDOR): exige autenticação e valida que o sessao_id do cookie
+    # pertence ao usuário autenticado antes de gravar logout_em. Sem isso,
+    # qualquer um poderia forçar o logout de uma sessão alheia informando o id.
     sid = request.cookies.get("sessao_id")
     if sid:
         try:
             sessao = db.query(SessaoUsuario).filter(SessaoUsuario.id == int(sid)).first()
-            if sessao and not sessao.logout_em:
+            if sessao and sessao.usuario_id == usuario.id and not sessao.logout_em:
                 sessao.logout_em = datetime.utcnow()
                 db.commit()
         except Exception:
@@ -622,7 +626,13 @@ async def heartbeat(request: Request, response: Response, db: Session = Depends(
         except Exception:
             pass
 
-    # Sessão não encontrada (deletada ou cookie antigo) — recria
+    # Segurança (IDOR): só opera a sessão se ela pertencer ao próprio usuário.
+    # Se o cookie apontar para a sessão de outra pessoa (id enumerável), ignora
+    # e recria a própria sessão abaixo — nunca escreve na sessão alheia.
+    if sessao and sessao.usuario_id != usuario.id:
+        sessao = None
+
+    # Sessão não encontrada (deletada, cookie antigo ou de outro usuário) — recria
     if not sessao:
         ip  = _ip_da_requisicao(request)
         geo = await _geo_por_ip(ip)
@@ -5449,6 +5459,69 @@ async def relatorio_eficiencia(periodo: str = "tudo",
                                  if totais["recebidos"] > 0 else 0.0)
 
     return {"operadoras": lista, "totais": totais}
+
+
+@app.get("/api/relatorio/fluxo-propostas")
+async def relatorio_fluxo_propostas(inicio: str = "", fim: str = "",
+                                    db: Session = Depends(get_db),
+                                    admin: Usuario = Depends(requer_admin)):
+    """FLUXO real (não foto): quantos leads PASSARAM por 'proposta enviada' no período — mesmo
+    que já tenham saído do funil — e, desses, quantos foram aprovados e fechados. Usa o histórico
+    de transições (HistoricoLead), filtrando pela DATA em que a proposta foi enviada.
+    inicio/fim = AAAA-MM-DD (data BR). Sem parâmetros = mês atual."""
+    from datetime import timezone as _tz
+    from sqlalchemy import func as _func
+    _br = _agora_br()
+    if not inicio:
+        inicio = f"{_br.year:04d}-{_br.month:02d}-01"
+    if not fim:
+        fim = _br.strftime("%Y-%m-%d")
+
+    def _br_para_utc(s, mais_um_dia=False):
+        y, m, d = (int(x) for x in s.split("-"))
+        dt = datetime(y, m, d, tzinfo=_TZ_BR)
+        if mais_um_dia:
+            dt = dt + timedelta(days=1)
+        return dt.astimezone(_tz.utc).replace(tzinfo=None)
+
+    try:
+        ini_utc = _br_para_utc(inicio)
+        fim_utc = _br_para_utc(fim, mais_um_dia=True)   # inclui o dia 'fim' inteiro
+    except Exception:
+        raise HTTPException(status_code=400, detail="Datas inválidas (use AAAA-MM-DD).")
+
+    PENV = StatusLeadEnum.proposta_enviada.value
+    PAPR = StatusLeadEnum.proposta_aprovada.value
+    PFEC = StatusLeadEnum.fechado.value
+
+    # Leads que ENTRARAM em 'proposta enviada' no período
+    enviadas_ids = {lid for (lid,) in db.query(HistoricoLead.lead_id).filter(
+        HistoricoLead.para_status == PENV,
+        HistoricoLead.quando >= ini_utc,
+        HistoricoLead.quando < fim_utc,
+    ).distinct().all()}
+
+    aprovadas = fechadas = 0
+    if enviadas_ids:
+        ids = list(enviadas_ids)
+        aprovadas = db.query(HistoricoLead.lead_id).filter(
+            HistoricoLead.lead_id.in_(ids), HistoricoLead.para_status == PAPR
+        ).distinct().count()
+        fechadas = db.query(HistoricoLead.lead_id).filter(
+            HistoricoLead.lead_id.in_(ids), HistoricoLead.para_status == PFEC
+        ).distinct().count()
+
+    n_env = len(enviadas_ids)
+    primeiro = db.query(_func.min(HistoricoLead.quando)).scalar()
+    return {
+        "inicio": inicio, "fim": fim,
+        "enviadas": n_env,
+        "aprovadas": aprovadas,
+        "fechadas": fechadas,
+        "taxa_aprovacao": round(100 * aprovadas / n_env, 1) if n_env else 0,
+        "taxa_fechamento": round(100 * fechadas / n_env, 1) if n_env else 0,
+        "historico_desde": _fmt_br(primeiro, "%d/%m/%Y") if primeiro else None,
+    }
 
 
 def _dias_horas(seg) -> str:

@@ -1320,6 +1320,22 @@
           <div id="relPerfil"><p style="font-size:.83rem;color:var(--muted);text-align:center;padding:1rem">Carregando…</p></div>
         </div>
 
+        <!-- ── FLUXO DE PROPOSTAS (por período, pelo histórico) ── -->
+        <div class="rel-card admin-only" data-relgrupo="vendas" id="relFluxoPropCard">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.4rem">
+            <h3 style="margin:0">📤 Fluxo de propostas (por período)</h3>
+            <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
+              <input type="date" id="fluxoPropIni" onchange="carregarFluxoPropostas()" style="border:1px solid var(--border);border-radius:8px;padding:.3rem .5rem;font-size:.82rem;outline:none">
+              <span style="color:var(--muted);font-size:.82rem">até</span>
+              <input type="date" id="fluxoPropFim" onchange="carregarFluxoPropostas()" style="border:1px solid var(--border);border-radius:8px;padding:.3rem .5rem;font-size:.82rem;outline:none">
+              <button onclick="_fluxoPropMes()" class="btn btn-sm btn-outline" style="padding:.3rem .7rem" title="Voltar pro mês atual">Este mês</button>
+              <button onclick="carregarFluxoPropostas()" class="btn btn-sm btn-outline" style="padding:.3rem .7rem">🔄</button>
+            </div>
+          </div>
+          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .75rem">Quantas propostas <strong>passaram</strong> por "proposta enviada" no período (mesmo que já tenham saído do funil) e, dessas, quantas foram <strong>aprovadas</strong> e <strong>fechadas</strong>. Diferente do funil, que mostra só o que está parado agora.</p>
+          <div id="relFluxoProp"><p style="font-size:.83rem;color:var(--muted);text-align:center;padding:1rem">Carregando…</p></div>
+        </div>
+
         <!-- ── CONTRATOS FECHADOS ── -->
         <div class="rel-card" data-relgrupo="vendas">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem">
@@ -4278,6 +4294,7 @@
     await carregarRelatorioSemPasso();
     await carregarRelatorioParceiros();
     await carregarRelatorioContratosMes();
+    await carregarFluxoPropostas();
     await carregarRelatorioPerfil();
     await carregarTempoResposta();
     await carregarVolumeApi();
@@ -4321,6 +4338,49 @@
       body.innerHTML = html;
     } catch {
       body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:1rem;color:#dc2626">Erro ao carregar.</td></tr>';
+    }
+  }
+
+  function _dataLocalStr(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  function _fluxoPropMes() {
+    const n = new Date();
+    document.getElementById('fluxoPropIni').value = _dataLocalStr(new Date(n.getFullYear(), n.getMonth(), 1));
+    document.getElementById('fluxoPropFim').value = _dataLocalStr(n);
+    carregarFluxoPropostas();
+  }
+  async function carregarFluxoPropostas() {
+    const el = document.getElementById('relFluxoProp');
+    if (!el) return;
+    const iniEl = document.getElementById('fluxoPropIni');
+    const fimEl = document.getElementById('fluxoPropFim');
+    if (iniEl && !iniEl.value) {   // 1ª carga: mês atual
+      const n = new Date();
+      iniEl.value = _dataLocalStr(new Date(n.getFullYear(), n.getMonth(), 1));
+      fimEl.value = _dataLocalStr(n);
+    }
+    const ini = iniEl?.value || '', fim = fimEl?.value || '';
+    el.innerHTML = '<p style="font-size:.83rem;color:var(--muted);text-align:center;padding:1rem">Carregando…</p>';
+    try {
+      const r = await fetch(`/api/relatorio/fluxo-propostas?inicio=${ini}&fim=${fim}`);
+      const d = await r.json();
+      if (!r.ok) { el.innerHTML = `<p style="color:var(--red);font-size:.83rem">${d.detail || 'Erro ao carregar.'}</p>`; return; }
+      const tile = (icone, val, label, cor, sub) => `
+        <div style="flex:1;min-width:150px;background:#fff;border:1px solid var(--border);border-left:4px solid ${cor};border-radius:10px;padding:.7rem .85rem">
+          <div style="font-size:.68rem;color:var(--muted);font-weight:700;text-transform:uppercase">${icone} ${label}</div>
+          <div style="font-size:1.6rem;font-weight:800;color:${cor};margin-top:.1rem">${val}</div>
+          ${sub ? `<div style="font-size:.74rem;color:var(--muted);margin-top:.1rem">${sub}</div>` : ''}
+        </div>`;
+      el.innerHTML = `
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+          ${tile('📤', d.enviadas, 'Propostas enviadas', '#3b82f6', 'no período')}
+          ${tile('✅', d.aprovadas, 'Aprovadas', '#16a34a', `${d.taxa_aprovacao}% das enviadas`)}
+          ${tile('🏆', d.fechadas, 'Fechadas', '#0d2b4e', `${d.taxa_fechamento}% das enviadas`)}
+        </div>
+        ${d.historico_desde ? `<p style="font-size:.72rem;color:var(--muted);margin:.6rem 0 0">📅 Histórico registrado desde <strong>${d.historico_desde}</strong> — períodos anteriores a essa data podem não ter todos os dados.</p>` : ''}`;
+    } catch (e) {
+      el.innerHTML = '<p style="color:var(--red);font-size:.83rem">Erro ao carregar.</p>';
     }
   }
 
