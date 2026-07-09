@@ -1740,8 +1740,10 @@
     if (currentUser.role === 'admin') {
       document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
     } else if (currentUser.role === 'dono') {
-      // Dono: só Dashboard, Funil e Relatórios (tudo só pra olhar). Esconde o resto.
-      const rel = document.getElementById('nav-relatorios'); if (rel) rel.style.display = '';
+      // Dono = admin só-leitura: mostra TODO o conteúdo de gestão (dashboard completo com
+      // contratos/valores, relatórios)...
+      document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
+      // ...mas esconde as ABAS que ele não usa (fica só Dashboard, Funil e Relatórios).
       ['nav-lista','nav-atendimento','nav-agenda','nav-parceiros','nav-contratos','nav-usuarios','nav-rh','nav-configuracoes']
         .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
     }
@@ -5945,7 +5947,7 @@
       renderDashboard();
       renderFunilStats();
     } catch {}
-    if (currentUser?.role === 'admin') carregarDashRelatorios();
+    if (currentUser?.role === 'admin' || currentUser?.role === 'dono') carregarDashRelatorios();
     carregarConversasParadas();
     _iniciarAutoRefreshParadas();
     carregarOnline();

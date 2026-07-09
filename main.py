@@ -2206,7 +2206,7 @@ async def briefing_dia(db: Session = Depends(get_db),
     com_pend = {lid for (lid,) in db.query(Agendamento.lead_id)
                 .filter(Agendamento.concluido.isnot(True)).distinct().all()}
 
-    if usuario.role == RoleEnum.admin:
+    if usuario.role in (RoleEnum.admin, RoleEnum.dono):
         from sqlalchemy import func
         inicio_hoje = datetime(_br.year, _br.month, _br.day, tzinfo=_TZ_BR).astimezone(timezone.utc).replace(tzinfo=None)
         novos_hoje = db.query(Lead).filter(Lead.criado_em >= inicio_hoje, _ign).count()
@@ -2386,7 +2386,7 @@ async def relatorio_contratos_mes(
         "periodo":    periodo,
     }
 
-    if usuario.role == RoleEnum.admin:
+    if usuario.role in (RoleEnum.admin, RoleEnum.dono):
         def _to_float(v):
             try:
                 return float(str(v).replace("R$","").replace(".","").replace(",",".").strip())
@@ -3541,9 +3541,9 @@ async def dashboard_stats(
         ranking.append({"nome": f.nome, "contratos": qtd})
     ranking.sort(key=lambda x: x["contratos"], reverse=True)
 
-    # ── Tarja financeira (admin) ───────────────────────────────────────────
+    # ── Tarja financeira (admin/dono) ──────────────────────────────────────
     tarja = None
-    if usuario.role == RoleEnum.admin:
+    if usuario.role in (RoleEnum.admin, RoleEnum.dono):
         leads_fechados_mes = db.query(Lead).filter(
             Lead.fechado_em >= inicio_mes_utc,
             Lead.status == StatusLeadEnum.fechado,
