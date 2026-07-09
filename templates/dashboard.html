@@ -909,6 +909,7 @@
               <select id="novoRole">
                 <option value="funcionario">Funcionário</option>
                 <option value="admin">Administrador</option>
+                <option value="dono">Dono (só visualização)</option>
               </select>
             </div>
           </div>
@@ -1731,12 +1732,18 @@
     document.getElementById('loginView').style.display = 'none';
     document.getElementById('appView').classList.add('show');
     document.getElementById('sidebarNome').textContent = currentUser.nome;
-    document.getElementById('sidebarRole').textContent = currentUser.role === 'admin' ? 'Administrador' : 'Funcionário';
+    document.getElementById('sidebarRole').textContent = currentUser.role === 'admin' ? 'Administrador' : (currentUser.role === 'dono' ? 'Dono' : 'Funcionário');
     document.getElementById('sidebarAvatar').textContent = currentUser.nome[0].toUpperCase();
     // Sempre esconde primeiro para evitar resíduo de sessão anterior
+    document.body.classList.toggle('role-dono', currentUser.role === 'dono');
     document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
     if (currentUser.role === 'admin') {
       document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
+    } else if (currentUser.role === 'dono') {
+      // Dono: só Dashboard, Funil e Relatórios (tudo só pra olhar). Esconde o resto.
+      const rel = document.getElementById('nav-relatorios'); if (rel) rel.style.display = '';
+      ['nav-lista','nav-atendimento','nav-agenda','nav-parceiros','nav-contratos','nav-usuarios','nav-rh','nav-configuracoes']
+        .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
     }
     _iniciarHeartbeat();   // Registra atividade a cada 60s
     carregarFila();        // Fila rotativa de atendimento
@@ -1749,6 +1756,7 @@
       localStorage.setItem('briefingLanding', _periodoAtual);
       viewInicial = 'dashboard';
     }
+    if (currentUser.role === 'dono') viewInicial = 'dashboard';   // dono sempre abre no Dashboard
     showView(viewInicial);
     refresh();
     setInterval(refresh, 30000);
@@ -1769,8 +1777,13 @@
   // ═══════ VIEWS ═══════
   const views = ['dashboard','funil','lista','atendimento','agenda','parceiros','contratos','usuarios','relatorios','rh','configuracoes'];
   const adminViews = ['contratos', 'usuarios', 'relatorios', 'rh', 'configuracoes'];
+  const donoViews = ['dashboard', 'funil', 'relatorios'];   // o que o Dono pode abrir
   function showView(v) {
-    if (adminViews.includes(v) && currentUser?.role !== 'admin') return;
+    // Bloqueia telas de admin p/ quem não é admin — exceto o Dono nas telas dele
+    if (adminViews.includes(v) && currentUser?.role !== 'admin'
+        && !(currentUser?.role === 'dono' && donoViews.includes(v))) return;
+    // Dono nunca abre telas fora das dele (mesmo via ultimaView salva)
+    if (currentUser?.role === 'dono' && !donoViews.includes(v)) return;
     localStorage.setItem('ultimaView', v);
     views.forEach(x => {
       document.getElementById('view'+cap(x)).style.display = x === v ? '' : 'none';
@@ -8267,6 +8280,7 @@
           <select id="editRole" style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#fff">
             <option value="funcionario">Funcionário</option>
             <option value="admin">Administrador</option>
+            <option value="dono">Dono (só visualização)</option>
           </select>
         </div>
         <div>

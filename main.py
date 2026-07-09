@@ -46,10 +46,36 @@ from sqlalchemy.orm import Session
 from config import get_settings
 from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, JustificativaPonto, CorrecaoPonto, AtividadePing, Agendamento, MidiaArquivo, DocumentoCliente, HistoricoLead, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento, diagnostico_ia
-from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin
+from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin, requer_gestao, role_do_token
 
 settings = get_settings()
 app = FastAPI(title="Fácil Financiamentos", version="2.0.0")
+
+
+# ── Guarda global: o perfil DONO é somente leitura ──────────────────────────────
+# Bloqueia qualquer escrita (POST/PUT/DELETE/PATCH) vinda de um token de dono.
+# Segurança de verdade no servidor — não depende de esconder botão no front.
+_DONO_ESCRITA_LIBERADA = {"/auth/login", "/auth/logout", "/api/logout", "/api/heartbeat"}
+_DONO_GET_BLOQUEADO_PREFIX = ("/api/admin/", "/api/debug/", "/api/placa-debug")
+_DONO_GET_BLOQUEADO_EXATO = {"/api/diagnostico-ia", "/api/config"}
+
+@app.middleware("http")
+async def _guarda_dono_somente_leitura(request: Request, call_next):
+    metodo = request.method
+    path = request.url.path
+    if metodo not in ("GET", "HEAD", "OPTIONS"):
+        # Escrita: bloqueia TUDO pro dono (exceto login/logout/heartbeat)
+        if path not in _DONO_ESCRITA_LIBERADA and role_do_token(request.cookies.get("access_token")) == "dono":
+            return JSONResponse(
+                {"detail": "Perfil do dono é somente leitura — sem permissão para alterar."},
+                status_code=403,
+            )
+    else:
+        # Leitura: bloqueia telas sensíveis/de ação (migração, limpar ponto, backup, debug, config…)
+        if (path.startswith(_DONO_GET_BLOQUEADO_PREFIX) or path in _DONO_GET_BLOQUEADO_EXATO) \
+                and role_do_token(request.cookies.get("access_token")) == "dono":
+            return JSONResponse({"detail": "Sem permissão para esta área."}, status_code=403)
+    return await call_next(request)
 
 # Cache para deduplicar mensagens enviadas pelo painel vs. webhook fromMe
 # Chave: (telefone, texto_normalizado) → timestamp do envio
@@ -521,7 +547,7 @@ async def login(request: Request, response: Response, db: Session = Depends(get_
     if not usuario.ativo:
         raise HTTPException(status_code=403, detail="Usuário desativado")
 
-    token = criar_token({"sub": str(usuario.id)})
+    token = criar_token({"sub": str(usuario.id), "role": getattr(usuario.role, "value", usuario.role)})
     response.set_cookie(
         key="access_token",
         value=token,

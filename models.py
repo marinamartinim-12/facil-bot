@@ -51,6 +51,7 @@ Base = declarative_base()
 class RoleEnum(str, enum.Enum):
     admin = "admin"
     funcionario = "funcionario"
+    dono = "dono"   # perfil do dono: só visualização (dashboard, relatórios, funil), sem editar nada
 
 
 class ModalidadeEnum(str, enum.Enum):

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 import bcrypt
 from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, Cookie
+from fastapi import Depends, HTTPException, Cookie, Request
 from sqlalchemy.orm import Session
 from models import get_db, Usuario, RoleEnum
 from config import get_settings
@@ -48,7 +48,30 @@ def obter_usuario_atual(
     return usuario
 
 
-def requer_admin(usuario: Usuario = Depends(obter_usuario_atual)) -> Usuario:
-    if usuario.role != RoleEnum.admin:
-        raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
+def requer_admin(request: Request, usuario: Usuario = Depends(obter_usuario_atual)) -> Usuario:
+    if usuario.role == RoleEnum.admin:
+        return usuario
+    # O Dono pode LER (GET) as telas de gestão. Escrita e telas perigosas (/api/admin/*)
+    # são bloqueadas pelo guarda global no main.py — aqui é só a leitura.
+    if usuario.role == RoleEnum.dono and request.method in ("GET", "HEAD"):
+        return usuario
+    raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
+
+
+def requer_gestao(usuario: Usuario = Depends(obter_usuario_atual)) -> Usuario:
+    """Admin OU Dono (perfil de visualização). Para telas de gestão só-leitura.
+    O Dono chega aqui apenas em GET — escrita é bloqueada pelo guarda global."""
+    if usuario.role not in (RoleEnum.admin, RoleEnum.dono):
+        raise HTTPException(status_code=403, detail="Acesso restrito à gestão")
     return usuario
+
+
+def role_do_token(access_token: Optional[str]) -> Optional[str]:
+    """Lê o perfil (role) direto do JWT, sem tocar no banco — usado pelo guarda de escrita."""
+    if not access_token:
+        return None
+    try:
+        payload = jwt.decode(access_token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        return payload.get("role")
+    except JWTError:
+        return None
