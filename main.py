@@ -5353,11 +5353,14 @@ async def relatorio_produtividade(periodo: str = "tudo",
                                   admin: Usuario = Depends(requer_admin)):
     """Por operadora (responsável pelo lead): quantos dos leads dela JÁ TÊM e quantos
     AINDA NÃO TÊM observação e agendamento (follow-up manual). Conta individualmente.
-    'periodo' filtra pelos leads que ENTRARAM no período (criado_em)."""
+    'periodo' filtra pelos leads que ENTRARAM no período (criado_em).
+    Exclui os FINALIZADOS (perdido/fechado/desqualificado) — lead resolvido não precisa
+    de follow-up, então não entra em 'sem follow-up'."""
     _ign = Lead.ignorar_relatorios.isnot(True)
     desde = _inicio_periodo(periodo)
-    # Leads que entram em relatório: (id, responsável, observações)
-    q = db.query(Lead.id, Lead.atribuido_para, Lead.observacoes).filter(_ign)
+    # Leads ATIVOS (não finalizados) que entram no relatório: (id, responsável, observações)
+    q = db.query(Lead.id, Lead.atribuido_para, Lead.observacoes).filter(
+        _ign, Lead.status.notin_(_STATUS_FINALIZADOS))
     if desde is not None:
         q = q.filter(Lead.criado_em >= desde)
     leads = q.all()
