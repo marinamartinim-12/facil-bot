@@ -1760,9 +1760,11 @@
       // Dono = admin só-leitura: mostra TODO o conteúdo de gestão (dashboard completo com
       // contratos/valores, relatórios)...
       document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
-      // ...mas esconde as ABAS que ele não usa (fica só Dashboard, Funil e Relatórios).
+      // ...mas esconde as ABAS que ele não usa (fica só Dashboard, Funil e Relatórios)...
       ['nav-lista','nav-atendimento','nav-agenda','nav-parceiros','nav-contratos','nav-usuarios','nav-rh','nav-configuracoes']
         .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+      // ...e cards operacionais de monitoramento que ele não precisa ver.
+      ['dashRelatoriosCard','dashOnlineCard'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
     }
     _iniciarHeartbeat();   // Registra atividade a cada 60s
     carregarFila();        // Fila rotativa de atendimento
@@ -6008,7 +6010,7 @@
       renderDashboard();
       renderFunilStats();
     } catch {}
-    if (currentUser?.role === 'admin' || currentUser?.role === 'dono') carregarDashRelatorios();
+    if (currentUser?.role === 'admin') carregarDashRelatorios();
     carregarConversasParadas();
     _iniciarAutoRefreshParadas();
     carregarOnline();
