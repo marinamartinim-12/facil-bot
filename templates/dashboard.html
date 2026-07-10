@@ -323,6 +323,7 @@
     .uc-actions { display: flex; flex-wrap: wrap; gap: .35rem; border-top: 1px solid var(--border); padding-top: .6rem; }
     .badge-admin { background: #fef9c3; color: #854d0e; }
     .badge-funcionario { background: #e0f2fe; color: #075985; }
+    .badge-dono { background: #ede9fe; color: #5b21b6; }
     .badge-inativo { background: #fee2e2; color: #991b1b; }
 
     /* ── FORMULÁRIO NOVO USUÁRIO ── */
@@ -3372,7 +3373,7 @@
               <strong>${esc(u.nome)}</strong>
               <span>${esc(u.email)}</span>
               <div style="margin-top:.35rem;display:flex;gap:.3rem;flex-wrap:wrap">
-                <span class="badge badge-${u.role}">${u.role === 'admin' ? 'Admin' : 'Funcionário'}</span>
+                <span class="badge badge-${u.role}">${u.role === 'admin' ? 'Admin' : (u.role === 'dono' ? 'Dono' : 'Funcionário')}</span>
               </div>
             </div>
           </div>
@@ -3391,7 +3392,7 @@
               <strong>${esc(u.nome)}</strong>
               <span>${esc(u.email)}</span>
               <div style="margin-top:.35rem;display:flex;gap:.3rem;flex-wrap:wrap">
-                <span class="badge badge-${u.role}">${u.role === 'admin' ? 'Admin' : 'Funcionário'}</span>
+                <span class="badge badge-${u.role}">${u.role === 'admin' ? 'Admin' : (u.role === 'dono' ? 'Dono' : 'Funcionário')}</span>
                 <span class="badge badge-inativo">Sem acesso</span>
                 ${(u.leads_abertos||0) > 0 ? `<span class="badge" style="background:#fef3c7;color:#92400e">${u.leads_abertos} lead(s) em aberto</span>` : ''}
               </div>
