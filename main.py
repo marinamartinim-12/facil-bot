@@ -5364,7 +5364,7 @@ async def relatorio_produtividade(periodo: str = "tudo",
     # IDs de leads com ao menos 1 agendamento (= follow-up inserido pela operadora)
     com_agendamento = {lid for (lid,) in db.query(Agendamento.lead_id).distinct().all()}
     # Operadoras (funcionárias) — inclui inativas só se tiverem leads
-    operadoras = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario).all()
+    operadoras = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario, Usuario.ativo == True).all()
 
     stats = {u.id: {"id": u.id, "nome": u.nome, "_ativo": bool(u.ativo), "total": 0,
                     "com_obs": 0, "sem_obs": 0, "com_followup": 0, "sem_followup": 0}
@@ -5415,7 +5415,7 @@ async def relatorio_eficiencia(periodo: str = "tudo",
     if desde is not None:
         q = q.filter(Lead.criado_em >= desde)
     leads = q.all()
-    operadoras = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario).all()
+    operadoras = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario, Usuario.ativo == True).all()
 
     # Estágios cumulativos (quem fechou também passou por proposta e aprovação)
     ATINGIU_PROPOSTA = {StatusLeadEnum.proposta_enviada.value,
@@ -5563,12 +5563,17 @@ async def relatorio_fechamentos(periodo: str = "mes",
     leads = {l.id: l for l in db.query(Lead.id, Lead.criado_em, Lead.ignorar_relatorios)
              .filter(Lead.id.in_(list(por_lead.keys()))).all()}
     uids = {e.usuario_id for e in por_lead.values() if e.usuario_id}
-    nomes = dict(db.query(Usuario.id, Usuario.nome).filter(Usuario.id.in_(uids)).all()) if uids else {}
+    _usrs = ({uid: (nome, at) for uid, nome, at in
+              db.query(Usuario.id, Usuario.nome, Usuario.ativo).filter(Usuario.id.in_(uids)).all()}
+             if uids else {})
 
     agg = defaultdict(lambda: {"qtd": 0, "soma_seg": 0, "com_tempo": 0})
     for lid, e in por_lead.items():
         l = leads.get(lid)
         if l is None or l.ignorar_relatorios:
+            continue
+        # não mostra fechamentos de operadora desligada (removida dos relatórios)
+        if e.usuario_id and e.usuario_id in _usrs and not _usrs[e.usuario_id][1]:
             continue
         a = agg[e.usuario_id]
         a["qtd"] += 1
@@ -5581,7 +5586,7 @@ async def relatorio_fechamentos(periodo: str = "mes",
         media = (a["soma_seg"] / a["com_tempo"]) if a["com_tempo"] else 0
         fechamentos.append({
             "id": uid,
-            "nome": (nomes.get(uid) if uid else "Sistema/Bot") or f"Usuário {uid}",
+            "nome": ((_usrs.get(uid, (None,))[0]) if uid else "Sistema/Bot") or f"Usuário {uid}",
             "qtd": a["qtd"],
             "tempo_medio": _dias_horas(media) if a["com_tempo"] else "—",
             "tempo_medio_seg": int(media),
@@ -5610,7 +5615,7 @@ async def relatorio_origem(periodo: str = "tudo",
         q = q.filter(Lead.criado_em >= desde)
     leads = q.all()
 
-    operadoras = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario).all()
+    operadoras = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario, Usuario.ativo == True).all()
     stats = {u.id: {"id": u.id, "nome": u.nome, "_ativo": bool(u.ativo),
                     "total": 0, "de_parceiro": 0, "novos": 0}
              for u in operadoras}
@@ -6227,7 +6232,7 @@ async def relatorio_leads_calendario(
         fim = datetime(ano, mes + 1, 1) + timedelta(hours=3)
 
     # Só funcionárias entram neste relatório (exclui leads atribuídos a admins)
-    _ids_func = [u.id for u in db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario).all()]
+    _ids_func = [u.id for u in db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario, Usuario.ativo == True).all()]
     q = db.query(Lead).filter(Lead.atribuido_para.isnot(None), Lead.ignorar_relatorios.isnot(True),
                               Lead.atribuido_para.in_(_ids_func))
     if not geral:
@@ -6312,7 +6317,7 @@ async def relatorio_leads_calendario_xlsx(
     inicio = datetime(ano, mes, 1) + timedelta(hours=3)
     fim = (datetime(ano + 1, 1, 1) if mes == 12 else datetime(ano, mes + 1, 1)) + timedelta(hours=3)
     # Só funcionárias entram neste relatório (exclui leads atribuídos a admins)
-    _ids_func = [u.id for u in db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario).all()]
+    _ids_func = [u.id for u in db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario, Usuario.ativo == True).all()]
     q = db.query(Lead).filter(Lead.atribuido_para.isnot(None), Lead.ignorar_relatorios.isnot(True),
                               Lead.atribuido_para.in_(_ids_func))
     if not geral:
