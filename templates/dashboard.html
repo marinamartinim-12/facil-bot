@@ -6018,6 +6018,7 @@
   async function carregarOnline() {
     const card = document.getElementById('dashOnlineCard');
     if (!card) return;
+    if (currentUser?.role === 'dono') { card.style.display = 'none'; return; }  // dono não vê quem está online
     try {
       const r = await fetch('/api/online');
       if (!r.ok) return;
