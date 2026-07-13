@@ -3482,6 +3482,27 @@ async def atribuir_lead(
     return _serial_lead(lead, db)
 
 
+def _fluxo_estagios_periodo(db, ini_utc, fim_utc=None):
+    """Fluxo CUMULATIVO pelo histórico: quantos leads ATINGIRAM proposta/aprovada/fechado no
+    período (mesmo que já tenham saído do funil). Cumulativo => quem chegou em 'aprovada'
+    também conta em 'enviada', garantindo enviadas >= aprovadas >= fechadas (funil coerente).
+    Exclui conversas internas. Retorna (n_enviadas, n_aprovadas, n_fechadas)."""
+    q = (db.query(HistoricoLead.lead_id, HistoricoLead.para_status)
+         .join(Lead, Lead.id == HistoricoLead.lead_id)
+         .filter(HistoricoLead.quando >= ini_utc, Lead.ignorar_relatorios.isnot(True)))
+    if fim_utc is not None:
+        q = q.filter(HistoricoLead.quando < fim_utc)
+    _ATP = {StatusLeadEnum.proposta_enviada.value, StatusLeadEnum.proposta_aprovada.value, StatusLeadEnum.fechado.value}
+    _ATA = {StatusLeadEnum.proposta_aprovada.value, StatusLeadEnum.fechado.value}
+    _ATF = {StatusLeadEnum.fechado.value}
+    env, apr, fec = set(), set(), set()
+    for lid, ps in q.all():
+        if ps in _ATP: env.add(lid)
+        if ps in _ATA: apr.add(lid)
+        if ps in _ATF: fec.add(lid)
+    return len(env), len(apr), len(fec)
+
+
 @app.get("/api/dashboard-stats")
 async def dashboard_stats(
     db: Session = Depends(get_db),
@@ -3512,18 +3533,9 @@ async def dashboard_stats(
 
     # ── Conversões do mês (exclui conversas internas) ──────────────────────
     _ign = Lead.ignorar_relatorios.isnot(True)
-    # FLUXO (não foto): quantos leads PASSARAM por proposta enviada / aprovada no mês,
-    # pelo histórico de transições — mesmo que já tenham saído do funil.
-    propostas_mes = (db.query(HistoricoLead.lead_id)
-                     .join(Lead, Lead.id == HistoricoLead.lead_id)
-                     .filter(HistoricoLead.para_status == StatusLeadEnum.proposta_enviada.value,
-                             HistoricoLead.quando >= inicio_mes_utc, _ign)
-                     .distinct().count())
-    aprovadas_mes = (db.query(HistoricoLead.lead_id)
-                     .join(Lead, Lead.id == HistoricoLead.lead_id)
-                     .filter(HistoricoLead.para_status == StatusLeadEnum.proposta_aprovada.value,
-                             HistoricoLead.quando >= inicio_mes_utc, _ign)
-                     .distinct().count())
+    # FLUXO cumulativo (não foto): quantos PASSARAM por proposta enviada / aprovada no mês,
+    # pelo histórico. Cumulativo garante enviadas >= aprovadas (funil coerente).
+    propostas_mes, aprovadas_mes, _ = _fluxo_estagios_periodo(db, inicio_mes_utc)
     fechados_mes = db.query(Lead).filter(
         Lead.fechado_em >= inicio_mes_utc, _ign,
         Lead.status == StatusLeadEnum.fechado
@@ -5497,28 +5509,8 @@ async def relatorio_fluxo_propostas(inicio: str = "", fim: str = "",
     except Exception:
         raise HTTPException(status_code=400, detail="Datas inválidas (use AAAA-MM-DD).")
 
-    PENV = StatusLeadEnum.proposta_enviada.value
-    PAPR = StatusLeadEnum.proposta_aprovada.value
-    PFEC = StatusLeadEnum.fechado.value
-
-    # Leads que ENTRARAM em 'proposta enviada' no período
-    enviadas_ids = {lid for (lid,) in db.query(HistoricoLead.lead_id).filter(
-        HistoricoLead.para_status == PENV,
-        HistoricoLead.quando >= ini_utc,
-        HistoricoLead.quando < fim_utc,
-    ).distinct().all()}
-
-    aprovadas = fechadas = 0
-    if enviadas_ids:
-        ids = list(enviadas_ids)
-        aprovadas = db.query(HistoricoLead.lead_id).filter(
-            HistoricoLead.lead_id.in_(ids), HistoricoLead.para_status == PAPR
-        ).distinct().count()
-        fechadas = db.query(HistoricoLead.lead_id).filter(
-            HistoricoLead.lead_id.in_(ids), HistoricoLead.para_status == PFEC
-        ).distinct().count()
-
-    n_env = len(enviadas_ids)
+    # Fluxo cumulativo (mesma lógica do dashboard) — enviadas >= aprovadas >= fechadas
+    n_env, aprovadas, fechadas = _fluxo_estagios_periodo(db, ini_utc, fim_utc)
     primeiro = db.query(_func.min(HistoricoLead.quando)).scalar()
     return {
         "inicio": inicio, "fim": fim,
