@@ -3512,14 +3512,18 @@ async def dashboard_stats(
 
     # ── Conversões do mês (exclui conversas internas) ──────────────────────
     _ign = Lead.ignorar_relatorios.isnot(True)
-    propostas_mes = db.query(Lead).filter(
-        Lead.criado_em >= inicio_mes_utc, _ign,
-        Lead.status.in_([StatusLeadEnum.proposta_enviada, StatusLeadEnum.proposta_aprovada, StatusLeadEnum.fechado])
-    ).count()
-    aprovadas_mes = db.query(Lead).filter(
-        Lead.criado_em >= inicio_mes_utc, _ign,
-        Lead.status.in_([StatusLeadEnum.proposta_aprovada, StatusLeadEnum.fechado])
-    ).count()
+    # FLUXO (não foto): quantos leads PASSARAM por proposta enviada / aprovada no mês,
+    # pelo histórico de transições — mesmo que já tenham saído do funil.
+    propostas_mes = (db.query(HistoricoLead.lead_id)
+                     .join(Lead, Lead.id == HistoricoLead.lead_id)
+                     .filter(HistoricoLead.para_status == StatusLeadEnum.proposta_enviada.value,
+                             HistoricoLead.quando >= inicio_mes_utc, _ign)
+                     .distinct().count())
+    aprovadas_mes = (db.query(HistoricoLead.lead_id)
+                     .join(Lead, Lead.id == HistoricoLead.lead_id)
+                     .filter(HistoricoLead.para_status == StatusLeadEnum.proposta_aprovada.value,
+                             HistoricoLead.quando >= inicio_mes_utc, _ign)
+                     .distinct().count())
     fechados_mes = db.query(Lead).filter(
         Lead.fechado_em >= inicio_mes_utc, _ign,
         Lead.status == StatusLeadEnum.fechado
