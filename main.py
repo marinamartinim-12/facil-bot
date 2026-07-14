@@ -3672,8 +3672,11 @@ async def listar_usuarios_opcoes(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
-    """Lista id+nome de usuários ativos — acessível a qualquer usuária logada (para dropdowns)."""
-    usuarios = db.query(Usuario).filter(Usuario.ativo == True).order_by(Usuario.nome).all()
+    """Lista id+nome de usuários ATIVOS que atendem (funcionárias + admins, sem o dono) —
+    acessível a qualquer usuária logada (para dropdowns e filtros de atendente)."""
+    usuarios = (db.query(Usuario)
+                .filter(Usuario.ativo == True, Usuario.role != RoleEnum.dono)
+                .order_by(Usuario.nome).all())
     return [{"id": u.id, "nome": u.nome} for u in usuarios]
 
 
@@ -6923,12 +6926,18 @@ def _fila_snapshot(db: Session):
     ordem, posicao = _get_fila_cfg(db)
     if not ordem:
         return {"ordem": [], "posicao": 0, "proxima": None}
-    # Filtra apenas usuários ativos
+    # Só usuários ATIVOS que já estavam na fila (tira quem foi desligada)
     usuarios = {u.id: u for u in db.query(Usuario).filter(
-        Usuario.id.in_(ordem), Usuario.ativo == True
+        Usuario.id.in_(ordem or [0]), Usuario.ativo == True
     ).all()}
-    # Remove ids inválidos da ordem
     ordem = [uid for uid in ordem if uid in usuarios]
+    # Auto-inclui funcionárias ATIVAS que ainda não estão na fila (ex.: recém-contratada)
+    for u in (db.query(Usuario)
+              .filter(Usuario.role == RoleEnum.funcionario, Usuario.ativo == True)
+              .order_by(Usuario.nome).all()):
+        if u.id not in usuarios:
+            usuarios[u.id] = u
+            ordem.append(u.id)
     if not ordem:
         return {"ordem": [], "posicao": 0, "proxima": None}
     posicao = posicao % len(ordem)

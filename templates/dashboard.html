@@ -1768,6 +1768,8 @@
     }
     _iniciarHeartbeat();   // Registra atividade a cada 60s
     carregarFila();        // Fila rotativa de atendimento
+    carregarAtendentesAtivos();                     // atendentes ativos p/ os filtros (funil/inbox)
+    setInterval(carregarAtendentesAtivos, 120000);  // atualiza a cada 2min (nova funcionária entra sozinha)
     carregarDashboard();   // Métricas da aba Dashboard
     _moverCardsRH();       // tira os cards de RH de Relatórios e leva pra aba RH (antes de renderizar)
     // Na 1ª abertura de cada período (manhã/tarde), cai no Dashboard p/ ver o briefing; depois, última aba.
@@ -1994,25 +1996,28 @@
 
   let dragLeadId = null;
 
+  let _atendentesAtivos = [];   // atendentes ATIVOS (funcionárias + admins, sem o dono) p/ os filtros
+  async function carregarAtendentesAtivos() {
+    try { _atendentesAtivos = (await fetch('/api/usuarios/opcoes').then(r => r.json())) || []; } catch {}
+  }
+  function _opcoesAtendentes(temSem) {
+    const ativos = [..._atendentesAtivos].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+    let html = '<option value="">👤 Todos os atendentes</option>';
+    html += ativos.map(u => `<option value="${u.id}">${esc(u.nome || ('Atendente ' + u.id))}</option>`).join('');
+    if (temSem) html += '<option value="__sem__">— Sem atendente —</option>';
+    return html;
+  }
+
   function _popularFiltroAtendente() {
     const sel = document.getElementById('funilAtendente');
     if (!sel) return;
     const atual = sel.value;
-    // Coleta atendentes únicos presentes nos leads (visíveis no funil)
-    const mapa = new Map();
+    // "Sem atendente" só se houver lead sem responsável no funil
     let temSem = false;
-    allLeads.forEach(l => {
-      if (l.oculto_funil) return;
-      if (l.responsavel?.id != null) mapa.set(l.responsavel.id, l.responsavel.nome);
-      else temSem = true;
-    });
-    const ordenados = [...mapa.entries()].sort((a, b) => (a[1] || '').localeCompare(b[1] || ''));
-    let html = '<option value="">👤 Todos os atendentes</option>';
-    html += ordenados.map(([id, nome]) => `<option value="${id}">${esc(nome || 'Atendente ' + id)}</option>`).join('');
-    if (temSem) html += '<option value="__sem__">— Sem atendente —</option>';
-    sel.innerHTML = html;
-    // Preserva seleção se ainda existir
-    if (atual && (atual === '__sem__' || mapa.has(Number(atual)))) sel.value = atual;
+    allLeads.forEach(l => { if (!l.oculto_funil && l.responsavel?.id == null) temSem = true; });
+    sel.innerHTML = _opcoesAtendentes(temSem);
+    const ids = new Set(_atendentesAtivos.map(u => String(u.id)));
+    if (atual && (atual === '__sem__' || ids.has(atual))) sel.value = atual;
   }
 
   function renderKanban() {
@@ -6465,18 +6470,11 @@
     const sel = document.getElementById('inboxAtendente');
     if (!sel) return;
     const atual = sel.value;
-    const mapa = new Map();
     let temSem = false;
-    inboxLeads.forEach(l => {
-      if (l.responsavel?.id != null) mapa.set(l.responsavel.id, l.responsavel.nome);
-      else temSem = true;
-    });
-    const ordenados = [...mapa.entries()].sort((a, b) => (a[1] || '').localeCompare(b[1] || ''));
-    let html = '<option value="">👤 Todos os atendentes</option>';
-    html += ordenados.map(([id, nome]) => `<option value="${id}">${esc(nome || 'Atendente ' + id)}</option>`).join('');
-    if (temSem) html += '<option value="__sem__">— Sem atendente —</option>';
-    sel.innerHTML = html;
-    if (atual && (atual === '__sem__' || mapa.has(Number(atual)))) sel.value = atual;
+    inboxLeads.forEach(l => { if (l.responsavel?.id == null) temSem = true; });
+    sel.innerHTML = _opcoesAtendentes(temSem);
+    const ids = new Set(_atendentesAtivos.map(u => String(u.id)));
+    if (atual && (atual === '__sem__' || ids.has(atual))) sel.value = atual;
   }
 
   function renderInboxList() {
