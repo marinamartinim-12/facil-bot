@@ -3469,6 +3469,7 @@
     } catch { alert('Erro ao carregar os dados do desligamento.'); return; }
 
     const abertos = prev.leads_abertos || 0;
+    const parceiros = prev.parceiros || 0;
     const equipe = prev.equipe || [];
     const temTime = equipe.length > 0;
     const opcoesPessoa = equipe.map(e => `<option value="${e.id}">${escHtml(e.nome)}</option>`).join('');
@@ -3499,6 +3500,19 @@
             ${opcoesPessoa || '<option value="">(ninguém ativo no time)</option>'}
           </select>
         </div>` : ''}
+        ${parceiros > 0 ? `
+        <div style="border-top:1px solid #e5e7eb;margin-top:.3rem;padding-top:.7rem">
+          <p style="margin:0 0 .35rem;font-size:.88rem;color:#475569">🤝 Ela tem <b>${parceiros} parceiro(s)</b> na carteira. O que fazer?</p>
+          <select id="dlgParcModo" style="width:100%;padding:.5rem;border:1.5px solid #cbd5e1;border-radius:8px;font-size:.88rem;margin-bottom:.5rem">
+            <option value="sem">Deixar sem operadora</option>
+            <option value="transferir">Transferir para uma operadora ativa</option>
+          </select>
+          <div id="dlgParcDestWrap" style="display:none;margin-bottom:.3rem">
+            <select id="dlgParcDest" style="width:100%;padding:.5rem;border:1.5px solid #cbd5e1;border-radius:8px;font-size:.88rem">
+              ${opcoesPessoa || '<option value="">(ninguém ativo no time)</option>'}
+            </select>
+          </div>
+        </div>` : ''}
         <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:.5rem .7rem;font-size:.78rem;color:#9a3412;margin-bottom:.95rem">
           ${jaInativa
             ? '↩ Ela já está inativa — isto só repassa os leads que ficaram com ela. <b>Nada é apagado.</b>'
@@ -3519,27 +3533,35 @@
     if (modoSel) modoSel.addEventListener('change', () => {
       ov.querySelector('#dlgPessoaWrap').style.display = (modoSel.value === 'uma_pessoa') ? 'block' : 'none';
     });
+    const parcModoSel = ov.querySelector('#dlgParcModo');
+    if (parcModoSel) parcModoSel.addEventListener('change', () => {
+      ov.querySelector('#dlgParcDestWrap').style.display = (parcModoSel.value === 'transferir') ? 'block' : 'none';
+    });
 
     ov.querySelector('#dlgConfirmar').onclick = async () => {
       const modo = abertos > 0 ? modoSel.value : 'dividir';
       const destino_id = (modo === 'uma_pessoa') ? (ov.querySelector('#dlgPessoa').value || null) : null;
       if (modo === 'uma_pessoa' && !destino_id) { alert('Escolha uma operadora para receber os leads.'); return; }
+      const parceiros_modo = parcModoSel ? parcModoSel.value : 'sem';
+      const parceiros_destino_id = (parceiros_modo === 'transferir') ? (ov.querySelector('#dlgParcDest').value || null) : null;
+      if (parceiros > 0 && parceiros_modo === 'transferir' && !parceiros_destino_id) { alert('Escolha uma operadora para receber a carteira de parceiros.'); return; }
       const btn = ov.querySelector('#dlgConfirmar');
       btn.disabled = true; btn.textContent = jaInativa ? 'Redistribuindo…' : 'Desligando…';
       try {
         const r = await fetch(`/api/usuarios/${uid}/desligar`, {
           method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ modo, destino_id })
+          body: JSON.stringify({ modo, destino_id, parceiros_modo, parceiros_destino_id })
         });
         const d = await r.json();
         if (!r.ok) { alert('Erro: ' + (d.detail || 'falha')); btn.disabled = false; btn.textContent = jaInativa ? 'Redistribuir' : 'Desligar'; return; }
         fechar();
         const dist = d.distribuicao || {};
         const linhas = Object.keys(dist).map(k => `• ${k}: +${dist[k]}`).join('\n');
+        const parcMsg = (d.parceiros_movidos > 0) ? `\n\n🤝 ${d.parceiros_movidos} parceiro(s) → ${d.parceiros_destino}` : '';
         alert('✅ ' + (jaInativa ? ('Leads de ' + nome + ' redistribuídos.') : (nome + ' desligada.')) + '\n\n' +
               (d.leads_reatribuidos > 0
                 ? d.leads_reatribuidos + ' lead(s) redistribuído(s):\n' + linhas
-                : 'Não havia leads em aberto.'));
+                : 'Não havia leads em aberto.') + parcMsg);
         carregarUsuarios();
       } catch (e) {
         alert('Erro ao desligar: ' + e.message);
@@ -3862,7 +3884,7 @@
     if (!ativos.length) { alert('Não há operadora ativa para receber a carteira.'); return; }
 
     const deOpts = keys.map(k => `<option value="${k}">${escHtml(carteiras[k].nome)} — ${carteiras[k].count} parceiro(s)</option>`).join('');
-    const paraOpts = ativos.map(u => `<option value="${u.id}">${escHtml(u.nome)}</option>`).join('');
+    const paraOpts = '<option value="__sem__">— Deixar sem operadora —</option>' + ativos.map(u => `<option value="${u.id}">${escHtml(u.nome)}</option>`).join('');
 
     const ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:99999;padding:1rem';
@@ -3889,14 +3911,15 @@
     ov.querySelector('#tcConfirmar').onclick = async () => {
       const deVal = ov.querySelector('#tcDe').value;      // '' = sem carteira
       const paraVal = ov.querySelector('#tcPara').value;
-      if (!paraVal) { alert('Escolha a operadora de destino.'); return; }
-      if (deVal && deVal === paraVal) { alert('A carteira de origem e destino são a mesma.'); return; }
+      if (!paraVal) { alert('Escolha o destino.'); return; }
+      const sem = (paraVal === '__sem__');
+      if (!sem && deVal && deVal === paraVal) { alert('A carteira de origem e destino são a mesma.'); return; }
       const btn = ov.querySelector('#tcConfirmar');
       btn.disabled = true; btn.textContent = 'Transferindo…';
       try {
         const r = await fetch('/api/parceiros/transferir-carteira', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ de_id: deVal === '' ? null : Number(deVal), para_id: Number(paraVal) })
+          body: JSON.stringify({ de_id: deVal === '' ? null : Number(deVal), para_id: sem ? null : Number(paraVal), sem })
         });
         const d = await r.json();
         if (!r.ok) { alert('Erro: ' + (d.detail || 'falha')); btn.disabled = false; btn.textContent = 'Transferir'; return; }

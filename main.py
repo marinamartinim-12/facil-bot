@@ -1649,21 +1649,24 @@ async def transferir_carteira_parceiros(request: Request, db: Session = Depends(
     body = await request.json()
     de_id = body.get("de_id")      # int (operadora origem) ou None (sem carteira)
     para_id = body.get("para_id")
-    if not para_id:
-        raise HTTPException(status_code=400, detail="Escolha a operadora de destino.")
-    para = db.query(Usuario).filter(Usuario.id == int(para_id), Usuario.ativo == True).first()
-    if not para:
-        raise HTTPException(status_code=400, detail="Operadora de destino inválida ou inativa.")
-    if de_id is not None and int(de_id) == int(para_id):
-        raise HTTPException(status_code=400, detail="A carteira de origem e destino são a mesma.")
+    sem = bool(body.get("sem"))    # True = deixar sem operadora
+    para = None
+    if not sem:
+        if not para_id:
+            raise HTTPException(status_code=400, detail="Escolha a operadora de destino (ou deixe sem operadora).")
+        para = db.query(Usuario).filter(Usuario.id == int(para_id), Usuario.ativo == True).first()
+        if not para:
+            raise HTTPException(status_code=400, detail="Operadora de destino inválida ou inativa.")
+        if de_id is not None and int(de_id) == int(para_id):
+            raise HTTPException(status_code=400, detail="A carteira de origem e destino são a mesma.")
     if de_id is None:
         parceiros = db.query(Parceiro).filter(Parceiro.operadora_id.is_(None)).all()
     else:
         parceiros = db.query(Parceiro).filter(Parceiro.operadora_id == int(de_id)).all()
     for p in parceiros:
-        p.operadora_id = para.id
+        p.operadora_id = None if sem else para.id
     db.commit()
-    return {"transferidos": len(parceiros), "para": para.nome}
+    return {"transferidos": len(parceiros), "para": ("(sem operadora)" if sem else para.nome)}
 
 
 @app.put("/api/parceiros/{pid}")
@@ -3816,12 +3819,14 @@ async def preview_desligamento(uid: int, db: Session = Depends(get_db), admin: U
         Lead.atribuido_para == uid,
         Lead.status.notin_(_STATUS_FINALIZADOS),
     ).count()
+    parceiros = db.query(Parceiro).filter(Parceiro.operadora_id == uid).count()
     equipe = db.query(Usuario).filter(
         Usuario.role == RoleEnum.funcionario, Usuario.ativo == True, Usuario.id != uid
     ).order_by(Usuario.nome).all()
     return {
         "nome": u.nome,
         "leads_abertos": abertos,
+        "parceiros": parceiros,
         "equipe": [{"id": x.id, "nome": x.nome} for x in equipe],
     }
 
@@ -3905,6 +3910,29 @@ async def desligar_usuario(uid: int, request: Request, db: Session = Depends(get
             if abertos:
                 _add(admin.nome, len(abertos))
 
+    # ── Carteira de parceiros: sem operadora OU transferir p/ alguém ativo ──
+    parc_modo = (body.get("parceiros_modo") or "sem").strip()
+    carteira = db.query(Parceiro).filter(Parceiro.operadora_id == uid).all()
+    parceiros_movidos = 0
+    parceiros_destino = None
+    if carteira:
+        if parc_modo == "transferir":
+            _pd = body.get("parceiros_destino_id")
+            alvo_p = db.query(Usuario).filter(
+                Usuario.id == _pd, Usuario.id != uid,
+                Usuario.ativo == True, Usuario.role != RoleEnum.dono
+            ).first() if _pd else None
+            if not alvo_p:
+                raise HTTPException(status_code=400, detail="Escolha uma operadora ativa para receber a carteira de parceiros.")
+            for p in carteira:
+                p.operadora_id = alvo_p.id
+            parceiros_destino = alvo_p.nome
+        else:  # "sem" → deixar sem operadora
+            for p in carteira:
+                p.operadora_id = None
+            parceiros_destino = "(sem operadora)"
+        parceiros_movidos = len(carteira)
+
     u.ativo = False
     db.commit()
     return {
@@ -3912,6 +3940,8 @@ async def desligar_usuario(uid: int, request: Request, db: Session = Depends(get
         "nome": u.nome,
         "leads_reatribuidos": len(abertos),
         "distribuicao": distribuicao,
+        "parceiros_movidos": parceiros_movidos,
+        "parceiros_destino": parceiros_destino,
     }
 
 
