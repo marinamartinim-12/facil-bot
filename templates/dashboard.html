@@ -7855,6 +7855,7 @@
       document.getElementById('alertaHumanoTxt').textContent =
         novos.length === 1 ? 'Cliente aguardando atendimento humano!' : `${novos.length} clientes aguardando atendimento!`;
       document.getElementById('alertaHumano').classList.add('show');
+      _ajustarOffsetAlerta();
       if (temNovos) {
         tocarNotificacaoAlerta();
         document.getElementById('alertaHumano').classList.add('shake');
@@ -7868,6 +7869,22 @@
 
   function fecharAlertaHumano() {
     document.getElementById('alertaHumano').classList.remove('show');
+    _ajustarOffsetAlerta();
+  }
+
+  // Empurra o app pra baixo na altura exata do alerta (em vez de ele cobrir o conteúdo)
+  function _ajustarOffsetAlerta() {
+    const alerta = document.getElementById('alertaHumano');
+    const app = document.getElementById('appView');
+    if (!app) return;
+    if (alerta && alerta.classList.contains('show')) {
+      const h = alerta.offsetHeight;
+      app.style.marginTop = h + 'px';
+      app.style.height = 'calc(100vh - ' + h + 'px)';
+    } else {
+      app.style.marginTop = '';
+      app.style.height = '';
+    }
   }
 
   function tocarNotificacaoAlerta() {
