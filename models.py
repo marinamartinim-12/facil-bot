@@ -97,6 +97,7 @@ class Usuario(Base):
     ativo = Column(Boolean, default=True)
     data_admissao = Column(String(10), nullable=True)        # YYYY-MM-DD (p/ saldo de férias e banco de horas)
     ferias_ajuste = Column(Integer, default=0)               # ajuste manual no saldo de férias (admin)
+    cor = Column(String(9), nullable=True)                   # cor fixa da atendente (avatar/bolinha/legenda) — escolhida na tela de Usuários
     criado_em = Column(DateTime, default=datetime.utcnow)
 
     leads_assumidos = relationship("Lead", back_populates="responsavel")

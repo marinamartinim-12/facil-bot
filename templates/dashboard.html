@@ -159,6 +159,8 @@
     .dash-tarja-item { display:flex;flex-direction:column;gap:.1rem; }
     .dash-tarja-label { font-size:.65rem;font-weight:700;text-transform:uppercase;color:#94a3b8; }
     .dash-tarja-val { font-size:1.1rem;font-weight:900;color:#fff; }
+    /* Funil enxuto: esconde os cards de métricas e a faixa "Seu dia" — sobra só busca + kanban */
+    #funilStats, #funilPendencias { display: none !important; }
     /* funil stats cards */
     #funilStats { display:flex; flex-direction:column; gap:.45rem; margin-bottom:.55rem; }
     .funil-stats-row { display:flex; gap:.45rem; flex-wrap:wrap; }
@@ -270,7 +272,7 @@
     .card-name { font-weight: 700; font-size: .85rem; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .card-head { display: flex; align-items: center; gap: .5rem; }
     .card-avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: 800; flex-shrink: 0; line-height: 1; }
-    .card-owner-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+    .card-owner-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; box-shadow: 0 0 0 1px rgba(0,0,0,.12); }
     .card-subline { display: flex; align-items: center; justify-content: space-between; gap: .4rem; margin-top: .45rem; }
     .card-owner-name { font-size: .72rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
     .card-owner-name.sem { color: #aaa; font-weight: 400; }
@@ -921,6 +923,11 @@
                 <option value="dono">Dono (só visualização)</option>
               </select>
             </div>
+          </div>
+          <div style="margin:.25rem 0 .95rem">
+            <label style="display:block;font-size:.8rem;font-weight:700;color:var(--navy);margin-bottom:.45rem">🎨 Cor da atendente <span style="font-weight:400;color:var(--muted)">(aparece no funil e nas conversas)</span></label>
+            <input type="hidden" id="novoCor" value="">
+            <div id="novoCorPaleta" style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center"></div>
           </div>
           <button class="btn btn-primary" onclick="criarUsuario()">Criar usuário</button>
           <span id="usuarioMsg" style="margin-left:.75rem;font-size:.82rem;"></span>
@@ -2007,6 +2014,11 @@
   let _atendentesAtivos = [];   // atendentes ATIVOS (funcionárias + admins, sem o dono) p/ os filtros
   async function carregarAtendentesAtivos() {
     try { _atendentesAtivos = (await fetch('/api/usuarios/opcoes').then(r => r.json())) || []; } catch {}
+    _reconstruirCoresPorId();
+    // Assim que as cores chegam, re-renderiza o que já estiver na tela (evita "cor automática" por alguns segundos)
+    try { renderLegendaFunil(); } catch (e) {}                 // legenda sempre (mesmo com funil vazio)
+    try { if (allLeads) renderKanban(); } catch (e) {}
+    try { if (inboxLeads) renderInboxList(); } catch (e) {}
   }
   function _opcoesAtendentes(temSem) {
     const ativos = [..._atendentesAtivos].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
@@ -2038,7 +2050,7 @@
     box.innerHTML = '<span style="font-size:.72rem;color:var(--muted);font-weight:600">Cores:</span>' +
       ativos.map(u => {
         const cor = corAtendente(u.id);
-        return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:.72rem;color:var(--text)"><span style="width:10px;height:10px;border-radius:50%;background:${cor};flex-shrink:0"></span>${escHtml(u.nome || ('Atendente ' + u.id))}</span>`;
+        return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:.72rem;color:var(--text)"><span style="width:10px;height:10px;border-radius:50%;background:${cor};flex-shrink:0;box-shadow:0 0 0 1px rgba(0,0,0,.12)"></span>${escHtml(u.nome || ('Atendente ' + u.id))}</span>`;
       }).join('');
   }
 
@@ -2136,7 +2148,7 @@
         ondragstart="cardDragStart(event, ${l.id})"
         ondragend="cardDragEnd(event)">
         <div class="card-head">
-          <div class="card-avatar" style="background:${cor}22;color:${cor}" title="${temResp ? 'Responsável: ' + escHtml(resp.nome) : 'Sem responsável'}">${escHtml(ini)}</div>
+          <div class="card-avatar" style="background:${cor}22;color:${_corLegivel(cor)}" title="${temResp ? 'Responsável: ' + escHtml(resp.nome) : 'Sem responsável'}">${escHtml(ini)}</div>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:5px">
               <span class="card-owner-dot" style="background:${cor}"></span>
@@ -2152,7 +2164,7 @@
           ${l.sem_proximo_passo ? `<span title="Sem próximo passo agendado — abra e agende uma ação" style="font-size:.6rem;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:999px;padding:1px 6px;font-weight:700;white-space:nowrap">⏰ sem próximo passo</span>` : ''}
         </div>
         <div class="card-subline">
-          <span class="card-owner-name ${temResp ? '' : 'sem'}" style="${temResp ? 'color:' + cor : ''}" title="Responsável">${temResp ? escHtml(resp.nome) : 'sem responsável'}</span>
+          <span class="card-owner-name ${temResp ? '' : 'sem'}" style="${temResp ? 'color:' + _corLegivel(cor) : ''}" title="Responsável">${temResp ? escHtml(resp.nome) : 'sem responsável'}</span>
           <span class="card-time">🕐 ${tempo}</span>
         </div>
         <div class="card-actions">${acoes}</div>
@@ -3422,7 +3434,7 @@
             </div>
           </div>
           <div class="uc-actions">
-            <button class="btn btn-sm btn-outline" onclick="abrirEditarUsuario(${u.id},'${esc(u.nome)}','${esc(u.email)}','${u.role}',${u.ativo})">✏️ Editar</button>
+            <button class="btn btn-sm btn-outline" onclick="abrirEditarUsuario(${u.id},'${esc(u.nome)}','${esc(u.email)}','${u.role}',${u.ativo},'${esc(u.cor || '')}')">✏️ Editar</button>
             <button class="btn btn-sm" style="background:#e8f4fd;color:#1a5276;border:1px solid #aed6f1" onclick="abrirAgendaFuncionaria(${u.id},'${esc(u.nome)}')">📅 Agenda</button>
             ${u.id !== currentUser.id && u.role !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="abrirDesligar(${u.id},'${esc(u.nome)}',false)">Desligar</button>` : ''}
           </div>
@@ -3453,6 +3465,7 @@
       document.getElementById('desligadosGrid').innerHTML = inativos.map(cardInativo).join('');
       document.getElementById('desligadosCount').textContent = inativos.length ? `(${inativos.length})` : '';
       document.getElementById('desligadosSecao').style.display = inativos.length ? 'block' : 'none';
+      _renderPaletaCores('novoCorPaleta', 'novoCor', document.getElementById('novoCor')?.value || '');
     } catch {}
   }
 
@@ -3476,6 +3489,7 @@
       email: document.getElementById('novoEmail').value.trim(),
       senha: document.getElementById('novaSenha').value,
       role: document.getElementById('novoRole').value,
+      cor: document.getElementById('novoCor').value || null,
     };
     if (!body.nome || !body.email || !body.senha) { msg.textContent = '⚠️ Preencha todos os campos.'; msg.style.color='var(--red)'; return; }
     try {
@@ -3483,7 +3497,9 @@
       if (r.ok) {
         msg.textContent = '✅ Usuário criado!'; msg.style.color = 'var(--green)';
         ['novoNome','novoEmail','novaSenha'].forEach(id => document.getElementById(id).value = '');
+        _renderPaletaCores('novoCorPaleta', 'novoCor', '');   // reseta o seletor
         carregarUsuarios();
+        _refrescarCoresUI();
       } else {
         const d = await r.json(); msg.textContent = '⚠️ ' + d.detail; msg.style.color='var(--red)';
       }
@@ -4189,13 +4205,14 @@
   }
 
   let _editUserId = null;
-  function abrirEditarUsuario(id, nome, email, role, ativo) {
+  function abrirEditarUsuario(id, nome, email, role, ativo, cor) {
     _editUserId = id;
     document.getElementById('editNome').value   = nome;
     document.getElementById('editEmail').value  = email;
     document.getElementById('editRole').value   = role;
     document.getElementById('editAtivo').value  = String(ativo);
     document.getElementById('editSenha').value  = '';
+    _renderPaletaCores('editCorPaleta', 'editCor', cor || '');
     document.getElementById('editUsuarioMsg').style.display = 'none';
     document.getElementById('modalEditarUsuario').classList.add('open');
   }
@@ -4209,13 +4226,14 @@
     const email = document.getElementById('editEmail').value.trim();
     const role  = document.getElementById('editRole').value;
     const ativo = document.getElementById('editAtivo').value === 'true';
+    const cor   = document.getElementById('editCor').value || null;
     const senha = document.getElementById('editSenha').value;
     const msg   = document.getElementById('editUsuarioMsg');
     const btn   = document.getElementById('btnSalvarEditUsuario');
 
     if (!nome || !email) { mostrarEditMsg('Preencha nome e e-mail.', false); return; }
 
-    const body = { nome, email, role, ativo };
+    const body = { nome, email, role, ativo, cor };
     if (senha) {
       if (senha.length < 6) { mostrarEditMsg('A nova senha deve ter ao mínimo 6 caracteres.', false); return; }
       body.senha = senha;
@@ -4230,6 +4248,7 @@
       if (!r.ok) { mostrarEditMsg(data.detail || 'Erro ao salvar.', false); return; }
       mostrarEditMsg('✓ Usuário atualizado com sucesso!', true);
       carregarUsuarios();
+      _refrescarCoresUI();
       setTimeout(fecharEditarUsuario, 1200);
     } catch { mostrarEditMsg('Erro de conexão.', false); }
     finally { btn.disabled = false; btn.textContent = 'Salvar'; }
@@ -6570,7 +6589,7 @@
       // Responsável: cor única por atendente (baseada no ID)
       const respTag = respBadge(l.responsavel, {sz: '.68rem'});
       return `<div onclick="abrirChat(${l.id})" class="wsp-conv-item${ativo?' active':''}">
-        <div class="wsp-conv-avatar" style="background:${cor}22;color:${cor};font-size:.95rem" title="${temResp ? 'Responsável: ' + escHtml(resp.nome) : 'Sem responsável'}">${escHtml(ini)}</div>
+        <div class="wsp-conv-avatar" style="background:${cor}22;color:${_corLegivel(cor)};font-size:.95rem" title="${temResp ? 'Responsável: ' + escHtml(resp.nome) : 'Sem responsável'}">${escHtml(ini)}</div>
         <div class="wsp-conv-body">
           <div class="wsp-conv-top">
             <span class="wsp-conv-name">${l.parceiro_id ? '🤝 ' : ''}${esc(nome)}</span>
@@ -6604,7 +6623,7 @@
     const _avChat = document.getElementById('chatAvatar');
     _avChat.textContent = iniciaisCliente(nome);
     _avChat.style.background = _corChat + '22';
-    _avChat.style.color = _corChat;
+    _avChat.style.color = _corLegivel(_corChat);
     document.getElementById('chatNome').textContent = nome;
     document.getElementById('chatTelefone').textContent = chatLeadAtivo.telefone;
     document.getElementById('btnFecharChat').style.display = '';
@@ -7234,7 +7253,7 @@
   }
 
   // ═══════ HELPERS ═══════
-  function esc(s) { return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+  function esc(s) { return (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
   function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'); }
 
   // Renderiza lista de mensagens no estilo WhatsApp Web
@@ -7354,23 +7373,78 @@
   function labMod(m) { return {financiamento:'Financiamento',refinanciamento:'Refinanciamento',indefinido:'Indefinido'}[m]||m; }
   function labSt(s) { return {em_atendimento:'Atend. IA',qualificado:'Qualificado',assumido:'Assumido',pre_analise:'Pré-análise',proposta_enviada:'Proposta',proposta_aprovada:'Prop. Aprovada',fechado:'Fechado',perdido:'Perdido',desqualificado:'Fora escopo',parceiro:'Parceiro'}[s]||s; }
 
-  // Paleta de cores distintas por atendente — sempre a mesma cor para o mesmo ID
+  // ─── Cores por atendente ───────────────────────────────────────────────
+  // Paleta distinta usada no seletor (tela de Usuários) e como cor automática
+  // de quem ainda não escolheu uma cor.
   const _CORES_ATENDENTE = [
-    '#0e7490', // ciano escuro
+    '#2563eb', // azul
+    '#0891b2', // ciano
+    '#0d9488', // teal
+    '#16a34a', // verde
+    '#65a30d', // lima
+    '#eab308', // amarelo
+    '#ea580c', // laranja
+    '#dc2626', // vermelho
+    '#db2777', // rosa
+    '#c026d3', // magenta
     '#7c3aed', // roxo
-    '#b45309', // âmbar escuro
-    '#065f46', // verde escuro
-    '#9d174d', // rosa escuro
-    '#1d4ed8', // azul
-    '#92400e', // marrom
-    '#4c1d95', // violeta
-    '#064e3b', // esmeralda
-    '#831843', // vinho
-    '#1e3a5f', // navy
-    '#6b21a8', // uva
+    '#4f46e5', // índigo
+    '#475569', // chumbo
   ];
+  // Cores fixas pedidas (enquanto a pessoa não escolhe uma no cadastro). Chave = 1º nome minúsculo.
+  const _CORES_POR_NOME = { luana: '#2563eb', kaline: '#eab308' };
+  // Mapa id→cor montado a partir dos atendentes ativos (cor salva no banco tem prioridade).
+  let _coresPorId = {};
+  function _reconstruirCoresPorId() {
+    _coresPorId = {};
+    (_atendentesAtivos || []).forEach(u => {
+      const salva = (u.cor || '').trim();
+      const nomeKey = (u.nome || '').trim().toLowerCase().split(/\s+/)[0];
+      const c = salva || _CORES_POR_NOME[nomeKey] || null;
+      if (c) _coresPorId[u.id] = c;
+    });
+  }
   function corAtendente(userId) {
-    return _CORES_ATENDENTE[(userId || 0) % _CORES_ATENDENTE.length];
+    return _coresPorId[userId] || _CORES_ATENDENTE[(userId || 0) % _CORES_ATENDENTE.length];
+  }
+  // Escurece cores muito claras (ex.: amarelo) SÓ quando usadas como TEXTO sobre fundo branco.
+  function _hexRgb(h) { h = String(h || '').replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h || '0', 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+  function _lum(cor) { const [r, g, b] = _hexRgb(cor); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; }
+  function _corLegivel(cor) {
+    if (!cor || String(cor).indexOf('#') !== 0) return cor;
+    if (_lum(cor) <= 0.62) return cor;                       // já é escura o bastante p/ ler
+    const [r, g, b] = _hexRgb(cor), f = 0.55;                // mistura com preto p/ dar contraste
+    const d = v => Math.round(v * (1 - f));
+    return `rgb(${d(r)},${d(g)},${d(b)})`;
+  }
+  // ─── Seletor de cor (paleta) na tela de Usuários ───
+  function _renderPaletaCores(containerId, hiddenId, corAtual) {
+    const box = document.getElementById(containerId);
+    const hid = document.getElementById(hiddenId);
+    if (!box || !hid) return;
+    hid.value = corAtual || '';
+    const auto = `<button type="button" data-cor="" title="Automática (sem cor fixa)" onclick="_selecionarCor('${containerId}','${hiddenId}','')" style="width:28px;height:28px;border-radius:50%;border:1.5px dashed #cbd5e1;background:#fff;color:#94a3b8;cursor:pointer;font-size:.62rem;font-weight:700;padding:0">auto</button>`;
+    box.innerHTML = auto + _CORES_ATENDENTE.map(c =>
+      `<button type="button" data-cor="${c}" title="${c}" onclick="_selecionarCor('${containerId}','${hiddenId}','${c}')" style="width:28px;height:28px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #e2e8f0;background:${c};cursor:pointer;padding:0"></button>`
+    ).join('');
+    _marcarCorSelecionada(containerId, corAtual || '');
+  }
+  function _selecionarCor(containerId, hiddenId, cor) {
+    const hid = document.getElementById(hiddenId);
+    if (hid) hid.value = cor;
+    _marcarCorSelecionada(containerId, cor);
+  }
+  function _marcarCorSelecionada(containerId, cor) {
+    const box = document.getElementById(containerId);
+    if (!box) return;
+    box.querySelectorAll('button[data-cor]').forEach(b => {
+      const sel = (b.getAttribute('data-cor') === (cor || ''));
+      b.style.outline = sel ? '2.5px solid #0d2b4e' : 'none';
+      b.style.outlineOffset = '1px';
+    });
+  }
+  async function _refrescarCoresUI() {
+    await carregarAtendentesAtivos();     // reconstrói _coresPorId e re-renderiza funil/inbox com as cores novas
   }
   // Iniciais do cliente p/ o avatar do card (1ª + última palavra; se só 1 palavra, 2 letras)
   function iniciaisCliente(nome) {
@@ -7389,8 +7463,9 @@
     if (!responsavel) return opts.vazio !== false
       ? `<span style="font-size:.68rem;color:#aaa">sem responsável</span>` : '';
     const cor = corAtendente(responsavel.id);
+    const txt = _corLegivel(cor);
     const sz = opts.sz || '.72rem';
-    return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:${sz};font-weight:700;color:${cor};background:${cor}22;border:1.5px solid ${cor}66;border-radius:20px;padding:2px 8px 2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px" title="Responsável: ${escHtml(responsavel.nome)}"><span style="width:8px;height:8px;border-radius:50%;background:${cor};flex-shrink:0;display:inline-block"></span>${escHtml(responsavel.nome)}</span>`;
+    return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:${sz};font-weight:700;color:${txt};background:${cor}22;border:1.5px solid ${cor}66;border-radius:20px;padding:2px 8px 2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px" title="Responsável: ${escHtml(responsavel.nome)}"><span style="width:8px;height:8px;border-radius:50%;background:${cor};flex-shrink:0;display:inline-block;box-shadow:0 0 0 1px rgba(0,0,0,.12)"></span>${escHtml(responsavel.nome)}</span>`;
   }
 
   const _origemIcons = {whatsapp:'💬',rede_social:'📱',parceiro:'🤝',ex_cliente:'🔄',indicacao:'👥'};
@@ -8449,6 +8524,11 @@
             <option value="true">Ativo</option>
             <option value="false">Inativo</option>
           </select>
+        </div>
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.4rem">🎨 Cor da atendente</label>
+          <input type="hidden" id="editCor" value="">
+          <div id="editCorPaleta" style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center"></div>
         </div>
       </div>
 

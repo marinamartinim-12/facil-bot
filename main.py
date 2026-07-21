@@ -445,6 +445,7 @@ async def startup():
         ("leads",           "nao_lido_manual",    "BOOLEAN DEFAULT FALSE"),
         ("usuarios",        "data_admissao",      "VARCHAR(10)"),
         ("usuarios",        "ferias_ajuste",      "INTEGER DEFAULT 0"),
+        ("usuarios",        "cor",                "VARCHAR(9)"),
         ("ausencias_funcionaria", "status",          "VARCHAR(20) DEFAULT 'aprovada'"),
         ("ausencias_funcionaria", "solicitante_id",  "INTEGER"),
         ("ausencias_funcionaria", "desconta_ferias", "BOOLEAN DEFAULT 0"),
@@ -3680,7 +3681,7 @@ async def listar_usuarios_opcoes(
     usuarios = (db.query(Usuario)
                 .filter(Usuario.ativo == True, Usuario.role != RoleEnum.dono)
                 .order_by(Usuario.nome).all())
-    return [{"id": u.id, "nome": u.nome} for u in usuarios]
+    return [{"id": u.id, "nome": u.nome, "cor": u.cor} for u in usuarios]
 
 
 @app.get("/api/usuarios")
@@ -3702,6 +3703,14 @@ async def listar_usuarios(db: Session = Depends(get_db), admin: Usuario = Depend
     return out
 
 
+def _normalizar_cor(valor):
+    """Aceita só cor hex '#RRGGBB' (a paleta da UI sempre manda isso); qualquer outra coisa vira None.
+    Fecha injeção via onclick e evita estourar o VARCHAR(9) da coluna."""
+    import re
+    c = (valor or "").strip()
+    return c if (c and re.fullmatch(r"#[0-9a-fA-F]{6}", c)) else None
+
+
 @app.post("/api/usuarios")
 async def criar_usuario(request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
     body = await request.json()
@@ -3713,6 +3722,7 @@ async def criar_usuario(request: Request, db: Session = Depends(get_db), admin: 
         email=email,
         senha_hash=hash_senha(body.get("senha", "Senha@123")),
         role=body.get("role", RoleEnum.funcionario),
+        cor=_normalizar_cor(body.get("cor")),
         ativo=True,
     )
     db.add(u)
@@ -3739,6 +3749,8 @@ async def atualizar_usuario(uid: int, request: Request, db: Session = Depends(ge
         u.role = body["role"]
     if "ativo" in body:
         u.ativo = body["ativo"]
+    if "cor" in body:
+        u.cor = _normalizar_cor(body.get("cor"))
     if body.get("senha"):
         u.senha_hash = hash_senha(body["senha"])
     db.commit()
@@ -7631,6 +7643,7 @@ def _serial_usuario(u: Usuario) -> dict:
     return {
         "id": u.id, "nome": u.nome, "email": u.email,
         "role": u.role, "ativo": u.ativo,
+        "cor": u.cor,
         "criado_em": _fmt_br(u.criado_em, "%d/%m/%Y") or "—",
     }
 
