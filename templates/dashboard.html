@@ -245,7 +245,7 @@
 
     .kanban-col {
       min-width: 265px; max-width: 285px; background: var(--white); border-radius: var(--radius);
-      box-shadow: var(--shadow); display: flex; flex-direction: column; max-height: 100%;
+      border: 1px solid var(--border); display: flex; flex-direction: column; max-height: 100%;
       transition: background .15s; flex-shrink: 0;
     }
     .kanban-col.drag-over { background: #eef2ff; outline: 2px dashed var(--navy2); }
@@ -268,6 +268,12 @@
     .lead-card.dragging { opacity: .4; cursor: grabbing; }
     .lead-card.drag-placeholder { border: 2px dashed var(--navy2); background: #eef2ff; min-height: 60px; }
     .card-name { font-weight: 700; font-size: .85rem; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-head { display: flex; align-items: center; gap: .5rem; }
+    .card-avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: 800; flex-shrink: 0; line-height: 1; }
+    .card-owner-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+    .card-subline { display: flex; align-items: center; justify-content: space-between; gap: .4rem; margin-top: .45rem; }
+    .card-owner-name { font-size: .72rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .card-owner-name.sem { color: #aaa; font-weight: 400; }
     .card-phone { font-size: .75rem; color: var(--muted); font-family: monospace; }
     .card-meta { display: flex; gap: .4rem; margin: .4rem 0; flex-wrap: wrap; }
     .badge { display: inline-block; padding: .15rem .5rem; border-radius: 99px; font-size: .68rem; font-weight: 700; text-transform: uppercase; }
@@ -859,6 +865,8 @@
             ⏰ Sem próximo passo <span id="funilSemPassoCount" style="color:#dc2626;font-weight:700">(0)</span>
           </label>
         </div>
+        <!-- Legenda de cores por atendente -->
+        <div id="funilLegenda" style="display:none;gap:.75rem;flex-wrap:wrap;align-items:center;margin-bottom:.5rem"></div>
         <!-- Kanban -->
         <div id="funiKanbanWrapper">
           <div class="kanban" id="kanbanBoard"></div>
@@ -2020,10 +2028,25 @@
     if (atual && (atual === '__sem__' || ids.has(atual))) sel.value = atual;
   }
 
+  // Legenda "cor = atendente" no topo do Funil (mesma cor dos avatares/bolinhas dos cards)
+  function renderLegendaFunil() {
+    const box = document.getElementById('funilLegenda');
+    if (!box) return;
+    const ativos = [..._atendentesAtivos].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+    if (!ativos.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'flex';
+    box.innerHTML = '<span style="font-size:.72rem;color:var(--muted);font-weight:600">Cores:</span>' +
+      ativos.map(u => {
+        const cor = corAtendente(u.id);
+        return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:.72rem;color:var(--text)"><span style="width:10px;height:10px;border-radius:50%;background:${cor};flex-shrink:0"></span>${escHtml(u.nome || ('Atendente ' + u.id))}</span>`;
+      }).join('');
+  }
+
   function renderKanban() {
     const board = document.getElementById('kanbanBoard');
     const termo = (document.getElementById('funilBusca')?.value || '').toLowerCase().trim();
     _popularFiltroAtendente();
+    renderLegendaFunil();
     const atendente = document.getElementById('funilAtendente')?.value || '';
     const soSemPasso = document.getElementById('funilSemPasso')?.checked || false;
     // Match dos filtros atendente + busca (reusado pelo contador de "sem próximo passo")
@@ -2073,6 +2096,12 @@
     const isAdmin = currentUser.role === 'admin';
     const isResponsavel = l.responsavel?.id === currentUser.id;
 
+    // Identidade visual do lead: iniciais do cliente + cor da atendente que assumiu
+    const resp = l.responsavel;
+    const temResp = resp && resp.id != null;
+    const cor = temResp ? corAtendente(resp.id) : '#94a3b8';
+    const ini = iniciaisCliente(nome);
+
     // Botão Ver sempre presente
     let acoes = `<button class="btn btn-outline btn-sm" onclick="verLead(${l.id})" style="flex:1">👁 Ver</button>`;
 
@@ -2106,18 +2135,26 @@
         data-lead-id="${l.id}"
         ondragstart="cardDragStart(event, ${l.id})"
         ondragend="cardDragEnd(event)">
-        <div style="display:flex;align-items:center;gap:.4rem">
-          <div class="card-name" style="flex:1" title="${esc(nome)}">${esc(nome)}</div>
-          ${conversasNaoLidas.has(l.id) ? `<span style="min-width:9px;height:9px;border-radius:50%;background:#25D366;display:inline-block;flex-shrink:0" title="Mensagem não lida"></span>` : ''}
+        <div class="card-head">
+          <div class="card-avatar" style="background:${cor}22;color:${cor}" title="${temResp ? 'Responsável: ' + escHtml(resp.nome) : 'Sem responsável'}">${escHtml(ini)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:5px">
+              <span class="card-owner-dot" style="background:${cor}"></span>
+              <div class="card-name" style="flex:1" title="${esc(nome)}">${esc(nome)}</div>
+              ${conversasNaoLidas.has(l.id) ? `<span style="min-width:9px;height:9px;border-radius:50%;background:#25D366;display:inline-block;flex-shrink:0" title="Mensagem não lida"></span>` : ''}
+            </div>
+            <div class="card-phone">${l.telefone}</div>
+          </div>
         </div>
-        <div class="card-phone">${l.telefone}</div>
         <div class="card-meta">
           <span class="badge badge-${l.modalidade}">${labMod(l.modalidade)}</span>
           ${l.parceiro_id ? `<span title="Lead de parceiro${l.parceiro_nome ? ': ' + esc(l.parceiro_nome) : ''}" style="font-size:.6rem;background:#cffafe;color:#155e75;border:1px solid #22d3ee;border-radius:999px;padding:1px 6px;font-weight:800;white-space:nowrap">🤝 Parceiro</span>` : ''}
           ${l.sem_proximo_passo ? `<span title="Sem próximo passo agendado — abra e agende uma ação" style="font-size:.6rem;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:999px;padding:1px 6px;font-weight:700;white-space:nowrap">⏰ sem próximo passo</span>` : ''}
         </div>
-        <div class="card-resp">${respBadge(l.responsavel)}</div>
-        <div class="card-time">🕐 ${tempo}</div>
+        <div class="card-subline">
+          <span class="card-owner-name ${temResp ? '' : 'sem'}" style="${temResp ? 'color:' + cor : ''}" title="Responsável">${temResp ? escHtml(resp.nome) : 'sem responsável'}</span>
+          <span class="card-time">🕐 ${tempo}</span>
+        </div>
         <div class="card-actions">${acoes}</div>
       </div>`;
   }
@@ -7327,6 +7364,18 @@
   ];
   function corAtendente(userId) {
     return _CORES_ATENDENTE[(userId || 0) % _CORES_ATENDENTE.length];
+  }
+  // Iniciais do cliente p/ o avatar do card (1ª + última palavra; se só 1 palavra, 2 letras)
+  function iniciaisCliente(nome) {
+    const s = String(nome || '').trim();
+    if (!s) return '?';
+    const parts = s.split(/\s+/).filter(Boolean);
+    const prim = w => { const m = String(w).match(/[A-Za-zÀ-ÿ0-9]/); return m ? m[0] : ''; };
+    if (parts.length === 1) {
+      const t = parts[0].replace(/[^A-Za-zÀ-ÿ0-9]/g, '');
+      return (t.slice(0, 2) || '?').toUpperCase();
+    }
+    return ((prim(parts[0]) + prim(parts[parts.length - 1])) || '?').toUpperCase();
   }
   // Badge reutilizável com chip colorido — usado no Funil, Lista e Atendimento
   function respBadge(responsavel, opts = {}) {
