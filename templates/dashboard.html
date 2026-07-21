@@ -6560,14 +6560,17 @@
       const nome = l.nome !== '—' ? l.nome : l.telefone;
       const ativo = chatLeadAtivo && chatLeadAtivo.id === l.id;
       const icon = statusIconInbox[l.status] || '●';
-      const avatarColors = ['#128C7E','#075e54','#25D366','#34B7F1','#6c47ff'];
-      const avatarColor = avatarColors[(nome.charCodeAt(0)||0) % avatarColors.length];
+      // Mesma identidade do Funil: avatar com iniciais do cliente na cor da atendente
+      const resp = l.responsavel;
+      const temResp = resp && resp.id != null;
+      const cor = temResp ? corAtendente(resp.id) : '#94a3b8';
+      const ini = iniciaisCliente(nome);
       const preview = l.ultima_mensagem ? (l.ultima_mensagem.length > 38 ? l.ultima_mensagem.slice(0,35)+'…' : l.ultima_mensagem) : '';
       const novo = conversasNaoLidas.has(l.id) ? `<span style="min-width:18px;height:18px;background:#25D366;border-radius:99px;color:#fff;font-size:.65rem;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 5px">●</span>` : '';
       // Responsável: cor única por atendente (baseada no ID)
       const respTag = respBadge(l.responsavel, {sz: '.68rem'});
       return `<div onclick="abrirChat(${l.id})" class="wsp-conv-item${ativo?' active':''}">
-        <div class="wsp-conv-avatar" style="background:${avatarColor}">${nome[0].toUpperCase()}</div>
+        <div class="wsp-conv-avatar" style="background:${cor}22;color:${cor};font-size:.95rem" title="${temResp ? 'Responsável: ' + escHtml(resp.nome) : 'Sem responsável'}">${escHtml(ini)}</div>
         <div class="wsp-conv-body">
           <div class="wsp-conv-top">
             <span class="wsp-conv-name">${l.parceiro_id ? '🤝 ' : ''}${esc(nome)}</span>
@@ -6597,7 +6600,11 @@
     else { badge.style.display = 'none'; }
     renderInboxList();
     const nome = chatLeadAtivo.nome !== '—' ? chatLeadAtivo.nome : chatLeadAtivo.telefone;
-    document.getElementById('chatAvatar').textContent = nome[0].toUpperCase();
+    const _corChat = chatLeadAtivo.responsavel?.id != null ? corAtendente(chatLeadAtivo.responsavel.id) : '#94a3b8';
+    const _avChat = document.getElementById('chatAvatar');
+    _avChat.textContent = iniciaisCliente(nome);
+    _avChat.style.background = _corChat + '22';
+    _avChat.style.color = _corChat;
     document.getElementById('chatNome').textContent = nome;
     document.getElementById('chatTelefone').textContent = chatLeadAtivo.telefone;
     document.getElementById('btnFecharChat').style.display = '';
@@ -7028,7 +7035,7 @@
     document.getElementById('chatMessages').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:2rem">👈 Selecione uma conversa ao lado</div>';
     document.getElementById('chatNome').textContent = 'Selecione uma conversa';
     document.getElementById('chatTelefone').textContent = '';
-    document.getElementById('chatAvatar').textContent = '?';
+    { const _avc = document.getElementById('chatAvatar'); _avc.textContent = '?'; _avc.style.background = ''; _avc.style.color = ''; }
     document.getElementById('btnFecharChat').style.display = 'none';
     document.getElementById('btnAssumirChat').style.display = 'none';
     document.getElementById('btnDadosChat').style.display = 'none';
@@ -7049,7 +7056,7 @@
     document.getElementById('chatMessages').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:2rem">🔵 Conversa marcada como não lida — selecione outra ao lado</div>';
     document.getElementById('chatNome').textContent = 'Selecione uma conversa';
     document.getElementById('chatTelefone').textContent = '';
-    document.getElementById('chatAvatar').textContent = '?';
+    { const _avc = document.getElementById('chatAvatar'); _avc.textContent = '?'; _avc.style.background = ''; _avc.style.color = ''; }
     ['btnFecharChat', 'btnAssumirChat', 'btnDadosChat', 'btnNaoLida'].forEach(b =>
       document.getElementById(b).style.display = 'none');
     renderInboxList();
