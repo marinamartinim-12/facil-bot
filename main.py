@@ -633,6 +633,13 @@ async def heartbeat(request: Request, response: Response, db: Session = Depends(
     if sessao and sessao.usuario_id != usuario.id:
         sessao = None
 
+    # Sessão do cookie já ENCERRADA (um login posterior noutro dispositivo a fechou),
+    # mas esta aba continua ativa e batendo heartbeat. Não reutiliza a fechada — senão
+    # vira "zumbi": atualiza o último-ativo numa sessão que o /api/online ignora
+    # (filtra logout_em IS NULL) e a pessoa nunca aparece online. Cria uma nova aberta.
+    if sessao and sessao.logout_em is not None:
+        sessao = None
+
     # Sessão não encontrada (deletada, cookie antigo ou de outro usuário) — recria
     if not sessao:
         ip  = _ip_da_requisicao(request)
