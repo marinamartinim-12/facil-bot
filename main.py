@@ -7072,6 +7072,16 @@ async def dashboard():
     return HTMLResponse("<h1>dashboard.html não encontrado</h1>")
 
 
+@app.get("/logo-facil.png")
+async def logo_facil():
+    """Logomarca da Fácil (barra lateral). Servida com cache — o navegador baixa 1x só."""
+    p = Path(__file__).parent / "templates" / "logo-facil.png"
+    if p.exists():
+        return FileResponse(str(p), media_type="image/png",
+                            headers={"Cache-Control": "public, max-age=2592000"})
+    raise HTTPException(status_code=404)
+
+
 @app.get("/")
 async def root():
     return {"app": "Fácil Financiamentos Bot v2", "status": "online", "dashboard": "/dashboard"}
