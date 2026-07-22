@@ -62,7 +62,11 @@
       border-bottom: 1px solid rgba(255,255,255,.08);
     }
     .sb-logo {
-      display: block; width: 100%; height: auto;
+      width: 100%; aspect-ratio: 1038 / 364;
+      background-image: url("/logo-facil.png");
+      background-repeat: no-repeat;
+      background-size: 148% 281.3%;
+      background-position: 59.4% 47.3%;
     }
     .sb-brand .ico {
       width: 34px; height: 34px; background: var(--gold); border-radius: 8px;
@@ -654,7 +658,7 @@
   <!-- SIDEBAR -->
   <aside id="sidebar">
     <div class="sb-brand">
-      <img src="/logo-facil.png" alt="Fácil Financiamentos" class="sb-logo">
+      <div class="sb-logo" role="img" aria-label="Fácil Financiamentos"></div>
     </div>
     <nav>
       <div class="nav-section">Principal</div>
