@@ -890,13 +890,19 @@ def _transcode_audio_sync(audio_bytes: bytes, fmt: str) -> bytes | None:
     try:
         with os.fdopen(fd_in, "wb") as f:
             f.write(audio_bytes)
+        # -fflags +genpts + aresample async=1 + avoid_negative_ts: corrigem os timestamps
+        # quebrados (DTS não-monotônico / negativo) que o MediaRecorder gera no WebM/Opus.
+        # Sem isso o ffmpeg DESCARTA amostras nas fronteiras -> áudio picotado. O async=1
+        # PREENCHE a lacuna com silêncio em vez de cortar, mantendo o áudio contínuo.
         if fmt == "ogg":
-            args = ["ffmpeg", "-y", "-i", inpath, "-c:a", "libopus",
+            args = ["ffmpeg", "-y", "-fflags", "+genpts", "-i", inpath, "-c:a", "libopus",
                     "-b:a", "32k", "-ac", "1", "-ar", "48000",
+                    "-af", "aresample=async=1:first_pts=0", "-avoid_negative_ts", "make_zero",
                     "-application", "voip", "-f", "ogg", outpath]
         else:  # mp3 — -write_xing 1 grava a duração no cabeçalho (player toca completo)
-            args = ["ffmpeg", "-y", "-i", inpath, "-c:a", "libmp3lame",
-                    "-b:a", "64k", "-ac", "1", "-write_xing", "1", "-f", "mp3", outpath]
+            args = ["ffmpeg", "-y", "-fflags", "+genpts", "-i", inpath, "-c:a", "libmp3lame",
+                    "-b:a", "64k", "-ac", "1", "-af", "aresample=async=1:first_pts=0",
+                    "-write_xing", "1", "-f", "mp3", outpath]
         proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
         if proc.returncode == 0:
             with open(outpath, "rb") as f:
@@ -2728,11 +2734,15 @@ async def enviar_audio_gravado(
         _transcode_audio(audio_bytes, "mp3"),
     )
 
-    # O que será enviado ao WhatsApp
+    # O que será enviado ao WhatsApp — NUNCA manda webm/mp4 cru: o WhatsApp não toca webm
+    # como nota de voz (ora rejeita = "não envia", ora reconverte picotado). Ordem de
+    # preferência: ogg/opus (ideal) -> mp3 (o send-audio da Z-API aceita) -> falha explícita.
     if ogg:
         envio_mime, envio_b64 = "audio/ogg", base64.b64encode(ogg).decode()
+    elif mp3:
+        envio_mime, envio_b64 = "audio/mpeg", base64.b64encode(mp3).decode()
     else:
-        envio_mime, envio_b64 = mime, raw_b64  # fallback: original
+        envio_mime, envio_b64 = None, None
 
     # O que fica guardado para reprodução no painel
     audio_id = uuid.uuid4().hex
@@ -2748,7 +2758,10 @@ async def enviar_audio_gravado(
     # Envia pelo Z-API com base64 diretamente (evita race condition de download de URL)
     zapi_ok = False
     zapi_erro = ""
-    if settings.ZAPI_INSTANCE and settings.ZAPI_TOKEN:
+    if not envio_b64:
+        zapi_erro = "conversão de áudio falhou (ffmpeg indisponível ou áudio inválido)"
+        print(f"⚠️ {zapi_erro} — nada enviado ao WhatsApp")
+    elif settings.ZAPI_INSTANCE and settings.ZAPI_TOKEN:
         zapi_url = f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE}/token/{settings.ZAPI_TOKEN}/send-audio"
         headers_zapi = {"Client-Token": settings.ZAPI_CLIENT_TOKEN}
         # Monta data URI com o áudio convertido (ogg/opus) para virar nota de voz

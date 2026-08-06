@@ -6809,7 +6809,9 @@
 
   // Escolhe o melhor formato de gravação suportado pelo navegador (inclui Safari/iPhone)
   function _melhorMimeAudio() {
-    const cands = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+    // webm/opus PRIMEIRO: Chrome/Edge/Firefox gravam todos webm limpo. O ogg nativo (só o
+    // Firefox grava) sai com duração/timestamps quebrados e picota — por isso vai por último.
+    const cands = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
     if (window.MediaRecorder && MediaRecorder.isTypeSupported) {
       for (const c of cands) { try { if (MediaRecorder.isTypeSupported(c)) return c; } catch {} }
     }
@@ -6830,6 +6832,13 @@
       _mediaRecorder.onstop = () => {
         stream.getTracks().forEach(t => t.stop());
         _audioBlob = new Blob(_audioChunks, { type: tipoReal });
+        // Áudio vazio (toque curtíssimo / 1º chunk não emitido no celular): não envia vazio.
+        if (!_audioChunks.length || _audioBlob.size === 0) {
+          _audioBlob = null; _audioChunks = [];
+          _mostrarBarra('normal');
+          alert('Áudio muito curto — segure o botão para gravar e tente de novo.');
+          return;
+        }
         const url = URL.createObjectURL(_audioBlob);
         document.getElementById('audioPreview').src = url;
         const _b = document.getElementById('btnEnviarAudio');
@@ -6837,7 +6846,7 @@
         _mostrarBarra('preview');
       };
 
-      _mediaRecorder.start(200);
+      _mediaRecorder.start();  // sem timeslice: 1 arquivo limpo, com cabeçalho e duração completos
       _mostrarBarra('gravando');
 
       // Timer
@@ -6875,7 +6884,7 @@
   }
 
   async function enviarAudio() {
-    if (!_audioBlob || !chatLeadAtivo) return;
+    if (!_audioBlob || _audioBlob.size === 0 || !chatLeadAtivo) return;
     const btn = document.getElementById('btnEnviarAudio');
     btn.disabled = true;
     btn.textContent = 'Enviando…';
@@ -6889,7 +6898,7 @@
       });
 
       const ctrl = new AbortController();
-      const tmo = setTimeout(() => ctrl.abort(), 45000);
+      const tmo = setTimeout(() => ctrl.abort(), 60000);
       let resp;
       try {
         resp = await fetch(`/api/leads/${chatLeadAtivo.id}/enviar-audio`, {
@@ -6971,12 +6980,18 @@
       _mediaRecorderModal.onstop = () => {
         stream.getTracks().forEach(t => t.stop());
         _audioBlobModal = new Blob(_audioChunksModal, { type: tipoReal });
+        if (!_audioChunksModal.length || _audioBlobModal.size === 0) {
+          _audioBlobModal = null; _audioChunksModal = [];
+          _mostrarBarraModal('normal');
+          alert('Áudio muito curto — segure o botão para gravar e tente de novo.');
+          return;
+        }
         document.getElementById('audioPreviewModal').src = URL.createObjectURL(_audioBlobModal);
         const _bm = document.getElementById('btnEnviarAudioModal');
         if (_bm) { _bm.disabled = false; _bm.textContent = 'Enviar 🎤'; }
         _mostrarBarraModal('preview');
       };
-      _mediaRecorderModal.start(200);
+      _mediaRecorderModal.start();  // sem timeslice: arquivo limpo, cabeçalho/duração completos
       _mostrarBarraModal('gravando');
       document.getElementById('gravarTimerModal').textContent = '0:00';
       _timerIntervalModal = setInterval(() => {
@@ -7005,14 +7020,14 @@
   }
 
   async function enviarAudioModal() {
-    if (!_audioBlobModal || !modalLeadId) return;
+    if (!_audioBlobModal || _audioBlobModal.size === 0 || !modalLeadId) return;
     const btn = document.getElementById('btnEnviarAudioModal');
     btn.disabled = true; btn.textContent = 'Enviando…';
     const reader = new FileReader();
     reader.readAsDataURL(_audioBlobModal);
     reader.onloadend = async () => {
       const ctrl = new AbortController();
-      const tmo = setTimeout(() => ctrl.abort(), 45000);
+      const tmo = setTimeout(() => ctrl.abort(), 60000);
       try {
         const resp = await fetch(`/api/leads/${modalLeadId}/enviar-audio`, {
           method: 'POST', headers: {'Content-Type':'application/json'},
