@@ -7020,7 +7020,9 @@ async def relatorio_folha_ponto(
 
     q = db.query(Usuario).filter(Usuario.role == RoleEnum.funcionario)
     if usuario_id:
-        q = q.filter(Usuario.id == usuario_id)
+        q = q.filter(Usuario.id == usuario_id)       # folha de uma pessoa específica (mesmo desligada)
+    else:
+        q = q.filter(Usuario.ativo == True)          # padrão: só quem ainda está na empresa (exclui desligadas)
     funcionarias = q.order_by(Usuario.nome).all()
 
     DOW = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
