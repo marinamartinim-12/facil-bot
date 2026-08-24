@@ -6961,33 +6961,40 @@ _FOLHA_PONTO_CSS = """<style>
   .toolbar button{background:#f6c445;color:#0d2b4e;border:0;border-radius:8px;padding:.5rem 1.1rem;
     font-weight:800;cursor:pointer;font-size:.95rem}
   .toolbar .hint{font-size:.8rem;opacity:.85}
-  .folha{background:#fff;width:210mm;min-height:297mm;margin:12px auto;padding:14mm;
-    box-shadow:0 2px 10px rgba(0,0,0,.12)}
-  .cab{text-align:center;border-bottom:2px solid #0d2b4e;padding-bottom:8px;margin-bottom:10px}
-  .cab h1{margin:0;font-size:18px;color:#0d2b4e;letter-spacing:.5px}
-  .cab .sub{font-size:12px;color:#374151;margin-top:2px}
-  .meta{display:flex;justify-content:space-between;gap:12px;font-size:12px;margin:10px 0 8px;flex-wrap:wrap}
-  .meta b{color:#0d2b4e}
-  table{width:100%;border-collapse:collapse;font-size:11.5px}
-  th,td{border:1px solid #cbd5e1;padding:3px 4px;text-align:center}
-  th{background:#0d2b4e;color:#fff;font-weight:700}
-  td.d{font-weight:700}
-  td.dow{color:#475569}
-  tr.fds td{background:#f1f5f9;color:#64748b}
-  td.aus{font-style:italic;color:#475569;background:#fffbeb}
-  td.tot{font-weight:700}
-  .totlinha{text-align:right;font-size:12.5px;font-weight:800;color:#0d2b4e;padding-top:8px}
-  .legenda{font-size:10px;color:#6b7280;margin-top:6px}
-  .decl{font-size:11px;color:#374151;margin-top:16px}
-  .assin{display:flex;gap:40px;margin-top:36px}
-  .assin .s{flex:1;text-align:center;font-size:11.5px;color:#374151}
-  .assin .line{border-top:1px solid #111;margin-bottom:4px;height:1px}
+  .folha{background:#fff;width:210mm;margin:12px auto;padding:10mm;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+  /* Tabela única por folha: thead (cabeçalho) e tfoot (assinatura) SE REPETEM em cada
+     página impressa se o conteúdo passar de uma folha. */
+  table.fp{width:100%;border-collapse:collapse;font-size:10.5px}
+  table.fp thead{display:table-header-group}
+  table.fp tfoot{display:table-footer-group}
+  table.fp tr{break-inside:avoid;page-break-inside:avoid}
+  .fp th,.fp td{border:1px solid #cbd5e1;padding:2px 5px;text-align:center}
+  .fp thead .cabrow th{border:0;padding:0 0 6px;text-align:left}
+  .fp thead .cabrow .cab{text-align:center;border-bottom:2px solid #0d2b4e;padding-bottom:5px}
+  .fp thead .cabrow h1{margin:0;font-size:16px;color:#0d2b4e;letter-spacing:.5px}
+  .fp thead .cabrow .sub{font-size:11px;color:#374151;font-weight:normal;margin-top:1px}
+  .fp thead .cabrow .metaline{display:flex;justify-content:space-between;gap:12px;font-size:11px;
+    font-weight:normal;color:#111;margin:6px 2px 0;flex-wrap:wrap}
+  .fp thead .cabrow .metaline b{color:#0d2b4e}
+  .fp thead .cols th{background:#0d2b4e;color:#fff;font-weight:700}
+  .fp td.d{font-weight:700}
+  .fp td.dow{color:#475569}
+  .fp tr.fds td{background:#f1f5f9;color:#64748b}
+  .fp td.aus{font-style:italic;color:#475569;background:#fffbeb}
+  .fp td.tot{font-weight:700}
+  .fp tfoot .footrow td{border:0;padding:0;text-align:left}
+  .fp .totlinha{text-align:right;font-size:12px;font-weight:800;color:#0d2b4e;padding-top:7px}
+  .fp .legenda{font-size:9.5px;color:#6b7280;margin-top:5px}
+  .fp .decl{font-size:10.5px;color:#374151;margin-top:12px}
+  .fp .assin{display:flex;gap:40px;margin-top:26px}
+  .fp .assin .s{flex:1;text-align:center;font-size:11px;color:#374151}
+  .fp .assin .line{border-top:1px solid #111;margin-bottom:4px;height:1px}
   @media print{
     body{background:#fff}
     .toolbar{display:none}
-    .folha{margin:0;width:auto;min-height:auto;padding:0;box-shadow:none;page-break-after:always}
+    .folha{margin:0;width:auto;padding:0;box-shadow:none;page-break-after:always}
     .folha:last-child{page-break-after:auto}
-    @page{size:A4;margin:12mm}
+    @page{size:A4;margin:10mm}
   }
 </style>"""
 
@@ -7092,15 +7099,18 @@ async def relatorio_folha_ponto(
         adm = (f" &nbsp;·&nbsp; <b>Admissão:</b> {esc(_iso_para_br(u.data_admissao))}"
                if u.data_admissao else "")
         partes.append(
-            '<div class="folha">'
+            '<div class="folha"><table class="fp">'
+            '<thead>'
+            '<tr class="cabrow"><th colspan="7">'
             '<div class="cab"><h1>Fácil Financiamentos</h1>'
             '<div class="sub">Folha de Ponto — Espelho de Jornada</div></div>'
-            f'<div class="meta"><div><b>Funcionária:</b> {esc(u.nome)}{adm}</div>'
-            f'<div><b>Período:</b> {esc(periodo)}</div></div>'
-            '<table><thead><tr>'
-            '<th>Data</th><th>Dia</th><th>Entrada</th><th>Saída Almoço</th>'
-            '<th>Volta Almoço</th><th>Saída</th><th>Total</th>'
-            '</tr></thead><tbody>' + "".join(rows) + '</tbody></table>'
+            f'<div class="metaline"><span><b>Funcionária:</b> {esc(u.nome)}{adm}</span>'
+            f'<span><b>Período:</b> {esc(periodo)}</span></div>'
+            '</th></tr>'
+            '<tr class="cols"><th>Data</th><th>Dia</th><th>Entrada</th><th>Saída Almoço</th>'
+            '<th>Volta Almoço</th><th>Saída</th><th>Total</th></tr>'
+            '</thead>'
+            '<tfoot><tr class="footrow"><td colspan="7">'
             f'<div class="totlinha">Total trabalhado no período: {esc(_duracao_str(total_s))}</div>'
             '<div class="legenda">* dia sem batida de saída (jornada incompleta). '
             'Dias sem marcação aparecem com “—”.</div>'
@@ -7109,7 +7119,9 @@ async def relatorio_folha_ponto(
             '<div class="assin">'
             '<div class="s"><div class="line"></div>Assinatura da funcionária</div>'
             '<div class="s"><div class="line"></div>Responsável</div></div>'
-            '</div>'
+            '</td></tr></tfoot>'
+            '<tbody>' + "".join(rows) + '</tbody>'
+            '</table></div>'
         )
 
     partes.append("</body></html>")
