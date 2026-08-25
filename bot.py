@@ -73,6 +73,7 @@ Responda SOMENTE com JSON válido. Zero texto fora do JSON.
     "cpf": null,
     "data_nascimento": null,
     "carro_interesse": null,
+    "restricao": null,
     "modalidade": null
   },
   "qualificado": true
@@ -172,14 +173,19 @@ Envie e salve proximo_estado: "coletando_carro"
   Para Refinanciamento: "Qual a placa do seu veículo ?"
 
 ━━━ ESTADO "coletando_carro" ━━━
-Salve o veículo. Envie e salve proximo_estado: "transferido"
+Salve o veículo. Envie e salve proximo_estado: "coletando_restricao"
+  "Por último: você tem alguma restrição no seu nome (SPC/Serasa) ? Pode responder tranquilo(a) — isso não te elimina, é só pra o especialista já te orientar da melhor forma. 😊"
+
+━━━ ESTADO "coletando_restricao" ━━━
+Salve a resposta no campo restricao: "sim" se o cliente tiver restrição (ex: "tenho", "sim", "estou negativado", "nome sujo") ou "não" se não tiver (ex: "não tenho", "nome limpo", "não"). Se ficar em dúvida, salve exatamente o que ele respondeu.
+Envie e salve proximo_estado: "transferido"
   "Ótimo ! Já tenho os dados que preciso, aguarde um momento que um dos nossos especialistas irá seguir com você. 😊"
 
 ══════════════════════════════════════════════════
 Estados válidos para proximo_estado:
 aguardando_nome | aguardando_modalidade | coletando_cidade |
 coletando_cpf | coletando_data_nasc | coletando_carro |
-transferido | desqualificado
+coletando_restricao | transferido | desqualificado
 ══════════════════════════════════════════════════
 """
 
@@ -210,7 +216,8 @@ _TRANSICOES_VALIDAS: dict[str, list[str]] = {
     EstadoConversaEnum.coletando_cidade:      ["coletando_cpf", "coletando_cidade", "desqualificado"],
     EstadoConversaEnum.coletando_cpf:         ["coletando_data_nasc"],
     EstadoConversaEnum.coletando_data_nasc:   ["coletando_carro"],
-    EstadoConversaEnum.coletando_carro:       ["transferido"],
+    EstadoConversaEnum.coletando_carro:       ["coletando_restricao"],
+    EstadoConversaEnum.coletando_restricao:   ["transferido"],
 }
 
 
@@ -351,6 +358,9 @@ def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, q
         lead.cidade = dados["cidade"]
     if dados.get("carro_interesse"):
         lead.carro_interesse = dados["carro_interesse"]
+    if dados.get("restricao") is not None and str(dados["restricao"]).strip():
+        r = str(dados["restricao"]).strip().lower()
+        lead.restricao = "sim" if r[0] == "s" else ("não" if r[0] == "n" else r[:10])
     if dados.get("modalidade"):
         mod = dados["modalidade"].lower()
         if "refin" in mod or "garantia" in mod:
@@ -480,6 +490,7 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
         f"\nCPF: {lead.cpf or '(ainda não informado)'}"
         f"\nData de nascimento: {lead.data_nascimento or '(ainda não informada)'}"
         f"\nVeículo: {lead.carro_interesse or '(ainda não informado)'}"
+        f"\nRestrição (SPC/Serasa): {getattr(lead, 'restricao', None) or '(ainda não informada)'}"
         f"\n══════════════════════════════════════════════════"
         f"\nExecute EXATAMENTE a etapa do estado '{lead.estado_conversa}'."
         f"{aviso_horario}"
@@ -594,6 +605,7 @@ def obter_resumo_lead(telefone: str, db: Session) -> dict | None:
         "cpf": lead.cpf,
         "data_nascimento": lead.data_nascimento,
         "carro_interesse": lead.carro_interesse,
+        "restricao": lead.restricao,
         "modalidade": lead.modalidade,
         "status": lead.status,
         "criado_em": lead.criado_em.strftime("%d/%m/%Y %H:%M") if lead.criado_em else None,

@@ -7641,6 +7641,9 @@
     const inputCPF    = editando ? `<input id="ei_cpf"   value="${escHtml(lead.cpf&&lead.cpf!=='—'?lead.cpf:'')}" style="${inpStyle}" placeholder="000.000.000-00">` : `<span>${escHtml(lead.cpf||'—')}</span>`;
     const inputNasc   = editando ? `<input id="ei_nasc"  value="${escHtml(lead.data_nascimento&&lead.data_nascimento!=='—'?lead.data_nascimento:'')}" style="${inpStyle}" placeholder="DD/MM/AAAA">` : `<span>${escHtml(lead.data_nascimento||'—')}</span>`;
     const inputCarro  = editando ? `<input id="ei_carro" value="${escHtml(lead.carro_interesse&&lead.carro_interesse!=='—'?lead.carro_interesse:'')}" style="${inpStyle}" placeholder="Ex: Honda Civic 2020">` : `<span>${escHtml(lead.carro_interesse||'—')}</span>`;
+    const inputRestr  = editando
+      ? `<select id="ei_restricao" style="${inpStyle}"><option value="">—</option><option value="sim" ${lead.restricao==='sim'?'selected':''}>Sim</option><option value="não" ${lead.restricao==='não'?'selected':''}>Não</option></select>`
+      : `<span>${lead.restricao==='sim'?'⚠️ Sim':lead.restricao==='não'?'✅ Não':'—'}</span>`;
     const inputEmail  = editando ? `<input id="ei_email" type="email" value="${escHtml(lead.email||'')}" style="${inpStyle}" placeholder="email@exemplo.com">` : `<span>${escHtml(lead.email||'—')}</span>`;
     const inputProf   = editando ? `<input id="ei_prof" value="${escHtml(lead.profissao||'')}" style="${inpStyle}" placeholder="Ex: Motorista, Servidor público…">` : `<span>${escHtml(lead.profissao||'—')}</span>`;
     const rendaOpts   = ['','Até R$2.000','R$2.000 a R$5.000','R$5.000 a R$10.000','Acima de R$10.000'];
@@ -7682,6 +7685,7 @@
       <div class="data-item"><label>CPF</label>${inputCPF}</div>
       <div class="data-item"><label>Nasc.</label>${inputNasc}</div>
       <div class="data-item full"><label>Veículo de interesse</label>${inputCarro}</div>
+      <div class="data-item"><label>Restrição (SPC/Serasa)</label>${inputRestr}</div>
       <div class="data-item"><label>Modalidade</label>${inputMod}</div>
       <div class="data-item full"><label>E-mail</label>${inputEmail}</div>
       <div class="data-item"><label>Profissão</label>${inputProf}</div>
@@ -7775,6 +7779,7 @@
       cpf:              document.getElementById('ei_cpf')?.value.trim()    || null,
       data_nascimento:  document.getElementById('ei_nasc')?.value.trim()   || null,
       carro_interesse:  document.getElementById('ei_carro')?.value.trim()  || null,
+      restricao:        document.getElementById('ei_restricao')?.value      || null,
       modalidade:       document.getElementById('ei_mod')?.value           || null,
       email:            document.getElementById('ei_email')?.value.trim()  || null,
       profissao:        document.getElementById('ei_prof')?.value.trim()   || null,

@@ -437,6 +437,7 @@ async def startup():
         ("leads",           "ignorar_relatorios", "BOOLEAN DEFAULT 0"),
         ("leads",           "carros_proposta",    "TEXT"),
         ("leads",           "email",              "VARCHAR(150)"),
+        ("leads",           "restricao",          "VARCHAR(10)"),
         ("parceiros",       "nome_agenda",        "VARCHAR(200)"),
         ("parceiros",       "operadora_id",       "INTEGER"),
         ("agendamentos",    "resultado",          "TEXT"),
@@ -721,6 +722,8 @@ def _montar_msg_recontato(lead) -> list[str]:
         linhas.append(f"📋 Modalidade: {mod_map.get(lead.modalidade, lead.modalidade)}")
     if lead.carro_interesse:
         linhas.append(f"🚗 Veículo de interesse: {lead.carro_interesse}")
+    if lead.restricao:
+        linhas.append(f"⚠️ Restrição (SPC/Serasa): {lead.restricao}")
     if linhas:
         msg1 = f"{saudacao}\n\nEncontrei seus dados cadastrados aqui:\n" + "\n".join(linhas)
     else:
@@ -3299,7 +3302,7 @@ async def editar_lead(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     body = await request.json()
-    campos_editaveis = ["nome", "cpf", "data_nascimento", "carro_interesse", "modalidade", "observacoes", "cidade", "renda", "profissao", "tem_cnh", "email", "descadastrado"]
+    campos_editaveis = ["nome", "cpf", "data_nascimento", "carro_interesse", "restricao", "modalidade", "observacoes", "cidade", "renda", "profissao", "tem_cnh", "email", "descadastrado"]
     # "Fora dos relatórios" só o ADMIN pode mexer (evita esconder conversa malfeita)
     if "ignorar_relatorios" in body and usuario.role == RoleEnum.admin:
         lead.ignorar_relatorios = bool(body["ignorar_relatorios"])
@@ -7807,6 +7810,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "cpf": l.cpf or "—",
         "data_nascimento": l.data_nascimento or "—",
         "carro_interesse": l.carro_interesse or "—",
+        "restricao": l.restricao or "—",
         "modalidade": l.modalidade,
         "status": l.status,
         "estado_conversa": l.estado_conversa,
