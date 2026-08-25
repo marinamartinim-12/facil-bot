@@ -169,7 +169,7 @@ Reconheça qualquer formato que o cliente usar, por exemplo:
   Anos com 2 dígitos: 90→1990, 85→1985, 01→2001, 10→2010 (≤24 = 2000s)
 Envie e salve proximo_estado: "coletando_carro"
   Para Financiamento: "Qual veículo você está procurando ?"
-  Para Refinanciamento: "Qual o modelo e ano do seu veículo ?"
+  Para Refinanciamento: "Qual a placa do seu veículo ?"
 
 ━━━ ESTADO "coletando_carro" ━━━
 Salve o veículo. Envie e salve proximo_estado: "transferido"
