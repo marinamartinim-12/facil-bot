@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     ZAPI_TOKEN: str = ""
     ZAPI_CLIENT_TOKEN: str = ""
 
+    # Cloudflare R2 (armazenamento de mídia fora do banco) — vazio = usa o banco (comportamento antigo)
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET: str = ""
+
     # Segurança — troque em produção
     SECRET_KEY: str = "facil-financiamentos-chave-secreta-mude-em-producao-2026"
 

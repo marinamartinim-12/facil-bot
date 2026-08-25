@@ -38,7 +38,7 @@ def _data_br_para_utc(data_str: str):
     except Exception:
         return None
 from fastapi import FastAPI, Request, Depends, HTTPException, Query, Response, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse, RedirectResponse
 import secrets
 from pathlib import Path
 from sqlalchemy.orm import Session
@@ -47,6 +47,7 @@ from config import get_settings
 from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, JustificativaPonto, CorrecaoPonto, AtividadePing, Agendamento, MidiaArquivo, DocumentoCliente, HistoricoLead, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento, diagnostico_ia
 from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin, requer_gestao, role_do_token
+import storage
 
 settings = get_settings()
 app = FastAPI(title="Fácil Financiamentos", version="2.0.0")
@@ -463,6 +464,14 @@ async def startup():
         except Exception:
             pass  # coluna já existe — ignorar
 
+    # midia_arquivos.dados pode ficar NULL (bytes migram pro R2). Postgres apenas; SQLite ignora.
+    try:
+        with db_startup.bind.connect() as conn:
+            conn.execute(text("ALTER TABLE midia_arquivos ALTER COLUMN dados DROP NOT NULL"))
+            conn.commit()
+    except Exception:
+        pass
+
     # Cria admin padrão se não existir nenhum usuário (DEPOIS das migrações!)
     try:
         if db.query(Usuario).count() == 0:
@@ -849,20 +858,28 @@ def _extrair_documento_zapi(body: dict) -> dict | None:
 
 def _guardar_blob(db, filename: str, tipo: str, dados: bytes,
                   nome_original: str = None, mime: str = None, subdir: str = None):
-    """Guarda os bytes do arquivo NO BANCO (durável) e também em disco (cache local).
-    O banco é a fonte de verdade — o disco é reciclado pelo Railway a cada deploy."""
-    # 1) Banco — persistente
+    """Guarda os bytes do arquivo. Se o R2 estiver configurado, sobe pro R2 e o banco
+    guarda só a referência (dados=None). Senão, guarda os bytes no banco (comportamento
+    antigo, durável). Se a subida ao R2 falhar, cai no banco pra não perder o arquivo."""
+    tamanho = len(dados or b"")
+    # 1) R2 (se configurado) — fonte preferida
+    ok_r2 = False
+    if storage.r2_ativo():
+        ok_r2 = storage.subir(filename, dados, mime=mime)
+    # 2) Registro no banco (referência sempre; bytes só quando NÃO foram pro R2)
     try:
         if not db.query(MidiaArquivo).filter(MidiaArquivo.filename == filename).first():
             db.add(MidiaArquivo(
                 filename=filename, tipo=tipo, nome_original=(nome_original or "")[:200],
-                mime=(mime or "")[:120], dados=dados, tamanho=len(dados),
+                mime=(mime or "")[:120],
+                dados=(None if ok_r2 else dados),  # R2 = fonte; senão o banco guarda os bytes
+                tamanho=tamanho,
             ))
             db.flush()  # garante INSERT; o commit ocorre no fluxo do webhook
     except Exception as e:
         print(f"⚠️ Erro ao guardar mídia no banco ({filename}): {e}")
-    # 2) Disco — cache rápido enquanto o container vive
-    if subdir:
+    # 3) Disco (cache rápido) — só quando NÃO está no R2
+    if subdir and not ok_r2:
         try:
             os.makedirs(f"/app/{subdir}", exist_ok=True)
             with open(f"/app/{subdir}/{filename}", "wb") as f:
@@ -2796,10 +2813,14 @@ async def enviar_audio_gravado(
 
 
 def _buscar_midia(db, filename: str):
-    """Retorna (bytes, mime, nome_original) da mídia — banco primeiro, disco como fallback."""
+    """Retorna (bytes, mime, nome_original) da mídia — banco, depois R2, depois disco."""
     reg = db.query(MidiaArquivo).filter(MidiaArquivo.filename == filename).first()
     if reg and reg.dados:
         return reg.dados, (reg.mime or None), (reg.nome_original or None)
+    if reg and storage.r2_ativo():
+        dados = storage.baixar(filename)
+        if dados is not None:
+            return dados, (reg.mime or None), (reg.nome_original or None)
     # Fallback: arquivos antigos ainda em disco (até o container reciclar)
     for sub in ("imagens", "documentos", "audios"):
         p = f"/app/{sub}/{filename}"
@@ -2840,49 +2861,120 @@ def _resposta_midia_range(request, dados, media_type):
                              "Content-Length": str(len(chunk))})
 
 
+def _midia_fonte(db, filename: str):
+    """De onde servir a mídia: ('r2', None, mime, nome) se os bytes estão no R2;
+    ('db', bytes, mime, nome) se estão no banco/disco; (None, None, None, None) se não achou."""
+    reg = db.query(MidiaArquivo).filter(MidiaArquivo.filename == filename).first()
+    if reg and reg.dados:
+        return ("db", reg.dados, reg.mime or None, reg.nome_original or None)
+    if reg and storage.r2_ativo():
+        return ("r2", None, reg.mime or None, reg.nome_original or None)
+    for sub in ("imagens", "documentos", "audios"):
+        p = f"/app/{sub}/{filename}"
+        if os.path.exists(p):
+            try:
+                with open(p, "rb") as f:
+                    return ("db", f.read(), None, None)
+            except Exception:
+                pass
+    return (None, None, None, None)
+
+
 @app.get("/api/audio/{filename}")
 async def servir_audio(filename: str, request: Request, db: Session = Depends(get_db)):
-    """Serve arquivos de áudio (Z-API baixa + reprodução no painel), agora com suporte a Range."""
+    """Serve áudio. No R2, redireciona pra URL assinada (o R2 trata o Range direto)."""
     if not re.match(r'^[a-f0-9]{32}\.(webm|ogg|mp3|m4a|mp4|aac)$', filename):
-        raise HTTPException(status_code=404)
-    dados, mime, _ = _buscar_midia(db, filename)
-    if dados is None:
         raise HTTPException(status_code=404)
     ext = filename.rsplit(".", 1)[-1]
     tipos = {"ogg": "audio/ogg", "webm": "audio/webm", "mp3": "audio/mpeg",
              "m4a": "audio/mp4", "mp4": "audio/mp4", "aac": "audio/aac"}
+    fonte, dados, mime, _ = _midia_fonte(db, filename)
+    if fonte == "r2":
+        url = storage.url_assinada(filename, mime=mime or tipos.get(ext, "audio/ogg"))
+        if url:
+            return RedirectResponse(url, status_code=307)
+        dados, mime, _ = _buscar_midia(db, filename)  # fallback: baixa do R2 e serve pelo app
+    if not dados:
+        raise HTTPException(status_code=404)
     return _resposta_midia_range(request, dados, mime or tipos.get(ext, "audio/ogg"))
 
 
 @app.get("/api/imagem/{filename}")
 async def servir_imagem(filename: str, db: Session = Depends(get_db)):
-    """Serve arquivos de imagem salvos do WhatsApp."""
+    """Serve imagem (redireciona pro R2 quando aplicável)."""
     if not re.match(r'^[a-f0-9]{32}\.(jpg|jpeg|png|webp|gif)$', filename):
-        raise HTTPException(status_code=404)
-    dados, mime, _ = _buscar_midia(db, filename)
-    if dados is None:
         raise HTTPException(status_code=404)
     ext = filename.rsplit(".", 1)[-1].lower()
     tipos = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
              "webp": "image/webp", "gif": "image/gif"}
+    fonte, dados, mime, _ = _midia_fonte(db, filename)
+    if fonte == "r2":
+        url = storage.url_assinada(filename, mime=mime or tipos.get(ext, "image/jpeg"))
+        if url:
+            return RedirectResponse(url, status_code=307)
+        dados, mime, _ = _buscar_midia(db, filename)
+    if not dados:
+        raise HTTPException(status_code=404)
     return Response(content=dados, media_type=mime or tipos.get(ext, "image/jpeg"))
 
 
 @app.get("/api/documento/{filename}")
 async def servir_documento(filename: str, db: Session = Depends(get_db)):
-    """Serve documentos/PDFs salvos do WhatsApp com header de download."""
+    """Serve documentos/PDFs com header de download (redireciona pro R2 quando aplicável)."""
     if not re.match(r'^[a-f0-9]{32}\.\w{2,5}$', filename):
         raise HTTPException(status_code=404)
-    dados, mime, nome = _buscar_midia(db, filename)
-    if dados is None:
-        raise HTTPException(status_code=404)
     ext = filename.rsplit(".", 1)[-1].lower()
+    fonte, dados, mime, nome = _midia_fonte(db, filename)
     media_type = mime or ("application/pdf" if ext == "pdf" else "application/octet-stream")
-    # Nome de download amigável (preserva acentos via RFC 5987)
-    nome_dl = nome or filename
+    if fonte == "r2":
+        url = storage.url_assinada(filename, mime=media_type, nome_download=(nome or filename))
+        if url:
+            return RedirectResponse(url, status_code=307)
+        dados, mime, nome = _buscar_midia(db, filename)
+        media_type = mime or media_type
+    if not dados:
+        raise HTTPException(status_code=404)
     from urllib.parse import quote
+    nome_dl = nome or filename
     disp = f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(nome_dl)}"
     return Response(content=dados, media_type=media_type, headers={"Content-Disposition": disp})
+
+
+@app.post("/api/admin/migrar-midia-r2")
+async def migrar_midia_r2(request: Request, db: Session = Depends(get_db),
+                          admin: Usuario = Depends(requer_admin)):
+    """Move os bytes de MidiaArquivo que ainda estão no banco para o R2, em lotes.
+    Idempotente: só pega registros com dados != NULL. Rodar várias vezes até restantes=0."""
+    if not storage.r2_ativo():
+        raise HTTPException(400, "R2 não configurado (defina R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET).")
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    try:
+        lote = max(1, min(200, int(body.get("lote", 50))))
+    except Exception:
+        lote = 50
+
+    def _trabalho():
+        regs = (db.query(MidiaArquivo)
+                .filter(MidiaArquivo.dados.isnot(None))
+                .limit(lote).all())
+        migrados = falhas = bytes_mov = 0
+        for r in regs:
+            if storage.subir(r.filename, r.dados, mime=r.mime):
+                bytes_mov += (r.tamanho or len(r.dados or b""))
+                r.dados = None            # solta os bytes do banco só APÓS subir com sucesso
+                migrados += 1
+            else:
+                falhas += 1
+        db.commit()
+        restantes = db.query(MidiaArquivo).filter(MidiaArquivo.dados.isnot(None)).count()
+        return {"migrados": migrados, "falhas": falhas,
+                "bytes_movidos": bytes_mov, "restantes": restantes}
+
+    return await asyncio.to_thread(_trabalho)
 
 
 # ─── Contratos fechados + pasta de documentos do cliente (admin) ─────────────────

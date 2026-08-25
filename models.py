@@ -402,7 +402,7 @@ class MidiaArquivo(Base):
     tipo          = Column(String(20), nullable=False)   # imagem | documento | audio
     nome_original = Column(String(200), nullable=True)
     mime          = Column(String(120), nullable=True)
-    dados         = Column(LargeBinary, nullable=False)
+    dados         = Column(LargeBinary, nullable=True)   # NULL quando os bytes vivem no R2 (fora do banco)
     tamanho       = Column(Integer, default=0)
     criado_em     = Column(DateTime, default=datetime.utcnow)
 
