@@ -7361,7 +7361,7 @@
         // Player + botão de download (fallback caso o navegador não reproduza o formato)
         conteudoHtml = `<div style="display:flex;align-items:center;gap:6px">
           <audio controls preload="metadata" style="max-width:210px;height:36px;display:block" src="${audioSrc}"></audio>
-          <a href="${audioSrc}" download title="Baixar áudio" style="text-decoration:none;font-size:1.1rem">⬇️</a>
+          <a href="${audioSrc}?dl=1" download title="Baixar áudio" style="text-decoration:none;font-size:1.1rem">⬇️</a>
         </div>`;
       } else if (imageMatch) {
         const imgSrc = `/api/imagem/${imageMatch[1]}`;
@@ -7373,7 +7373,7 @@
             <img src="${imgSrc}" style="max-width:220px;max-height:200px;border-radius:8px;display:block;cursor:zoom-in">
           </a>
           ${legendaHtml}
-          <a href="${imgSrc}" download style="font-size:.72rem;color:#25d366;margin-top:3px;display:inline-block">⬇ Baixar imagem</a>`;
+          <a href="${imgSrc}?dl=1" download style="font-size:.72rem;color:#25d366;margin-top:3px;display:inline-block">⬇ Baixar imagem</a>`;
       } else if (docMatch) {
         const docUrl  = `/api/documento/${docMatch[1]}`;
         const docNome = escHtml(docMatch[2]);

@@ -2881,8 +2881,9 @@ def _midia_fonte(db, filename: str):
 
 
 @app.get("/api/audio/{filename}")
-async def servir_audio(filename: str, request: Request, db: Session = Depends(get_db)):
-    """Serve áudio. No R2, redireciona pra URL assinada (o R2 trata o Range direto)."""
+async def servir_audio(filename: str, request: Request, dl: int = 0, db: Session = Depends(get_db)):
+    """Serve áudio. No R2, redireciona pra URL assinada (o R2 trata o Range direto).
+    ?dl=1 força download (anexo) — necessário porque o arquivo vem de outro domínio."""
     if not re.match(r'^[a-f0-9]{32}\.(webm|ogg|mp3|m4a|mp4|aac)$', filename):
         raise HTTPException(status_code=404)
     ext = filename.rsplit(".", 1)[-1]
@@ -2890,18 +2891,22 @@ async def servir_audio(filename: str, request: Request, db: Session = Depends(ge
              "m4a": "audio/mp4", "mp4": "audio/mp4", "aac": "audio/aac"}
     fonte, dados, mime, _ = _midia_fonte(db, filename)
     if fonte == "r2":
-        url = storage.url_assinada(filename, mime=mime or tipos.get(ext, "audio/ogg"))
+        url = storage.url_assinada(filename, mime=mime or tipos.get(ext, "audio/ogg"),
+                                   nome_download=(filename if dl else None))
         if url:
             return RedirectResponse(url, status_code=307)
         dados, mime, _ = _buscar_midia(db, filename)  # fallback: baixa do R2 e serve pelo app
     if not dados:
         raise HTTPException(status_code=404)
+    if dl:
+        return Response(content=dados, media_type=mime or tipos.get(ext, "audio/ogg"),
+                        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
     return _resposta_midia_range(request, dados, mime or tipos.get(ext, "audio/ogg"))
 
 
 @app.get("/api/imagem/{filename}")
-async def servir_imagem(filename: str, db: Session = Depends(get_db)):
-    """Serve imagem (redireciona pro R2 quando aplicável)."""
+async def servir_imagem(filename: str, dl: int = 0, db: Session = Depends(get_db)):
+    """Serve imagem (redireciona pro R2 quando aplicável). ?dl=1 força download (anexo)."""
     if not re.match(r'^[a-f0-9]{32}\.(jpg|jpeg|png|webp|gif)$', filename):
         raise HTTPException(status_code=404)
     ext = filename.rsplit(".", 1)[-1].lower()
@@ -2909,13 +2914,15 @@ async def servir_imagem(filename: str, db: Session = Depends(get_db)):
              "webp": "image/webp", "gif": "image/gif"}
     fonte, dados, mime, _ = _midia_fonte(db, filename)
     if fonte == "r2":
-        url = storage.url_assinada(filename, mime=mime or tipos.get(ext, "image/jpeg"))
+        url = storage.url_assinada(filename, mime=mime or tipos.get(ext, "image/jpeg"),
+                                   nome_download=(filename if dl else None))
         if url:
             return RedirectResponse(url, status_code=307)
         dados, mime, _ = _buscar_midia(db, filename)
     if not dados:
         raise HTTPException(status_code=404)
-    return Response(content=dados, media_type=mime or tipos.get(ext, "image/jpeg"))
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'} if dl else {}
+    return Response(content=dados, media_type=mime or tipos.get(ext, "image/jpeg"), headers=headers)
 
 
 @app.get("/api/documento/{filename}")
