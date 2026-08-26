@@ -7367,6 +7367,7 @@ async def logo_facil():
 
 @app.get("/")
 async def root():
+    # health/root — expõe r2_ativo() pra confirmar a migração do armazenamento
     return {"app": "Fácil Financiamentos Bot v2", "status": "online",
             "dashboard": "/dashboard", "r2": storage.r2_ativo()}
 
