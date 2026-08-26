@@ -7367,7 +7367,8 @@ async def logo_facil():
 
 @app.get("/")
 async def root():
-    return {"app": "Fácil Financiamentos Bot v2", "status": "online", "dashboard": "/dashboard"}
+    return {"app": "Fácil Financiamentos Bot v2", "status": "online",
+            "dashboard": "/dashboard", "r2": storage.r2_ativo()}
 
 
 # ─── Contratos / Assinatura Digital ─────────────────────────────────────────────
