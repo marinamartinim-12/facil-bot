@@ -36,13 +36,17 @@ print(f"🗄️  DATABASE_URL resolvida: {_DATABASE_URL.split('@')[-1] if not _I
 if _IS_SQLITE:
     engine = create_engine(_DATABASE_URL, connect_args={"check_same_thread": False})
 else:
-    # PostgreSQL: pool com pre-ping (evita erros de conexão caída pelo proxy do Railway)
+    # PostgreSQL: pool com pre-ping (evita erros de conexão caída pelo proxy)
+    # Dimensionado p/ 4 workers: 4 x (pool_size+max_overflow)=4x15=60 conexões,
+    # bem abaixo do limite do banco (103). pool_timeout baixo = falha rápido em
+    # vez de pendurar o event loop 30s quando o pool está cheio.
     engine = create_engine(
         _DATABASE_URL,
         pool_pre_ping=True,
         pool_recycle=1800,   # recicla conexões a cada 30min
-        pool_size=10,
-        max_overflow=20,
+        pool_size=6,
+        max_overflow=9,
+        pool_timeout=10,
     )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
