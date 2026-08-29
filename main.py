@@ -455,22 +455,60 @@ async def startup():
         ("ausencias_funcionaria", "resolvido_por",   "INTEGER"),
         ("ausencias_funcionaria", "resolvido_em",    "DATETIME"),
     ]
-    for tabela, coluna, tipo in _migracoes:
+    # Só altera o que FALTA. ALTER TABLE pega lock exclusivo; se a tabela estiver
+    # travada por outra conexão, o boot pendura pra SEMPRE (o try/except não pega
+    # "espera de lock", só erro) e o Render derruba o deploy ("no open ports").
+    # Como todas essas colunas já existem em produção, primeiro descobrimos o que
+    # já há (uma consulta) e pulamos — zero ALTER, zero lock. Para colunas
+    # realmente novas, um lock_timeout curto garante que o boot nunca fique preso.
+    _is_pg = "postgres" in (db_url or "")
+    _existentes = set()
+    if _is_pg:
         try:
             with db_startup.bind.connect() as conn:
+                _rows = conn.execute(text(
+                    "SELECT table_name, column_name FROM information_schema.columns "
+                    "WHERE table_schema = 'public'"
+                )).fetchall()
+            for _r in _rows:
+                _existentes.add((_r[0], _r[1]))
+        except Exception as e:
+            print(f"⚠️ não listei colunas existentes (sigo assim): {e}")
+
+    for tabela, coluna, tipo in _migracoes:
+        if (tabela, coluna) in _existentes:
+            continue  # já existe — não toca (evita lock exclusivo e travamento)
+        try:
+            with db_startup.bind.connect() as conn:
+                if _is_pg:
+                    conn.execute(text("SET lock_timeout = '4s'"))
                 conn.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}"))
                 conn.commit()
             print(f"✅ Migração: {tabela}.{coluna} adicionada")
-        except Exception:
-            pass  # coluna já existe — ignorar
+        except Exception as e:
+            print(f"⚠️ migração {tabela}.{coluna} ignorada: {e}")
 
-    # midia_arquivos.dados pode ficar NULL (bytes migram pro R2). Postgres apenas; SQLite ignora.
-    try:
-        with db_startup.bind.connect() as conn:
-            conn.execute(text("ALTER TABLE midia_arquivos ALTER COLUMN dados DROP NOT NULL"))
-            conn.commit()
-    except Exception:
-        pass
+    # midia_arquivos.dados pode ficar NULL (bytes migram pro R2). Só aplica se
+    # ainda estiver NOT NULL — com lock_timeout curto (idem: nunca travar o boot).
+    if _is_pg:
+        try:
+            _dados_nn = False
+            with db_startup.bind.connect() as conn:
+                _r = conn.execute(text(
+                    "SELECT is_nullable FROM information_schema.columns "
+                    "WHERE table_schema='public' AND table_name='midia_arquivos' "
+                    "AND column_name='dados'"
+                )).fetchone()
+            if _r is not None and _r[0] == 'NO':
+                _dados_nn = True
+            if _dados_nn:
+                with db_startup.bind.connect() as conn:
+                    conn.execute(text("SET lock_timeout = '4s'"))
+                    conn.execute(text("ALTER TABLE midia_arquivos ALTER COLUMN dados DROP NOT NULL"))
+                    conn.commit()
+                print("✅ midia_arquivos.dados agora aceita NULL")
+        except Exception as e:
+            print(f"⚠️ drop not null midia_arquivos.dados ignorado: {e}")
 
     # Cria admin padrão se não existir nenhum usuário (DEPOIS das migrações!)
     try:
