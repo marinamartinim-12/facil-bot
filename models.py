@@ -44,8 +44,8 @@ else:
         _DATABASE_URL,
         pool_pre_ping=True,
         pool_recycle=1800,   # recicla conexões a cada 30min
-        pool_size=6,
-        max_overflow=9,
+        pool_size=3,
+        max_overflow=5,      # 2 workers x 8 = 16 conexões — leve p/ banco pequeno
         pool_timeout=10,
     )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

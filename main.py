@@ -3698,6 +3698,11 @@ async def dashboard_stats(
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
     """Métricas completas para a aba Dashboard."""
+    _adm = usuario.role in (RoleEnum.admin, RoleEnum.dono)
+    _ck = ("dashboard-stats", "adm" if _adm else "func")
+    _cached = _rc_get(_ck)
+    if _cached is not None:
+        return _cached
     agora = _agora_br()
     inicio_mes_utc = datetime(agora.year, agora.month, 1, tzinfo=_TZ_BR).astimezone(timezone.utc).replace(tzinfo=None)
 
@@ -3776,7 +3781,7 @@ async def dashboard_stats(
             "total_comissao": f"R$ {total_comissao:,.2f}".replace(",","X").replace(".",",").replace("X","."),
         }
 
-    return {
+    return _rc_set(_ck, {
         "mes": f"{agora.month:02d}/{agora.year}",
         "total_mes": total_mes,
         "por_origem": por_origem,
@@ -3791,7 +3796,7 @@ async def dashboard_stats(
         "faixa_atingida": faixa_atingida,
         "ranking": ranking,
         "tarja": tarja,
-    }
+    }, ttl=60)
 
 
 @app.get("/api/stats")
@@ -6265,6 +6270,10 @@ async def conversas_paradas_minhas(db: Session = Depends(get_db),
                                    usuario: Usuario = Depends(obter_usuario_atual)):
     """Conversas paradas (esperando resposta) acima do limite — para o alerta no topo.
     Funcionária vê as dela; admin vê todas."""
+    _ck = ("conv-paradas-minhas", usuario.id)
+    _cached = _rc_get(_ck)
+    if _cached is not None:
+        return _cached
     from sqlalchemy import func
     cfg = db.query(Configuracao).filter(Configuracao.chave == "parada_alerta_min").first()
     limite_min = int(cfg.valor) if (cfg and cfg.valor and cfg.valor.isdigit()) else 30
@@ -6302,7 +6311,7 @@ async def conversas_paradas_minhas(db: Session = Depends(get_db),
             "espera": _duracao_str(espera_s),
         })
     itens.sort(key=lambda x: x["espera_s"], reverse=True)
-    return {"limite_min": limite_min, "itens": itens}
+    return _rc_set(_ck, {"limite_min": limite_min, "itens": itens}, ttl=45)
 
 
 @app.get("/api/relatorio/tempo-resposta")
