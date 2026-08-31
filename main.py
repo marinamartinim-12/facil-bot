@@ -6387,6 +6387,32 @@ async def relatorio_tempo_resposta(
                          "aguardando": aguardando}, ttl=180)
 
 
+@app.get("/api/relatorio/motivos-perda")
+async def relatorio_motivos_perda(dias: int = 30, db: Session = Depends(get_db),
+                                  admin: Usuario = Depends(requer_admin)):
+    """Contagem dos MOTIVOS de perda reais (informados pela equipe ou pela IA).
+    Agrupa pela CATEGORIA (parte antes do ' — '); dias=0 = todo o período."""
+    _ck = ("motivos-perda", dias)
+    _cached = _rc_get(_ck)
+    if _cached is not None:
+        return _cached
+    q = db.query(Lead.motivo_perda).filter(
+        Lead.status == StatusLeadEnum.perdido.value,
+        Lead.ignorar_relatorios.isnot(True))
+    if dias and dias > 0:
+        desde = datetime.utcnow() - timedelta(days=min(dias, 3650))
+        q = q.filter(Lead.atualizado_em >= desde)
+    from collections import Counter
+    cont = Counter()
+    total = 0
+    for (mp,) in q.all():
+        total += 1
+        cat = (mp.split(" — ")[0].strip() if mp else "Sem motivo informado") or "Sem motivo informado"
+        cont[cat] += 1
+    motivos = [{"motivo": k, "qtd": v} for k, v in cont.most_common()]
+    return _rc_set(_ck, {"dias": dias, "total": total, "motivos": motivos}, ttl=180)
+
+
 @app.get("/api/relatorio/volume-api")
 async def relatorio_volume_api(db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
     """Mede o volume dos últimos 30 dias e estima o custo na API Oficial do WhatsApp.

@@ -1182,6 +1182,7 @@
           <button class="rel-subtab" data-sub="marketing" onclick="showRelSub('marketing')">📣 Marketing</button>
           <button class="rel-subtab" data-sub="equipe" onclick="showRelSub('equipe')">👥 Equipe</button>
           <button class="rel-subtab" data-sub="vendas" onclick="showRelSub('vendas')">💰 Vendas</button>
+          <button class="rel-subtab" data-sub="comportamento" onclick="showRelSub('comportamento')">📊 Comportamento</button>
           <button class="rel-subtab" data-sub="sistema" onclick="showRelSub('sistema')">⚙️ Sistema</button>
         </div>
 
@@ -1509,6 +1510,25 @@
           </div>
           <p style="font-size:.78rem;color:var(--muted);margin:0 0 .75rem">Quanto a equipe demora pra dar a 1ª resposta depois que a IA passou o lead — contando só horário comercial (Seg–Sex 9–18h, Sáb 9–13h). Últimos 30 dias.</p>
           <div id="relRespostaBody">
+            <div style="text-align:center;padding:1.2rem;color:var(--muted)">Carregando…</div>
+          </div>
+        </div>
+
+        <!-- ── COMPORTAMENTO DOS CLIENTES ── -->
+        <div class="rel-card admin-only" data-relgrupo="comportamento" id="relComportCard">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem;flex-wrap:wrap;gap:.5rem">
+            <h3 style="margin:0">📊 Comportamento dos Clientes</h3>
+            <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
+              <select id="filtroComportPeriodo" onchange="carregarComportamento()" style="border:1px solid var(--border);border-radius:8px;padding:.35rem .7rem;font-size:.82rem;outline:none">
+                <option value="30">Últimos 30 dias</option>
+                <option value="90">Últimos 90 dias</option>
+                <option value="tudo">Tudo</option>
+              </select>
+              <button onclick="carregarComportamento()" class="btn btn-sm btn-outline" style="padding:.35rem .9rem">🔄 Atualizar</button>
+            </div>
+          </div>
+          <p style="font-size:.78rem;color:var(--muted);margin:0 0 .75rem">Visão dos leads que entram: quanto a equipe demora pra dar a 1ª resposta e por que os leads são perdidos — motivos reais informados pela equipe e pela IA.</p>
+          <div id="relComportBody">
             <div style="text-align:center;padding:1.2rem;color:var(--muted)">Carregando…</div>
           </div>
         </div>
@@ -4452,6 +4472,7 @@
     await carregarFluxoPropostas();
     await carregarRelatorioPerfil();
     await carregarTempoResposta();
+    await carregarComportamento();
     await carregarVolumeApi();
     await carregarLeadsCalendario();
   }
@@ -5173,6 +5194,52 @@
         tabela = '<p style="font-size:.82rem;color:var(--muted);text-align:center;padding:.8rem">Nenhuma resposta registrada no período.</p>';
       }
       body.innerHTML = cards + tabela;
+    } catch {
+      body.innerHTML = '<div style="text-align:center;padding:1.2rem;color:#991b1b">Erro ao carregar.</div>';
+    }
+  }
+
+  async function carregarComportamento() {
+    const card = document.getElementById('relComportCard');
+    if (!card) return;
+    if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
+    const body = document.getElementById('relComportBody');
+    const sel = document.getElementById('filtroComportPeriodo')?.value || '30';
+    const diasTempo = (sel === 'tudo') ? '180' : sel;   // tempo-resposta aceita no máx 180
+    const diasMot = (sel === 'tudo') ? '0' : sel;        // motivos: 0 = tudo
+    try {
+      const [rt, rm] = await Promise.all([
+        fetch('/api/relatorio/tempo-resposta?dias=' + diasTempo),
+        fetch('/api/relatorio/motivos-perda?dias=' + diasMot)
+      ]);
+      const t = rt.ok ? await rt.json() : { geral: {} };
+      const mp = rm.ok ? await rm.json() : { total: 0, motivos: [] };
+      const media = (t.geral && t.geral.media) || '—';
+      const motivos = mp.motivos || [];
+      const totalP = mp.total || 0;
+      const maxq = motivos.reduce((a, x) => Math.max(a, x.qtd), 0) || 1;
+      const cores = ['#dc2626','#ea580c','#d97706','#7c3aed','#0891b2','#16a34a','#64748b','#be185d'];
+      const barras = motivos.length ? motivos.map((x, i) => `
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.45rem">
+          <div style="width:200px;font-size:.8rem;color:var(--navy);flex-shrink:0;line-height:1.2">${esc(x.motivo)}</div>
+          <div style="flex:1;background:#f1f5f9;border-radius:6px;overflow:hidden;height:22px;min-width:60px">
+            <div style="width:${Math.round(x.qtd / maxq * 100)}%;height:100%;background:${cores[i % cores.length]};min-width:3px"></div>
+          </div>
+          <div style="width:40px;text-align:right;font-weight:800;color:var(--navy)">${x.qtd}</div>
+        </div>`).join('') : '<p style="font-size:.82rem;color:var(--muted);text-align:center;padding:.8rem">Nenhum lead perdido no período (ou ainda sem motivo registrado — os motivos passam a ser gravados a partir de agora).</p>';
+      body.innerHTML = `
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem">
+          <div style="flex:1;min-width:150px;text-align:center;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:.7rem">
+            <div style="font-size:.68rem;text-transform:uppercase;color:#1e40af;font-weight:700">⏱️ Tempo médio 1ª resposta</div>
+            <div style="font-size:1.3rem;font-weight:800;color:#1d4ed8">${esc(media)}</div>
+          </div>
+          <div style="flex:1;min-width:150px;text-align:center;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:.7rem">
+            <div style="font-size:.68rem;text-transform:uppercase;color:#991b1b;font-weight:700">❌ Leads perdidos</div>
+            <div style="font-size:1.3rem;font-weight:800;color:#dc2626">${totalP}</div>
+          </div>
+        </div>
+        <h4 style="margin:.2rem 0 .7rem;font-size:.9rem;color:var(--navy)">Motivos da perda</h4>
+        ${barras}`;
     } catch {
       body.innerHTML = '<div style="text-align:center;padding:1.2rem;color:#991b1b">Erro ao carregar.</div>';
     }
