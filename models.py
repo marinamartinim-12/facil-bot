@@ -118,6 +118,7 @@ class Lead(Base):
     data_nascimento = Column(String(10), nullable=True)
     carro_interesse = Column(String(200), nullable=True)
     restricao = Column(String(10), nullable=True)   # SPC/Serasa informado pelo cliente: "sim" | "não" | None
+    motivo_perda = Column(String(400), nullable=True)  # motivo informado ao mover p/ Perdido (categoria — detalhe)
     modalidade = Column(String(20), default=ModalidadeEnum.indefinido)
     status = Column(String(30), default=StatusLeadEnum.em_atendimento)
     estado_conversa = Column(String(40), default=EstadoConversaEnum.inicio)

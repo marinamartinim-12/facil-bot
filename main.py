@@ -250,6 +250,7 @@ async def _enviar_followups():
                 # 3º follow-up enviado → marca como Perdido automaticamente
                 if tentativa == 2:
                     lead.status = StatusLeadEnum.perdido
+                    lead.motivo_perda = "Movido pela IA — sem resposta (3 follow-ups)"
                     print(f"🔴 Lead #{lead.id} marcado como Perdido após 3 follow-ups sem resposta")
 
                 db.commit()
@@ -439,6 +440,7 @@ async def startup():
         ("leads",           "carros_proposta",    "TEXT"),
         ("leads",           "email",              "VARCHAR(150)"),
         ("leads",           "restricao",          "VARCHAR(10)"),
+        ("leads",           "motivo_perda",       "VARCHAR(400)"),
         ("parceiros",       "nome_agenda",        "VARCHAR(200)"),
         ("parceiros",       "operadora_id",       "INTEGER"),
         ("agendamentos",    "resultado",          "TEXT"),
@@ -2063,6 +2065,12 @@ async def mover_lead(
     era_fechado = lead.status == StatusLeadEnum.fechado.value
     de_status = lead.status
     lead.status = novo_status
+    # Ao mover para Perdido, registra o motivo informado pela atendente (categoria + detalhe)
+    if novo_status == StatusLeadEnum.perdido.value:
+        _mp = (body.get("motivo_perda") or "").strip()
+        _det = (body.get("motivo_perda_detalhe") or "").strip()
+        if _mp:
+            lead.motivo_perda = f"{_mp} — {_det}" if _det else _mp
     if novo_status == StatusLeadEnum.assumido and not lead.atribuido_para:
         lead.atribuido_para = usuario.id
         lead.assumido_em = datetime.utcnow()
@@ -7972,6 +7980,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "data_nascimento": l.data_nascimento or "—",
         "carro_interesse": l.carro_interesse or "—",
         "restricao": l.restricao or "—",
+        "motivo_perda": l.motivo_perda or None,
         "modalidade": l.modalidade,
         "status": l.status,
         "estado_conversa": l.estado_conversa,

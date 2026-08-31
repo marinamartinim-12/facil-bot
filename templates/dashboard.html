@@ -2227,6 +2227,48 @@
     await moverLead(lead.id, colKey, false);
   }
 
+  // Janela de motivo ao mover um lead para "Perdido" (escolher é obrigatório; detalhe opcional).
+  // Resolve com {motivo, detalhe} ou null se cancelar.
+  function pedirMotivoPerda() {
+    return new Promise(resolve => {
+      const motivos = ['Pré-análise recusada','Proposta recusada','Não respondeu','Juros alto','Não aprova tudo que o cliente precisa','Desistência do cliente'];
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:100000;display:flex;align-items:center;justify-content:center;padding:1rem';
+      ov.innerHTML = `
+        <div style="background:#fff;border-radius:14px;max-width:430px;width:100%;padding:1.3rem 1.4rem;box-shadow:0 12px 44px rgba(0,0,0,.28)">
+          <h3 style="margin:0 0 .2rem;font-size:1.05rem;color:#991b1b">❌ Marcar como Perdido</h3>
+          <p style="margin:0 0 .85rem;font-size:.82rem;color:#64748b">Selecione o motivo (obrigatório):</p>
+          <div id="mpOpts" style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.75rem"></div>
+          <textarea id="mpDet" placeholder="Detalhe (opcional)…" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:8px;padding:.5rem .6rem;font-size:.85rem;resize:vertical;min-height:50px"></textarea>
+          <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.9rem">
+            <button id="mpCancel" type="button" style="border:1px solid #e2e8f0;background:#fff;border-radius:8px;padding:.45rem .95rem;cursor:pointer;font-size:.85rem">Cancelar</button>
+            <button id="mpOk" type="button" style="border:none;background:#dc2626;color:#fff;border-radius:8px;padding:.45rem 1.1rem;cursor:pointer;font-size:.85rem">Confirmar</button>
+          </div>
+        </div>`;
+      document.body.appendChild(ov);
+      let escolhido = null;
+      const box = ov.querySelector('#mpOpts');
+      motivos.forEach(m => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.textContent = m;
+        b.style.cssText = 'text-align:left;border:1px solid #e2e8f0;background:#f8fafc;border-radius:8px;padding:.5rem .7rem;font-size:.85rem;cursor:pointer;color:#0f172a';
+        b.onclick = () => {
+          escolhido = m;
+          box.querySelectorAll('button').forEach(x => { x.style.background='#f8fafc'; x.style.borderColor='#e2e8f0'; x.style.color='#0f172a'; });
+          b.style.background='#fee2e2'; b.style.borderColor='#dc2626'; b.style.color='#991b1b';
+        };
+        box.appendChild(b);
+      });
+      const fim = v => { try { document.body.removeChild(ov); } catch (e) {} resolve(v); };
+      ov.querySelector('#mpCancel').onclick = () => fim(null);
+      ov.querySelector('#mpOk').onclick = () => {
+        if (!escolhido) { alert('Escolha um motivo.'); return; }
+        fim({ motivo: escolhido, detalhe: (ov.querySelector('#mpDet').value || '').trim() });
+      };
+      ov.onclick = e => { if (e.target === ov) fim(null); };
+    });
+  }
+
   async function moverLead(id, novoStatus, confirmar = true) {
     // Não-admins não podem devolver para Atendimento IA
     if (novoStatus === 'em_atendimento' && currentUser.role !== 'admin') {
@@ -2239,18 +2281,23 @@
       abrirModalFecharContrato(id, lead || {});
       return;
     }
-    if (confirmar) {
+    let _perda = null;
+    if (novoStatus === 'perdido') {
+      _perda = await pedirMotivoPerda();
+      if (!_perda) return;   // cancelou → não move
+    } else if (confirmar) {
       const labels = {
         assumido:'Assumir este lead?', pre_analise:'Mover para Pré-análise?', proposta_enviada:'Marcar proposta como enviada?',
-        perdido:'Marcar como perdido?',
         qualificado:'Mover para Qualificado?', em_atendimento:'Devolver para Atendimento IA?'
       };
       if (!confirm(labels[novoStatus] || 'Confirmar?')) return;
     }
     try {
+      const _body = { status: novoStatus };
+      if (_perda) { _body.motivo_perda = _perda.motivo; _body.motivo_perda_detalhe = _perda.detalhe; }
       const r = await fetch(`/api/leads/${id}/mover`, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({status: novoStatus})
+        body: JSON.stringify(_body)
       });
       if (r.ok) {
         if (novoStatus === 'assumido') {
@@ -3373,14 +3420,21 @@
       abrirModalFecharContrato(id, lead);
       return;
     }
-    const labels = {
-      assumido:'Assumir este lead?', proposta_enviada:'Marcar proposta como enviada?',
-      perdido:'Marcar como perdido?'
-    };
-    if (!confirm(labels[novoStatus] || 'Confirmar?')) return;
+    let _perda = null;
+    if (novoStatus === 'perdido') {
+      _perda = await pedirMotivoPerda();
+      if (!_perda) return;   // cancelou → não move
+    } else {
+      const labels = {
+        assumido:'Assumir este lead?', proposta_enviada:'Marcar proposta como enviada?'
+      };
+      if (!confirm(labels[novoStatus] || 'Confirmar?')) return;
+    }
+    const _body = { status: novoStatus };
+    if (_perda) { _body.motivo_perda = _perda.motivo; _body.motivo_perda_detalhe = _perda.detalhe; }
     const r = await fetch(`/api/leads/${id}/mover`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({status: novoStatus})
+      body: JSON.stringify(_body)
     });
     if (r.ok) {
       if (novoStatus === 'assumido') {
