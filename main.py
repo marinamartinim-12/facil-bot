@@ -2261,6 +2261,23 @@ async def rascunho_ia(lead_id: int, tipo: str = "auto", db: Session = Depends(ge
 # Cache em memória do briefing por (usuario, dia, período): gera no MÁX 2x/dia/operadora
 _BRIEFING_CACHE = {}
 
+# Cache TTL simples para relatórios pesados (por worker). Relatórios não precisam ser
+# em tempo real ao segundo; isso evita reprocessar milhares de mensagens a cada abertura
+# da tela, a cada polling e quando vários admins abrem juntos.
+_REPORT_CACHE = {}  # chave -> (expira_datetime, valor)
+def _rc_get(chave):
+    v = _REPORT_CACHE.get(chave)
+    if v and v[0] > datetime.utcnow():
+        return v[1]
+    return None
+def _rc_set(chave, valor, ttl=180):
+    _REPORT_CACHE[chave] = (datetime.utcnow() + timedelta(seconds=ttl), valor)
+    if len(_REPORT_CACHE) > 300:
+        _ag = datetime.utcnow()
+        for _k in [k for k, (e, _v) in list(_REPORT_CACHE.items()) if e <= _ag]:
+            _REPORT_CACHE.pop(_k, None)
+    return valor
+
 
 @app.get("/api/briefing-dia")
 async def briefing_dia(db: Session = Depends(get_db),
@@ -6289,6 +6306,10 @@ async def relatorio_tempo_resposta(
     """Tempo até a 1ª resposta humana (após handoff da IA), contando só horário comercial.
     Mensagens da equipe são salvas com prefixo '[Nome]:' — é assim que distinguimos da IA."""
     from collections import defaultdict
+    _ck = ("tempo-resposta", dias)
+    _cached = _rc_get(_ck)
+    if _cached is not None:
+        return _cached
     desde = datetime.utcnow() - timedelta(days=max(1, min(dias, 180)))
     msgs = (db.query(MensagemConversa)
             .filter(MensagemConversa.criado_em >= desde)
@@ -6319,18 +6340,18 @@ async def relatorio_tempo_resposta(
             continue   # admin/dona não conta (evita distorcer a média da equipe)
         tempos.append((seg, nome))
 
-    # Leads qualificados que ainda não tiveram nenhuma 1ª resposta humana
+    # Leads qualificados que ainda não tiveram nenhuma 1ª resposta humana.
+    # (1 consulta em vez de N: pega os telefones que JÁ têm resposta humana e conta o resto.)
+    quali_tels = [t for (t,) in db.query(Lead.telefone).filter(
+        Lead.status == StatusLeadEnum.qualificado,
+        Lead.ignorar_relatorios.isnot(True)).all()]
     aguardando = 0
-    quali = db.query(Lead).filter(Lead.status == StatusLeadEnum.qualificado,
-                                  Lead.ignorar_relatorios.isnot(True)).all()
-    for l in quali:
-        tem_humano = (db.query(MensagemConversa)
-                      .filter(MensagemConversa.telefone == l.telefone,
-                              MensagemConversa.role == "assistant",
-                              MensagemConversa.conteudo.like("[%"))
-                      .first())
-        if not tem_humano:
-            aguardando += 1
+    if quali_tels:
+        com_humano = {t for (t,) in db.query(MensagemConversa.telefone).filter(
+            MensagemConversa.telefone.in_(quali_tels),
+            MensagemConversa.role == "assistant",
+            MensagemConversa.conteudo.like("[%")).distinct().all()}
+        aguardando = sum(1 for t in quali_tels if t not in com_humano)
 
     def _agg(lista_seg):
         if not lista_seg:
@@ -6354,7 +6375,8 @@ async def relatorio_tempo_resposta(
                              "media_s": a["media_s"], "mediana": a["mediana"]})
     funcionarias.sort(key=lambda f: f["media_s"])
 
-    return {"dias": dias, "geral": geral, "funcionarias": funcionarias, "aguardando": aguardando}
+    return _rc_set(_ck, {"dias": dias, "geral": geral, "funcionarias": funcionarias,
+                         "aguardando": aguardando}, ttl=180)
 
 
 @app.get("/api/relatorio/volume-api")
