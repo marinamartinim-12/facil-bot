@@ -3186,6 +3186,18 @@
     _desenharCarros();
   }
 
+  // Financiamento por carro: status possíveis das propostas (valor, rótulo, cor de fundo, cor do texto)
+  const _STPROP = [
+    ['enviada','Enviada','#e0e7ff','#3730a3'],
+    ['pre_aprovada','Pré-aprovada','#fef9c3','#854d0e'],
+    ['aprovada','Aprovada','#dcfce7','#166534'],
+    ['aprovada_parcial','Aprovada parcial','#ffedd5','#9a3412'],
+    ['recusada','Recusada','#fee2e2','#991b1b'],
+  ];
+  function _corStatus(st){ const f = _STPROP.find(x => x[0] === st) || _STPROP[0]; return { bg: f[2], fg: f[3] }; }
+  function _parseR(s){ if (s == null || s === '') return null; const n = parseFloat(String(s).replace(/[^\d,.-]/g,'').replace(/\.(?=\d{3}\b)/g,'').replace(',','.')); return isFinite(n) ? n : null; }
+  function _fmtR(n){ return (n == null) ? '' : n.toLocaleString('pt-BR', { style:'currency', currency:'BRL' }); }
+
   function _desenharCarros() {
     const el = document.getElementById('modalCarrosLista');
     if (!el) return;
@@ -3193,10 +3205,27 @@
       el.innerHTML = '<span style="font-size:.78rem;color:var(--muted);font-style:italic">Nenhum carro adicionado ainda.</span>';
       return;
     }
+    const inp = 'border:1px solid var(--border);border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none';
     el.innerHTML = _carrosLead.map((c, i) => {
-      const esc1 = s => esc(s || '');
+      const esc1 = s => esc(s == null ? '' : String(s));
       const escolhido = !!c.escolhido;
       const anos = [c.ano_fab, c.ano_modelo].filter(Boolean).join('/') || c.ano || '';
+      const props = Array.isArray(c.propostas) ? c.propostas : [];
+      const propsHtml = props.length ? props.map((p, j) => {
+        const cor = _corStatus(p.status);
+        return `<div style="display:grid;grid-template-columns:1fr auto;gap:.3rem;align-items:center;margin-bottom:.3rem">
+          <div style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">
+            <input value="${esc1(p.banco)}" oninput="_setProp(${i},${j},'banco',this.value)" placeholder="Banco" style="${inp};flex:1;min-width:90px">
+            <select onchange="_setPropStatus(${i},${j},this.value)" style="${inp};font-weight:700;background:${cor.bg};color:${cor.fg}">
+              ${_STPROP.map(s => `<option value="${s[0]}" ${p.status === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}
+            </select>
+            <input value="${esc1(p.valor_aprovado)}" oninput="_setProp(${i},${j},'valor_aprovado',this.value)" placeholder="Aprovado R$" style="${inp};width:98px">
+            <input value="${esc1(p.qtd_parcelas)}" oninput="_setProp(${i},${j},'qtd_parcelas',this.value.replace(/\D/g,''))" placeholder="Parc." inputmode="numeric" style="${inp};width:46px;text-align:center">
+            <input value="${esc1(p.valor_parcela)}" oninput="_setProp(${i},${j},'valor_parcela',this.value)" placeholder="Parcela R$" style="${inp};width:98px">
+          </div>
+          <button onclick="_delProp(${i},${j})" title="Remover banco" class="btn btn-sm" style="padding:.15rem .4rem;font-size:.72rem;background:#fee2e2;color:#991b1b">✕</button>
+        </div>`;
+      }).join('') : '<div style="font-size:.74rem;color:var(--muted);font-style:italic;margin-bottom:.3rem">Nenhuma proposta ainda.</div>';
       return `
       <div style="border:1px solid ${escolhido?'#16a34a':'#e2e8f0'};border-left:3px solid ${escolhido?'#16a34a':'#cbd5e1'};border-radius:8px;background:${escolhido?'#f0fdf4':'#fff'};padding:.5rem .65rem">
         <div style="display:flex;align-items:flex-start;gap:.5rem">
@@ -3210,9 +3239,53 @@
             <button onclick="removerCarro(${i})" title="Remover" class="btn btn-sm" style="padding:.15rem .4rem;font-size:.72rem;background:#fee2e2;color:#991b1b">✕</button>
           </div>
         </div>
+        <div style="margin-top:.5rem;border-top:1px dashed #e2e8f0;padding-top:.45rem">
+          <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:.35rem">💳 Financiamento</div>
+          <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.45rem">
+            <label style="flex:1;min-width:88px;font-size:.66rem;color:#64748b">Valor do carro
+              <input value="${esc1(c.valor_carro)}" oninput="_setCarVal(${i},'valor_carro',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
+            <label style="flex:1;min-width:88px;font-size:.66rem;color:#64748b">Entrada
+              <input value="${esc1(c.valor_entrada)}" oninput="_setCarVal(${i},'valor_entrada',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
+            <label style="flex:1;min-width:88px;font-size:.66rem;color:#64748b">Financiado
+              <input id="finVal${i}" value="${esc1(c.valor_financiado)}" oninput="_setCarVal(${i},'valor_financiado',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem;font-weight:700;color:#0d2b4e"></label>
+          </div>
+          <div style="font-size:.66rem;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:.3rem">Propostas aos bancos</div>
+          ${propsHtml}
+          <button onclick="_addProp(${i})" class="btn btn-sm" style="background:#0d2b4e;color:#fff;padding:.2rem .65rem;font-size:.74rem;margin-top:.1rem">➕ Adicionar banco</button>
+        </div>
       </div>`;
     }).join('');
   }
+
+  // ——— Handlers do financiamento por carro (auto-save; edição de texto não redesenha p/ não perder o foco) ———
+  let _saveCarTO = null;
+  function _saveCarrosDeb() {
+    clearTimeout(_saveCarTO);
+    _saveCarTO = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/leads/${modalLeadId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ carros_proposta: _carrosLead }),
+        });
+        if (r.ok) { const lead = await r.json(); window._modalLeadData = lead; const idx = allLeads.findIndex(l => l.id === modalLeadId); if (idx !== -1) allLeads[idx] = lead; }
+      } catch {}
+    }, 800);
+  }
+  function _setCarVal(i, campo, val) {
+    _carrosLead[i][campo] = val;
+    if (campo === 'valor_carro' || campo === 'valor_entrada') {
+      const vc = _parseR(_carrosLead[i].valor_carro), ve = _parseR(_carrosLead[i].valor_entrada);
+      if (vc != null) {
+        _carrosLead[i].valor_financiado = _fmtR(Math.max(0, vc - (ve || 0)));
+        const el = document.getElementById('finVal' + i); if (el) el.value = _carrosLead[i].valor_financiado;
+      }
+    }
+    _saveCarrosDeb();
+  }
+  function _setProp(i, j, campo, val) { if (!_carrosLead[i].propostas) _carrosLead[i].propostas = []; _carrosLead[i].propostas[j][campo] = val; _saveCarrosDeb(); }
+  function _setPropStatus(i, j, val) { _carrosLead[i].propostas[j].status = val; _desenharCarros(); _saveCarrosDeb(); }
+  function _addProp(i) { if (!_carrosLead[i].propostas) _carrosLead[i].propostas = []; _carrosLead[i].propostas.push({ banco: '', status: 'enviada', valor_aprovado: '', qtd_parcelas: '', valor_parcela: '' }); _desenharCarros(); }
+  function _delProp(i, j) { _carrosLead[i].propostas.splice(j, 1); _desenharCarros(); _saveCarrosDeb(); }
 
   async function buscarPlaca() {
     const placa = document.getElementById('carPlaca').value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
