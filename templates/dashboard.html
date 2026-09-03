@@ -3194,6 +3194,8 @@
     ['aprovada_parcial','Aprovada parcial','#ffedd5','#9a3412'],
     ['recusada','Recusada','#fee2e2','#991b1b'],
   ];
+  // Bancos sugeridos (a loja pode inserir outro pelo "+ Inserir manual").
+  const _BANCOS = ['Banco Volks','BV','C6','Daycoval','Itaú','Mercado Livre','Omni','Pan','Safra','Santander','Sicredi'];
   function _corStatus(st){ const f = _STPROP.find(x => x[0] === st) || _STPROP[0]; return { bg: f[2], fg: f[3] }; }
   function _parseR(s){ if (s == null || s === '') return null; const n = parseFloat(String(s).replace(/[^\d,.-]/g,'').replace(/\.(?=\d{3}\b)/g,'').replace(',','.')); return isFinite(n) ? n : null; }
   function _fmtR(n){ return (n == null) ? '' : n.toLocaleString('pt-BR', { style:'currency', currency:'BRL' }); }
@@ -3215,13 +3217,19 @@
         const cor = _corStatus(p.status);
         return `<div style="display:grid;grid-template-columns:1fr auto;gap:.3rem;align-items:center;margin-bottom:.3rem">
           <div style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">
-            <input value="${esc1(p.banco)}" oninput="_setProp(${i},${j},'banco',this.value)" placeholder="Banco" style="${inp};flex:1;min-width:90px">
+            <select onchange="_setBanco(${i},${j},this.value)" style="${inp};flex:1;min-width:120px">
+              <option value="" ${!p.banco?'selected':''}>Banco…</option>
+              ${_BANCOS.map(b => `<option value="${b}" ${p.banco===b?'selected':''}>${b}</option>`).join('')}
+              ${p.banco && !_BANCOS.includes(p.banco) ? `<option value="${esc1(p.banco)}" selected>${esc1(p.banco)}</option>` : ''}
+              <option value="__outro__">➕ Inserir manual…</option>
+            </select>
             <select onchange="_setPropStatus(${i},${j},this.value)" style="${inp};font-weight:700;background:${cor.bg};color:${cor.fg}">
               ${_STPROP.map(s => `<option value="${s[0]}" ${p.status === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}
             </select>
             <input value="${esc1(p.valor_aprovado)}" oninput="_setProp(${i},${j},'valor_aprovado',this.value)" placeholder="Aprovado R$" style="${inp};width:98px">
             <input value="${esc1(p.qtd_parcelas)}" oninput="_setProp(${i},${j},'qtd_parcelas',this.value.replace(/\D/g,''))" placeholder="Parc." inputmode="numeric" style="${inp};width:46px;text-align:center">
             <input value="${esc1(p.valor_parcela)}" oninput="_setProp(${i},${j},'valor_parcela',this.value)" placeholder="Parcela R$" style="${inp};width:98px">
+            <input value="${esc1(p.retorno)}" oninput="_setProp(${i},${j},'retorno',this.value)" placeholder="R (retorno)" title="Retorno — comissão da loja" style="${inp};width:98px">
           </div>
           <button onclick="_delProp(${i},${j})" title="Remover banco" class="btn btn-sm" style="padding:.15rem .4rem;font-size:.72rem;background:#fee2e2;color:#991b1b">✕</button>
         </div>`;
@@ -3245,7 +3253,7 @@
             <label style="flex:1;min-width:88px;font-size:.66rem;color:#64748b">Valor do carro
               <input value="${esc1(c.valor_carro)}" oninput="_setCarVal(${i},'valor_carro',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
             <label style="flex:1;min-width:88px;font-size:.66rem;color:#64748b">Entrada
-              <input value="${esc1(c.valor_entrada)}" oninput="_setCarVal(${i},'valor_entrada',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
+              <input id="entVal${i}" value="${esc1(c.valor_entrada)}" oninput="_setCarVal(${i},'valor_entrada',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
             <label style="flex:1;min-width:88px;font-size:.66rem;color:#64748b">Financiado
               <input id="finVal${i}" value="${esc1(c.valor_financiado)}" oninput="_setCarVal(${i},'valor_financiado',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem;font-weight:700;color:#0d2b4e"></label>
           </div>
@@ -3273,16 +3281,36 @@
   }
   function _setCarVal(i, campo, val) {
     _carrosLead[i][campo] = val;
-    if (campo === 'valor_carro' || campo === 'valor_entrada') {
-      const vc = _parseR(_carrosLead[i].valor_carro), ve = _parseR(_carrosLead[i].valor_entrada);
-      if (vc != null) {
-        _carrosLead[i].valor_financiado = _fmtR(Math.max(0, vc - (ve || 0)));
-        const el = document.getElementById('finVal' + i); if (el) el.value = _carrosLead[i].valor_financiado;
-      }
+    const c = _carrosLead[i];
+    const vc = _parseR(c.valor_carro), ve = _parseR(c.valor_entrada), vf = _parseR(c.valor_financiado);
+    const setF = (k, n) => {
+      c[k] = _fmtR(Math.max(0, n));
+      const el = document.getElementById((k === 'valor_entrada' ? 'entVal' : 'finVal') + i);
+      if (el) el.value = c[k];
+    };
+    if (campo === 'valor_entrada') {                    // mexeu na entrada → recalcula o financiado
+      if (vc != null) setF('valor_financiado', vc - (ve || 0));
+    } else if (campo === 'valor_financiado') {          // mexeu no financiado → recalcula a entrada
+      if (vc != null) setF('valor_entrada', vc - (vf || 0));
+    } else if (campo === 'valor_carro' && vc != null) { // mudou o carro → recalcula o que der (mantém a entrada)
+      if (ve != null) setF('valor_financiado', vc - ve);
+      else if (vf != null) setF('valor_entrada', vc - vf);
     }
     _saveCarrosDeb();
   }
   function _setProp(i, j, campo, val) { if (!_carrosLead[i].propostas) _carrosLead[i].propostas = []; _carrosLead[i].propostas[j][campo] = val; _saveCarrosDeb(); }
+  function _setBanco(i, j, val) {
+    if (val === '__outro__') {
+      const nome = (prompt('Nome do banco:') || '').trim();
+      _carrosLead[i].propostas[j].banco = nome;   // cancelou/vazio → volta pro "Banco…"
+      _desenharCarros();
+      if (nome) _saveCarrosDeb();
+      return;
+    }
+    _carrosLead[i].propostas[j].banco = val;
+    _desenharCarros();   // redesenha p/ um banco manual persistir como opção
+    _saveCarrosDeb();
+  }
   function _setPropStatus(i, j, val) { _carrosLead[i].propostas[j].status = val; _desenharCarros(); _saveCarrosDeb(); }
   function _addProp(i) { if (!_carrosLead[i].propostas) _carrosLead[i].propostas = []; _carrosLead[i].propostas.push({ banco: '', status: 'enviada', valor_aprovado: '', qtd_parcelas: '', valor_parcela: '' }); _desenharCarros(); }
   function _delProp(i, j) { _carrosLead[i].propostas.splice(j, 1); _desenharCarros(); _saveCarrosDeb(); }
