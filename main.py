@@ -1011,7 +1011,7 @@ async def _salvar_imagem(url: str, db=None) -> str | None:
                 ext = "jpg"
             filename = f"{uuid.uuid4().hex}.{ext}"
             if db is not None:
-                _guardar_blob(db, filename, "imagem", resp.content, mime=ct, subdir="imagens")
+                await asyncio.to_thread(_guardar_blob, db, filename, "imagem", resp.content, mime=ct, subdir="imagens")
             else:
                 os.makedirs("/app/imagens", exist_ok=True)
                 with open(f"/app/imagens/{filename}", "wb") as f:
@@ -1047,7 +1047,7 @@ async def _salvar_documento(url: str, nome_original: str, db=None) -> str | None
                 ext = "bin"
             filename = f"{uuid.uuid4().hex}.{ext}"
             if db is not None:
-                _guardar_blob(db, filename, "documento", resp.content,
+                await asyncio.to_thread(_guardar_blob, db, filename, "documento", resp.content,
                               nome_original=nome_display, mime=ct, subdir="documentos")
             else:
                 os.makedirs("/app/documentos", exist_ok=True)
@@ -1085,13 +1085,13 @@ async def _salvar_audio_cliente(telefone: str, audio_url: str, db) -> str | None
             mp3 = await _transcode_audio(resp.content, "mp3")
             if mp3:
                 filename = f"{audio_id}.mp3"
-                _guardar_blob(db, filename, "audio", mp3, mime="audio/mpeg", subdir="audios")
+                await asyncio.to_thread(_guardar_blob, db, filename, "audio", mp3, mime="audio/mpeg", subdir="audios")
             else:
                 # Fallback: guarda o original se o ffmpeg não estiver disponível
                 ct = resp.headers.get("content-type", "audio/ogg")
                 ext = "ogg" if "ogg" in ct else ("mp3" if "mp3" in ct or "mpeg" in ct else "webm")
                 filename = f"{audio_id}.{ext}"
-                _guardar_blob(db, filename, "audio", resp.content, mime=ct, subdir="audios")
+                await asyncio.to_thread(_guardar_blob, db, filename, "audio", resp.content, mime=ct, subdir="audios")
             print(f"🎙️ Áudio do cliente salvo: {filename}")
             return f"[AUDIO:{filename}]"
         except Exception as e:
@@ -2831,11 +2831,11 @@ async def enviar_audio_gravado(
     audio_id = uuid.uuid4().hex
     if mp3:
         audio_filename = f"{audio_id}.mp3"
-        _guardar_blob(db, audio_filename, "audio", mp3, mime="audio/mpeg", subdir="audios")
+        await asyncio.to_thread(_guardar_blob, db, audio_filename, "audio", mp3, mime="audio/mpeg", subdir="audios")
     else:
         ext = "ogg" if ogg else ("ogg" if "ogg" in mime.lower() else "webm")
         audio_filename = f"{audio_id}.{ext}"
-        _guardar_blob(db, audio_filename, "audio", (ogg or audio_bytes),
+        await asyncio.to_thread(_guardar_blob, db, audio_filename, "audio", (ogg or audio_bytes),
                       mime=("audio/ogg" if ogg else mime), subdir="audios")
 
     # Envia pelo Z-API com base64 diretamente (evita race condition de download de URL)
@@ -3136,7 +3136,7 @@ async def anexar_documento_cliente(
     ext = re.sub(r"[^a-z0-9]", "", ext) or "bin"
     filename = f"{uuid.uuid4().hex}.{ext}"
     mime = arquivo.content_type or "application/octet-stream"
-    _guardar_blob(db, filename, "documento", dados, nome_original=nome_orig, mime=mime, subdir="documentos")
+    await asyncio.to_thread(_guardar_blob, db, filename, "documento", dados, nome_original=nome_orig, mime=mime, subdir="documentos")
     doc = DocumentoCliente(lead_id=lead_id, nome=nome_orig, filename=filename,
                            mime=mime, tamanho=len(dados), enviado_por=usuario.id)
     db.add(doc)
@@ -5110,7 +5110,7 @@ async def criar_justificativa(
             ext = (nome_arq.rsplit(".", 1)[-1][:5].lower() if "." in nome_arq else "bin")
             ext = re.sub(r"[^a-z0-9]", "", ext) or "bin"
             filename = f"{uuid.uuid4().hex}.{ext}"
-            _guardar_blob(db, filename, "documento", dados, nome_original=nome_arq,
+            await asyncio.to_thread(_guardar_blob, db, filename, "documento", dados, nome_original=nome_arq,
                           mime=(arquivo.content_type or "application/octet-stream"), subdir="documentos")
     if not texto and not filename:
         raise HTTPException(400, "Escreva o motivo ou anexe o atestado.")
