@@ -3199,6 +3199,14 @@
   function _corStatus(st){ const f = _STPROP.find(x => x[0] === st) || _STPROP[0]; return { bg: f[2], fg: f[3] }; }
   function _parseR(s){ if (s == null || s === '') return null; const n = parseFloat(String(s).replace(/[^\d,.-]/g,'').replace(/\.(?=\d{3}\b)/g,'').replace(',','.')); return isFinite(n) ? n : null; }
   function _fmtR(n){ return (n == null) ? '' : n.toLocaleString('pt-BR', { style:'currency', currency:'BRL' }); }
+  function _maskMoney(v){
+    let d = String(v == null ? '' : v).replace(/\D/g, '');   // só dígitos (últimos 2 = centavos)
+    if (!d) return '';
+    d = d.replace(/^0+(?=\d)/, '');
+    while (d.length < 3) d = '0' + d;
+    const cent = d.slice(-2), int = d.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return 'R$ ' + int + ',' + cent;
+  }
 
   function _desenharCarros() {
     const el = document.getElementById('modalCarrosLista');
@@ -3226,10 +3234,10 @@
             <select onchange="_setPropStatus(${i},${j},this.value)" style="${inp};font-weight:700;background:${cor.bg};color:${cor.fg}">
               ${_STPROP.map(s => `<option value="${s[0]}" ${p.status === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}
             </select>
-            <input value="${esc1(p.valor_aprovado)}" oninput="_setProp(${i},${j},'valor_aprovado',this.value)" placeholder="Aprovado R$" style="${inp};width:98px">
+            <input value="${esc1(p.valor_aprovado)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'valor_aprovado',this.value)" placeholder="Aprovado R$" style="${inp};width:98px">
             <input value="${esc1(p.qtd_parcelas)}" oninput="_setProp(${i},${j},'qtd_parcelas',this.value.replace(/\D/g,''))" placeholder="Parc." inputmode="numeric" style="${inp};width:46px;text-align:center">
-            <input value="${esc1(p.valor_parcela)}" oninput="_setProp(${i},${j},'valor_parcela',this.value)" placeholder="Parcela R$" style="${inp};width:98px">
-            <input value="${esc1(p.retorno)}" oninput="_setProp(${i},${j},'retorno',this.value)" placeholder="R (retorno)" title="Retorno — comissão da loja" style="${inp};width:98px">
+            <input value="${esc1(p.valor_parcela)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'valor_parcela',this.value)" placeholder="Parcela R$" style="${inp};width:98px">
+            <input value="${esc1(p.retorno)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'retorno',this.value)" placeholder="R (retorno)" title="Retorno — comissão da loja" style="${inp};width:98px">
           </div>
           <button onclick="_delProp(${i},${j})" title="Remover banco" class="btn btn-sm" style="padding:.15rem .4rem;font-size:.72rem;background:#fee2e2;color:#991b1b">✕</button>
         </div>`;
@@ -3251,11 +3259,11 @@
           <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:.35rem">💳 Financiamento</div>
           <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.45rem">
             <label style="flex:1;min-width:88px;font-size:.66rem;color:#64748b">Valor do carro
-              <input value="${esc1(c.valor_carro)}" oninput="_setCarVal(${i},'valor_carro',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
+              <input value="${esc1(c.valor_carro)}" oninput="this.value=_maskMoney(this.value);_setCarVal(${i},'valor_carro',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
             <label style="flex:1;min-width:88px;font-size:.66rem;color:#64748b">Entrada
-              <input id="entVal${i}" value="${esc1(c.valor_entrada)}" oninput="_setCarVal(${i},'valor_entrada',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
+              <input id="entVal${i}" value="${esc1(c.valor_entrada)}" oninput="this.value=_maskMoney(this.value);_setCarVal(${i},'valor_entrada',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
             <label style="flex:1;min-width:88px;font-size:.66rem;color:#64748b">Financiado
-              <input id="finVal${i}" value="${esc1(c.valor_financiado)}" oninput="_setCarVal(${i},'valor_financiado',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem;font-weight:700;color:#0d2b4e"></label>
+              <input id="finVal${i}" value="${esc1(c.valor_financiado)}" oninput="this.value=_maskMoney(this.value);_setCarVal(${i},'valor_financiado',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem;font-weight:700;color:#0d2b4e"></label>
           </div>
           <div style="font-size:.66rem;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:.3rem">Propostas aos bancos</div>
           ${propsHtml}
