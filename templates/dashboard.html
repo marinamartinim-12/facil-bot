@@ -3207,6 +3207,16 @@
     const cent = d.slice(-2), int = d.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
     return 'R$ ' + int + ',' + cent;
   }
+  // Formata um valor "cheio" (ex.: "18400" ou "44699,00") como "18.400,00" (sem R$, pois o rótulo já diz (R$)).
+  function _fmtMoedaBR(v){
+    if (v == null || String(v).trim() === '') return '';
+    let s = String(v).replace(/[^\d,]/g, '');   // tira R$, espaços e pontos de milhar
+    let reais, cent;
+    if (s.includes(',')) { const p = s.split(','); reais = p[0]; cent = (p[1] + '00').slice(0, 2); }
+    else { reais = s; cent = '00'; }
+    reais = (reais.replace(/\D/g, '') || '0').replace(/^0+(?=\d)/, '');
+    return reais.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + cent;
+  }
 
   function _desenharCarros() {
     const el = document.getElementById('modalCarrosLista');
@@ -9632,13 +9642,13 @@
           <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Valor Financiado (R$)</label>
           <input type="text" id="fc_valor" placeholder="Ex: 44699,00" inputmode="decimal"
             style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
-            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db';this.value=_fmtMoedaBR(this.value)">
         </div>
         <div>
           <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Comissão (R$)</label>
           <input type="text" id="fc_comissao" placeholder="Ex: 3699,00" inputmode="decimal"
             style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
-            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db';this.value=_fmtMoedaBR(this.value)">
         </div>
       </div>
       <!-- Operadora responsável -->
@@ -9757,8 +9767,8 @@
       document.getElementById('fc_data').value = new Date().toISOString().split('T')[0];
     }
 
-    document.getElementById('fc_valor').value    = ld?.deal_valor    || '';
-    document.getElementById('fc_comissao').value = ld?.deal_comissao || '';
+    document.getElementById('fc_valor').value    = _fmtMoedaBR(ld?.deal_valor    || '');
+    document.getElementById('fc_comissao').value = _fmtMoedaBR(ld?.deal_comissao || '');
     document.getElementById('fc_retorno').value  = ld?.deal_retorno  || '';
     document.getElementById('fc_banco').value    = ld?.deal_banco    || '';
     document.getElementById('fc_conta_pg').value = ld?.deal_conta_pg || '';
