@@ -5771,18 +5771,37 @@ def _dias_horas(seg) -> str:
 
 
 @app.get("/api/relatorio/fechamentos")
-async def relatorio_fechamentos(periodo: str = "mes",
+async def relatorio_fechamentos(periodo: str = "mes", inicio: str = "", fim: str = "",
                                 db: Session = Depends(get_db),
                                 admin: Usuario = Depends(requer_admin)):
     """Quem REALMENTE fechou (pelo histórico) + tempo médio pra fechar.
     Conta pela DATA DE FECHAMENTO (evento -> 'fechado'), NÃO pela chegada: um lead que
     chegou em maio e fechou em junho conta no desempenho de junho. 'quem fechou' = quem
-    registrou o fechamento (no passado/backfill = a operadora atribuída; exato daqui pra frente)."""
+    registrou o fechamento (no passado/backfill = a operadora atribuída; exato daqui pra frente).
+    Filtra por intervalo de datas (inicio/fim = AAAA-MM-DD, BR); sem eles usa o 'periodo'."""
     from collections import defaultdict
-    desde = _inicio_periodo(periodo)
     q = db.query(HistoricoLead).filter(HistoricoLead.para_status == StatusLeadEnum.fechado.value)
-    if desde is not None:
-        q = q.filter(HistoricoLead.quando >= desde)
+    if inicio or fim:
+        from datetime import timezone as _tz
+        _br = _agora_br()
+        _ini = inicio or f"{_br.year:04d}-{_br.month:02d}-01"
+        _fim = fim or _br.strftime("%Y-%m-%d")
+        def _br_utc(s, mais_um_dia=False):
+            y, m, d = (int(x) for x in s.split("-"))
+            dt = datetime(y, m, d, tzinfo=_TZ_BR)
+            if mais_um_dia:
+                dt = dt + timedelta(days=1)
+            return dt.astimezone(_tz.utc).replace(tzinfo=None)
+        try:
+            _iu = _br_utc(_ini)
+            _fu = _br_utc(_fim, mais_um_dia=True)   # inclui o dia 'fim' inteiro
+        except Exception:
+            raise HTTPException(status_code=400, detail="Datas inválidas (use AAAA-MM-DD).")
+        q = q.filter(HistoricoLead.quando >= _iu, HistoricoLead.quando < _fu)
+    else:
+        desde = _inicio_periodo(periodo)
+        if desde is not None:
+            q = q.filter(HistoricoLead.quando >= desde)
     eventos = q.all()
 
     # Último evento de fechamento por lead (evita duplicar se reabriu e fechou de novo)
