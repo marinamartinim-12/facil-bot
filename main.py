@@ -348,6 +348,38 @@ async def _loop_ocultar_inativos():
 
 # ─── Startup ────────────────────────────────────────────────────────────────────
 
+def _criar_indices_bg(bind):
+    """Cria índices nas colunas quentes (funil/inbox/stats/chamadas) em BACKGROUND.
+    CONCURRENTLY = não trava escrita; roda numa thread p/ NÃO segurar o boot (evita
+    'no open ports'). Só cria o que falta — em redeploy não faz nada."""
+    _indices = [
+        ("ix_leads_status",         "leads",     "status"),
+        ("ix_leads_atribuido_para", "leads",     "atribuido_para"),
+        ("ix_leads_fechado_em",     "leads",     "fechado_em"),
+        ("ix_leads_criado_em",      "leads",     "criado_em"),
+        ("ix_leads_atualizado_em",  "leads",     "atualizado_em"),
+        ("ix_mensagens_criado_em",  "mensagens", "criado_em"),
+    ]
+    try:
+        with bind.connect() as conn:
+            _existentes = {r[0] for r in conn.execute(text(
+                "SELECT indexname FROM pg_indexes WHERE schemaname='public'")).fetchall()}
+    except Exception as e:
+        print(f"⚠️ índices: não listei os existentes (sigo assim): {e}")
+        _existentes = set()
+    for _nome, _tab, _col in _indices:
+        if _nome in _existentes:
+            continue
+        try:
+            # CONCURRENTLY exige AUTOCOMMIT (não pode rodar dentro de transação)
+            with bind.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+                conn.execute(text(
+                    f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {_nome} ON {_tab} ({_col})"))
+            print(f"✅ Índice criado: {_nome}")
+        except Exception as e:
+            print(f"⚠️ índice {_nome} ignorado: {e}")
+
+
 @app.on_event("startup")
 async def startup():
     # ── LIMPEZA EMERGENCIAL: remove backups locais que encheram o disco ──
@@ -511,6 +543,15 @@ async def startup():
                 print("✅ midia_arquivos.dados agora aceita NULL")
         except Exception as e:
             print(f"⚠️ drop not null midia_arquivos.dados ignorado: {e}")
+
+    # Índices nas colunas quentes — em BACKGROUND p/ não segurar o boot (evita "no open ports")
+    if _is_pg:
+        try:
+            import threading
+            threading.Thread(target=_criar_indices_bg, args=(db_startup.bind,), daemon=True).start()
+            print("🔧 criação de índices iniciada em background")
+        except Exception as e:
+            print(f"⚠️ não iniciei a criação de índices: {e}")
 
     # Cria admin padrão se não existir nenhum usuário (DEPOIS das migrações!)
     try:
@@ -1944,7 +1985,12 @@ async def listar_leads(
     if modalidade:
         query = query.filter(Lead.modalidade == modalidade)
     leads = query.order_by(Lead.criado_em.desc()).all()
-    result = [_serial_lead(l, db) for l in leads]
+    # Pré-carrega responsáveis e parceiros em UMA query cada (mata o N+1 do _serial_lead)
+    _rids = {l.atribuido_para for l in leads if l.atribuido_para}
+    _resp = {u.id: u for u in db.query(Usuario).filter(Usuario.id.in_(_rids)).all()} if _rids else {}
+    _pids = {l.parceiro_id for l in leads if l.parceiro_id}
+    _parc = {p.id: p for p in db.query(Parceiro).filter(Parceiro.id.in_(_pids)).all()} if _pids else {}
+    result = [_serial_lead(l, db, _resp, _parc) for l in leads]
     # Marca "sem próximo passo": lead ativo (assumido→proposta) SEM agendamento pendente.
     # Uma consulta só (não N+1) p/ o conjunto de leads com agendamento em aberto.
     com_pendente = {lid for (lid,) in db.query(Agendamento.lead_id)
@@ -3424,20 +3470,30 @@ async def migrar_postgres(admin: Usuario = Depends(requer_admin)):
 
 def _inbox_sync(db):
     """Parte pesada do inbox (muitas consultas) — roda em thread p/ não travar o servidor."""
+    from sqlalchemy import func
     leads_com_msg = (
         db.query(Lead)
         .filter(Lead.status != StatusLeadEnum.desqualificado)
         .order_by(Lead.atualizado_em.desc())
         .all()
     )
+    # Última mensagem por telefone em UMA query (id máximo por telefone) — mata o N+1
+    _tels = [l.telefone for l in leads_com_msg]
+    ultima_por_tel = {}
+    if _tels:
+        _sub = (db.query(MensagemConversa.telefone, func.max(MensagemConversa.id).label("mid"))
+                .filter(MensagemConversa.telefone.in_(_tels))
+                .group_by(MensagemConversa.telefone).subquery())
+        for _m in db.query(MensagemConversa).join(_sub, MensagemConversa.id == _sub.c.mid).all():
+            ultima_por_tel[_m.telefone] = _m
+    # Responsáveis e parceiros pré-carregados (1 query cada) p/ o _serial_lead (evita N+1)
+    _rids = {l.atribuido_para for l in leads_com_msg if l.atribuido_para}
+    _resp = {u.id: u for u in db.query(Usuario).filter(Usuario.id.in_(_rids)).all()} if _rids else {}
+    _pids = {l.parceiro_id for l in leads_com_msg if l.parceiro_id}
+    _parc = {p.id: p for p in db.query(Parceiro).filter(Parceiro.id.in_(_pids)).all()} if _pids else {}
     resultado = []
     for l in leads_com_msg:
-        ultima = (
-            db.query(MensagemConversa)
-            .filter(MensagemConversa.telefone == l.telefone)
-            .order_by(MensagemConversa.id.desc())
-            .first()
-        )
+        ultima = ultima_por_tel.get(l.telefone)
         if not ultima:
             continue  # ignora leads sem nenhuma mensagem
         conteudo_limpo = re.sub(r'^\[[^\]]+\]:\s*', '', ultima.conteudo)
@@ -3445,7 +3501,7 @@ def _inbox_sync(db):
         nao_lido = bool(l.nao_lido_manual) or (
             (ultima.role == "user") and (l.lido_em is None or ultima.criado_em > l.lido_em))
         resultado.append({
-            **_serial_lead(l, db),
+            **_serial_lead(l, db, _resp, _parc),
             "ultima_mensagem": conteudo_limpo[:60],
             "ultima_hora": _fmt_br(ultima.criado_em, "%H:%M") if ultima and ultima.criado_em else "",
             "ultima_msg_ts": ultima.criado_em.timestamp() if ultima and ultima.criado_em else 0,
@@ -8058,12 +8114,21 @@ def _safe_json(raw, padrao):
         return padrao
 
 
-def _serial_lead(l: Lead, db: Session) -> dict:
+def _serial_lead(l: Lead, db: Session, resp_map: dict = None, parc_map: dict = None) -> dict:
+    # resp_map/parc_map opcionais: as rotas de LISTA (/api/leads, inbox) pré-carregam
+    # responsáveis e parceiros em UMA query só e passam aqui — evita o N+1 (1 query por
+    # lead). Sem eles, cai no caminho antigo (lead avulso) — comportamento idêntico.
     responsavel = None
     if l.atribuido_para:
-        u = db.query(Usuario).filter(Usuario.id == l.atribuido_para).first()
+        u = (resp_map.get(l.atribuido_para) if resp_map is not None
+             else db.query(Usuario).filter(Usuario.id == l.atribuido_para).first())
         if u:
             responsavel = {"id": u.id, "nome": u.nome}
+    if parc_map is not None:
+        _p = parc_map.get(l.parceiro_id) if l.parceiro_id else None
+        _parceiro_nome = _p.nome if _p else ""
+    else:
+        _parceiro_nome = l.parceiro.nome if l.parceiro else ""
     return {
         "id": l.id,
         "telefone": l.telefone,
@@ -8084,7 +8149,7 @@ def _serial_lead(l: Lead, db: Session) -> dict:
         "origem": l.origem or "whatsapp",
         "origem_detalhe": l.origem_detalhe or "",
         "parceiro_id": l.parceiro_id,
-        "parceiro_nome": l.parceiro.nome if l.parceiro else "",
+        "parceiro_nome": _parceiro_nome,
         # Dados do contrato fechado
         "deal_data":     l.deal_data or "",
         "deal_veiculo":  l.deal_veiculo or "",
