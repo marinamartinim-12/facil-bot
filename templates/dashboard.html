@@ -3219,6 +3219,14 @@
     const rs = v * (n * 1.2 / 100) * 0.75;
     return 'R$ ' + rs.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
+  // Versão numérica (para somar o Retorno total). 0 quando não há retorno válido.
+  function _retornoRSNum(nivel, financiado) {
+    const n = parseFloat(String(nivel == null ? '' : nivel).replace(',', '.'));
+    const v = _parseR(financiado);
+    if (!isFinite(n) || v == null || v <= 0) return 0;
+    const rs = v * (n * 1.2 / 100) * 0.75;
+    return isFinite(rs) ? rs : 0;
+  }
   function _calcRetorno() {
     const el = document.getElementById('fc_retorno_rs');
     if (!el) return;
@@ -5803,6 +5811,7 @@
       const corBarra = pct >= 100 ? '#065f46' : pct >= 60 ? '#f97316' : '#3b82f6';
       const _dbr = s => s ? s.split('-').reverse().join('/') : '';
       const periodoLabel = (ini || fim) ? `${_dbr(ini)} a ${_dbr(fim)}` : (d.mes || '');
+      const totalRetorno = (d.contratos || []).reduce((s, c) => s + _retornoRSNum(c.deal_retorno, c.deal_valor), 0);
 
       const resumoHtml = `
         <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;margin-bottom:1rem">
@@ -5822,6 +5831,10 @@
               <div style="font-size:.68rem;color:#166534;font-weight:600">VOLUME TOTAL</div>
               <div style="font-size:1rem;font-weight:800;color:#065f46">${_fmtBRL(d.total_valor)}</div>
             </div>
+            <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:.4rem .9rem;text-align:center">
+              <div style="font-size:.68rem;color:#6d28d9;font-weight:600">RETORNO TOTAL</div>
+              <div style="font-size:1rem;font-weight:800;color:#6d28d9">${_fmtBRL(totalRetorno)}</div>
+            </div>
             <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:.4rem .9rem;text-align:center">
               <div style="font-size:.68rem;color:#92400e;font-weight:600">COMISSÃO TOTAL</div>
               <div style="font-size:1rem;font-weight:800;color:#92400e">${_fmtBRL(d.total_comissao)}</div>
@@ -5838,7 +5851,7 @@
               <thead><tr>
                 <th>Data</th><th>Cliente</th><th>Idade</th><th>Veículo</th>
                 <th>Operadora</th><th>Banco</th><th>Conta PG</th><th>Origem</th>
-                ${isAdm ? '<th>Retorno</th><th>Retorno R$</th><th>Valor Financiado</th><th>Comissão</th>' : ''}
+                ${isAdm ? '<th>Retorno</th><th>Valor Financiado</th><th>Retorno R$</th><th>Comissão</th>' : ''}
               </tr></thead>
               <tbody>
                 ${d.contratos.map(c => `<tr>
@@ -5852,8 +5865,8 @@
                   <td style="font-size:.78rem">${esc(c.origem||'—')}</td>
                   ${isAdm ? `
                   <td style="text-align:center;font-weight:700">${esc(c.deal_retorno)}</td>
-                  <td style="font-weight:700;color:#7c3aed;white-space:nowrap">${_retornoRS(c.deal_retorno, c.deal_valor)}</td>
                   <td style="font-weight:700;color:#065f46;white-space:nowrap">${c.deal_valor !== '—' ? 'R$ '+esc(c.deal_valor) : '—'}</td>
+                  <td style="font-weight:700;color:#7c3aed;white-space:nowrap">${_retornoRS(c.deal_retorno, c.deal_valor)}</td>
                   <td style="font-weight:700;color:#92400e;white-space:nowrap">${c.deal_comissao !== '—' ? 'R$ '+esc(c.deal_comissao) : '—'}</td>` : ''}
                 </tr>`).join('')}
               </tbody>

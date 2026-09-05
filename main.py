@@ -2562,10 +2562,28 @@ async def relatorio_contratos_csv(
     from fastapi.responses import StreamingResponse
     import csv, io
     leads = _contratos_periodo(db, periodo, inicio, fim)
+
+    def _retorno_rs_str(retorno, valor):
+        """Retorno em R$ = financiado × nível × 0,009 (mesma fórmula do painel)."""
+        try:
+            n = float(str(retorno).replace(",", ".").strip())
+        except Exception:
+            return "—"
+        if n != n:  # NaN
+            return "—"
+        try:
+            v = float(str(valor).replace("R$", "").replace(".", "").replace(",", ".").strip())
+        except Exception:
+            return "—"
+        if v <= 0:
+            return "—"
+        rs = v * n * 0.009
+        return f"R$ {rs:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Cliente", "Idade", "Data", "Veículo", "Retorno",
-                     "Valor Financiado", "Comissão", "Banco", "Conta PG",
+                     "Valor Financiado", "Retorno R$", "Comissão", "Banco", "Conta PG",
                      "Origem", "Operadora Responsável"])
     for l in leads:
         writer.writerow([
@@ -2575,6 +2593,7 @@ async def relatorio_contratos_csv(
             l.deal_veiculo or "—",
             l.deal_retorno or "—",
             l.deal_valor or "—",
+            _retorno_rs_str(l.deal_retorno, l.deal_valor),
             l.deal_comissao or "—",
             l.deal_banco or "—",
             l.deal_conta_pg or "—",
