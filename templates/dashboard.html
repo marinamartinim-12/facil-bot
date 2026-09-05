@@ -378,7 +378,7 @@
     .modal-lead {
       background: var(--white); border-radius: var(--radius);
       box-shadow: 0 20px 60px rgba(0,0,0,.3);
-      width: 100%; max-width: 1200px; max-height: 96vh;
+      width: 100%; max-width: 900px; height: min(92vh, 820px); max-height: 96vh;
       display: flex; flex-direction: column; overflow: hidden;
     }
     .modal-hd {
@@ -389,9 +389,30 @@
     .modal-close { background: none; border: none; color: var(--white); font-size: 1.4rem; cursor: pointer; opacity: .7; line-height: 1; }
     .modal-close:hover { opacity: 1; }
     .modal-body-lead {
-      flex: 1; overflow: hidden; display: flex;
+      flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0;
     }
-    /* Coluna esquerda: dados + obs */
+    /* ── Abas do modal do lead ── */
+    .lead-tabs {
+      display: flex; gap: 2px; background: var(--navy);
+      padding: 0 .4rem; overflow-x: auto; flex-shrink: 0;
+    }
+    .lead-tab {
+      background: transparent; border: none; color: rgba(255,255,255,.62);
+      font-size: .82rem; font-weight: 700; padding: .6rem .8rem; cursor: pointer;
+      white-space: nowrap; border-bottom: 3px solid transparent;
+      transition: color .12s, border-color .12s;
+    }
+    .lead-tab:hover { color: #fff; }
+    .lead-tab.active { color: #fff; border-bottom-color: #fff; }
+    .lead-panel { display: none; }
+    .lead-panel.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    #tabDados.active, #tabFinanciamento.active, #tabContrato.active { overflow-y: auto; }
+    #tabChat.active { overflow: hidden; }
+    .lead-obsbar {
+      display: flex; gap: .5rem; align-items: center; flex-shrink: 0;
+      padding: .55rem .9rem; border-top: 1px solid var(--border); background: #f8fafc;
+    }
+    /* Coluna esquerda: dados + obs (legado — mantido por segurança) */
     .modal-left {
       width: 380px; min-width: 380px; border-right: 1px solid var(--border);
       display: flex; flex-direction: column; overflow-y: auto;
@@ -1584,9 +1605,17 @@
       <span id="modalStatusBadge"></span>
       <button class="modal-close" onclick="closeModal()" style="margin-left:auto">×</button>
     </div>
+    <!-- ═══════════ ABAS DO LEAD ═══════════ -->
+    <div class="lead-tabs" id="leadTabs">
+      <button class="lead-tab active" data-tab="dados" onclick="_leadTab('dados')">📋 Dados</button>
+      <button class="lead-tab" data-tab="chat" onclick="_leadTab('chat')">💬 Chat</button>
+      <button class="lead-tab" data-tab="financiamento" onclick="_leadTab('financiamento')">🚗 Financiamento</button>
+      <button class="lead-tab" data-tab="contrato" onclick="_leadTab('contrato')">📄 Contrato</button>
+    </div>
     <div class="modal-body-lead">
-      <!-- Esquerda: dados + obs -->
-      <div class="modal-left">
+
+      <!-- ═══ ABA 1: DADOS DO CLIENTE ═══ -->
+      <div class="lead-panel active" id="tabDados">
         <div class="modal-section" id="modalResumoSection">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
             <h4 style="margin:0">✨ Resumo IA</h4>
@@ -1598,40 +1627,12 @@
           <h4>📋 Dados do Cliente</h4>
           <div class="data-grid" id="modalDados"></div>
         </div>
-        <div id="modalDealSection" style="display:none"></div>
-        <!-- Carros em proposta -->
-        <div class="modal-section" id="modalCarrosSection">
-          <h4 style="margin-bottom:.6rem">🚗 Carros em proposta</h4>
-          <div id="modalCarrosLista" style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.6rem"></div>
-          <div style="display:flex;flex-direction:column;gap:.4rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.6rem">
-            <div style="display:flex;gap:.4rem;flex-wrap:wrap">
-              <input id="carPlaca" placeholder="Placa" maxlength="8" style="flex:1;min-width:110px;text-transform:uppercase;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
-              <button class="btn btn-sm" id="btnBuscarPlaca" onclick="buscarPlaca()" title="Preencher pela placa" style="background:#0d2b4e;color:#fff;white-space:nowrap">🔍 Buscar placa</button>
-            </div>
-            <div style="display:flex;gap:.4rem;flex-wrap:wrap">
-              <input id="carAnoFab" placeholder="Ano fabricação" style="flex:1;min-width:110px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
-              <input id="carAnoModelo" placeholder="Ano modelo" style="flex:1;min-width:110px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
-            </div>
-            <input id="carModelo" placeholder="Marca / Modelo" style="border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
-            <div style="display:flex;gap:.4rem;flex-wrap:wrap">
-              <input id="carCor" placeholder="Cor" style="flex:1;min-width:90px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
-              <input id="carRenavam" placeholder="RENAVAM (manual)" style="flex:1;min-width:120px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
-            </div>
-            <input id="carChassi" placeholder="Chassi (opcional)" style="border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none;text-transform:uppercase">
-            <button class="btn btn-primary btn-sm" onclick="adicionarCarro()">➕ Adicionar carro</button>
-            <span id="carMsg" style="font-size:.75rem"></span>
-          </div>
-        </div>
-        <div class="modal-section" style="flex:1;display:flex;flex-direction:column;gap:.5rem">
+        <!-- Botões de ação do lead -->
+        <div class="modal-section" id="modalAcoes" style="display:flex;flex-wrap:wrap;gap:.4rem"></div>
+        <!-- Observações (lista — a caixa de escrever fica fixa embaixo, vale em qualquer aba) -->
+        <div class="modal-section">
           <h4>📝 Observações</h4>
-          <!-- Lista somente leitura -->
-          <div id="listaObs" style="display:flex;flex-direction:column;gap:.4rem;max-height:180px;overflow-y:auto;"></div>
-          <!-- Nova observação -->
-          <textarea class="obs-textarea" id="novaObs" placeholder="Adicionar nova observação…" style="min-height:72px;margin-top:.25rem"></textarea>
-          <div style="display:flex;gap:.5rem;align-items:center">
-            <button class="btn btn-primary btn-sm" onclick="salvarObs()">💾 Adicionar observação</button>
-            <span id="obsMsg" style="font-size:.75rem"></span>
-          </div>
+          <div id="listaObs" style="display:flex;flex-direction:column;gap:.4rem;max-height:240px;overflow-y:auto;"></div>
         </div>
         <!-- Agendamentos / lembretes -->
         <div class="modal-section">
@@ -1653,23 +1654,10 @@
           <h4 style="margin-bottom:.6rem">🗺️ Jornada do lead</h4>
           <div id="listaJornada" style="font-size:.8rem"></div>
         </div>
-        <!-- Documentos do contrato (pasta do cliente) -->
-        <div class="modal-section" id="modalDocsSection" style="display:none">
-          <h4 style="margin-bottom:.6rem">📁 Documentos do contrato</h4>
-          <div id="modalDocsPasta"></div>
-        </div>
-        <!-- Contratos -->
-        <div class="modal-section">
-          <h4 style="margin-bottom:.6rem">📄 Contratos</h4>
-          <div id="listaContratos" style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.6rem"></div>
-          <button class="btn btn-primary btn-sm" onclick="gerarContrato()" style="width:100%">📄 Gerar novo contrato</button>
-        </div>
-        <!-- Botões de ação -->
-        <div class="modal-section" id="modalAcoes" style="display:flex;flex-wrap:wrap;gap:.4rem"></div>
       </div>
-      <!-- Direita: conversa -->
-      <div class="modal-right">
-        <div class="modal-chat-title">💬 Conversa completa</div>
+
+      <!-- ═══ ABA 2: CHAT ═══ -->
+      <div class="lead-panel" id="tabChat">
         <div class="modal-chat-msgs" id="modalChat">
           <div class="loading-msg">Carregando…</div>
         </div>
@@ -1700,6 +1688,55 @@
           <button class="btn btn-primary btn-sm" id="btnEnviarAudioModal" onclick="enviarAudioModal()">Enviar 🎤</button>
         </div>
       </div>
+
+      <!-- ═══ ABA 3: FINANCIAMENTO ═══ -->
+      <div class="lead-panel" id="tabFinanciamento">
+        <div class="modal-section" id="modalCarrosSection">
+          <h4 style="margin-bottom:.6rem">🚗 Carros em proposta</h4>
+          <div id="modalCarrosLista" style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.6rem"></div>
+          <div style="display:flex;flex-direction:column;gap:.4rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.6rem">
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+              <input id="carPlaca" placeholder="Placa" maxlength="8" style="flex:1;min-width:110px;text-transform:uppercase;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+              <button class="btn btn-sm" id="btnBuscarPlaca" onclick="buscarPlaca()" title="Preencher pela placa" style="background:#0d2b4e;color:#fff;white-space:nowrap">🔍 Buscar placa</button>
+            </div>
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+              <input id="carAnoFab" placeholder="Ano fabricação" style="flex:1;min-width:110px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+              <input id="carAnoModelo" placeholder="Ano modelo" style="flex:1;min-width:110px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+            </div>
+            <input id="carModelo" placeholder="Marca / Modelo" style="border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+              <input id="carCor" placeholder="Cor" style="flex:1;min-width:90px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+              <input id="carRenavam" placeholder="RENAVAM (manual)" style="flex:1;min-width:120px;border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none">
+            </div>
+            <input id="carChassi" placeholder="Chassi (opcional)" style="border:1px solid var(--border);border-radius:7px;padding:.4rem .55rem;font-size:.83rem;outline:none;text-transform:uppercase">
+            <button class="btn btn-primary btn-sm" onclick="adicionarCarro()">➕ Adicionar carro</button>
+            <span id="carMsg" style="font-size:.75rem"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ ABA 4: CONTRATO ═══ -->
+      <div class="lead-panel" id="tabContrato">
+        <div id="modalDealSection" style="display:none"></div>
+        <!-- Documentos do contrato (pasta do cliente) -->
+        <div class="modal-section" id="modalDocsSection" style="display:none">
+          <h4 style="margin-bottom:.6rem">📁 Documentos do contrato</h4>
+          <div id="modalDocsPasta"></div>
+        </div>
+        <!-- Contratos -->
+        <div class="modal-section">
+          <h4 style="margin-bottom:.6rem">📄 Contratos</h4>
+          <div id="listaContratos" style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.6rem"></div>
+          <button class="btn btn-primary btn-sm" onclick="gerarContrato()" style="width:100%">📄 Gerar novo contrato</button>
+        </div>
+      </div>
+
+    </div>
+    <!-- ═══ OBSERVAÇÃO SEMPRE VISÍVEL (escreve em qualquer aba → cai na aba Dados) ═══ -->
+    <div class="lead-obsbar">
+      <textarea class="obs-textarea" id="novaObs" placeholder="📝 Escrever observação (vale em qualquer aba)…" style="min-height:42px;flex:1;margin:0"></textarea>
+      <button class="btn btn-primary btn-sm" onclick="salvarObs()" style="white-space:nowrap">💾 Salvar</button>
+      <span id="obsMsg" style="font-size:.75rem;white-space:nowrap"></span>
     </div>
   </div>
 </div>
@@ -2325,6 +2362,21 @@
   }
 
   // ═══════ MODAL LEAD COMPLETO ═══════
+  // Troca de abas do modal do lead (Dados / Chat / Financiamento / Contrato)
+  function _leadTab(nome) {
+    document.querySelectorAll('#leadTabs .lead-tab').forEach(b =>
+      b.classList.toggle('active', b.dataset.tab === nome));
+    document.querySelectorAll('.modal-body-lead .lead-panel').forEach(p =>
+      p.classList.remove('active'));
+    const painel = document.getElementById('tab' + nome.charAt(0).toUpperCase() + nome.slice(1));
+    if (painel) painel.classList.add('active');
+    // Chat só rola pro fim quando fica visível (estando escondido, scrollHeight=0)
+    if (nome === 'chat') {
+      const chat = document.getElementById('modalChat');
+      if (chat) chat.scrollTop = chat.scrollHeight;
+    }
+  }
+
   async function verLead(leadId) {
     modalLeadId = leadId;
     const _rb = document.getElementById('modalResumoIA');
@@ -2340,6 +2392,7 @@
     document.getElementById('listaContratos').innerHTML = '<span style="font-size:.78rem;color:var(--muted)">Carregando…</span>';
     document.getElementById('obsMsg').textContent = '';
     document.getElementById('modalOverlay').classList.add('open');
+    _leadTab('dados');   // sempre abre na 1ª aba
 
     try {
       const [convResp] = await Promise.all([
@@ -2493,6 +2546,7 @@
         const d = await r.json();
         renderObs(d.observacoes);
         document.getElementById('novaObs').value = '';
+        _leadTab('dados');   // ao salvar, volta pra 1ª aba (onde fica a lista de obs)
         // Atualiza cache local
         const l = allLeads.find(x => x.id === modalLeadId);
         if (l) l.observacoes = d.observacoes;
