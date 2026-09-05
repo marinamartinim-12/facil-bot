@@ -2020,13 +2020,9 @@ async def criar_lead_manual(
     return _serial_lead(lead, db)
 
 
-@app.get("/api/leads")
-async def listar_leads(
-    status: str = None,
-    modalidade: str = None,
-    db: Session = Depends(get_db),
-    usuario: Usuario = Depends(obter_usuario_atual),
-):
+def _leads_sync(db, status, modalidade):
+    """Parte pesada do funil (carrega e serializa ~1786 leads) — roda em thread p/ NÃO
+    travar o event loop; responsáveis/parceiros pré-carregados (sem N+1)."""
     query = db.query(Lead)
     if status:
         query = query.filter(Lead.status == status)
@@ -2050,12 +2046,26 @@ async def listar_leads(
     return result
 
 
-@app.get("/api/leads/{lead_id}/conversa")
-async def obter_conversa(
-    lead_id: int,
+@app.get("/api/leads")
+async def listar_leads(
+    status: str = None,
+    modalidade: str = None,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
+    # Cache curto GLOBAL (o funil é igual p/ todos) + parte pesada em thread (carregar/
+    # serializar ~1786 leads é ~1s e NÃO pode travar o event loop).
+    _ck = ("leads", status or "", modalidade or "")
+    _c = _rc_get(_ck)
+    if _c is not None:
+        return _c
+    result = await asyncio.to_thread(_leads_sync, db, status, modalidade)
+    return _rc_set(_ck, result, ttl=10)
+
+
+def _conversa_sync(db, lead_id):
+    """Carrega a conversa (histórico + lead serializado) — roda em thread p/ não travar
+    o event loop (senão o chat do funil fica preso na fila atrás de outros pedidos)."""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
@@ -2081,6 +2091,15 @@ async def obter_conversa(
                        "status": lead.status, "observacoes": [], "dados_contrato": {},
                        "carros_proposta": []}
     return {"lead": lead_serial, "mensagens": mensagens}
+
+
+@app.get("/api/leads/{lead_id}/conversa")
+async def obter_conversa(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    return await asyncio.to_thread(_conversa_sync, db, lead_id)
 
 
 def _log_historico(db, lead_id: int, de_status, para_status, usuario_id, quando=None):
