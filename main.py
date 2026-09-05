@@ -351,7 +351,9 @@ async def _loop_ocultar_inativos():
 def _criar_indices_bg(bind):
     """Cria índices nas colunas quentes (funil/inbox/stats/chamadas) em BACKGROUND.
     CONCURRENTLY = não trava escrita; roda numa thread p/ NÃO segurar o boot (evita
-    'no open ports'). Só cria o que falta — em redeploy não faz nada."""
+    'no open ports'). Um ADVISORY LOCK garante que só UM worker crie — os 2 workers
+    do gunicorn criando ao mesmo tempo geram corrida e deixam índice INVÁLIDO. Índices
+    inválidos (de tentativa anterior) são dropados e recriados. Só cria o que falta."""
     _indices = [
         ("ix_leads_status",         "leads",     "status"),
         ("ix_leads_atribuido_para", "leads",     "atribuido_para"),
@@ -361,23 +363,40 @@ def _criar_indices_bg(bind):
         ("ix_mensagens_criado_em",  "mensagens", "criado_em"),
     ]
     try:
-        with bind.connect() as conn:
-            _existentes = {r[0] for r in conn.execute(text(
-                "SELECT indexname FROM pg_indexes WHERE schemaname='public'")).fetchall()}
+        # CONCURRENTLY exige AUTOCOMMIT (não pode rodar dentro de transação)
+        conn = bind.connect().execution_options(isolation_level="AUTOCOMMIT")
     except Exception as e:
-        print(f"⚠️ índices: não listei os existentes (sigo assim): {e}")
-        _existentes = set()
-    for _nome, _tab, _col in _indices:
-        if _nome in _existentes:
-            continue
-        try:
-            # CONCURRENTLY exige AUTOCOMMIT (não pode rodar dentro de transação)
-            with bind.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        print(f"⚠️ índices: não conectei ({e})")
+        return
+    try:
+        # só um worker cuida dos índices (evita corrida entre os 2 → índice inválido)
+        if not conn.execute(text("SELECT pg_try_advisory_lock(918273645)")).scalar():
+            return
+        invalidos = {r[0] for r in conn.execute(text(
+            "SELECT c.relname FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
+            "WHERE NOT i.indisvalid")).fetchall()}
+        existentes = {r[0] for r in conn.execute(text(
+            "SELECT indexname FROM pg_indexes WHERE schemaname='public'")).fetchall()}
+        for _nome, _tab, _col in _indices:
+            try:
+                if _nome in invalidos:  # build anterior falhou — dropa p/ recriar
+                    conn.execute(text(f"DROP INDEX CONCURRENTLY IF EXISTS {_nome}"))
+                    existentes.discard(_nome)
+                if _nome in existentes:
+                    continue
                 conn.execute(text(
                     f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {_nome} ON {_tab} ({_col})"))
-            print(f"✅ Índice criado: {_nome}")
-        except Exception as e:
-            print(f"⚠️ índice {_nome} ignorado: {e}")
+                print(f"✅ Índice criado: {_nome}")
+            except Exception as e:
+                print(f"⚠️ índice {_nome} ignorado: {e}")
+    except Exception as e:
+        print(f"⚠️ criação de índices: {e}")
+    finally:
+        try:
+            conn.execute(text("SELECT pg_advisory_unlock(918273645)"))
+        except Exception:
+            pass
+        conn.close()
 
 
 @app.on_event("startup")
