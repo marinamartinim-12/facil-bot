@@ -376,11 +376,14 @@
     .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 300; align-items: center; justify-content: center; padding: .4rem; }
     .overlay.open { display: flex; }
     .modal-lead {
-      background: var(--white); border-radius: var(--radius);
+      background: var(--white); border-radius: 0;
       box-shadow: 0 20px 60px rgba(0,0,0,.3);
-      width: 100%; max-width: 900px; height: min(92vh, 820px); max-height: 96vh;
+      width: 100%; max-width: none; height: 100%; max-height: 100%;
       display: flex; flex-direction: column; overflow: hidden;
     }
+    /* O modal do lead ocupa a área ao lado do menu (vira "página", não pop-up flutuante).
+       O menu (220px) fica fora do overlay → continua visível e usável. */
+    #modalOverlay { left: 220px; padding: 0; }
     .modal-hd {
       background: var(--navy); color: var(--white);
       padding: .85rem 1.25rem; display: flex; align-items: center; gap: .75rem;
@@ -636,6 +639,7 @@
       .stats-row { grid-template-columns: repeat(2, 1fr); }
       .top-bar { padding: .5rem .75rem; }
       .content { padding: .75rem; }
+      #modalOverlay { left: 0; }   /* no celular o menu some → modal ocupa a tela toda */
       .modal-lead { flex-direction: column; }
       .modal-body-lead { flex-direction: column; }
       .modal-left { width: 100% !important; min-width: 0 !important; max-height: 45vh; border-right: none; border-bottom: 1px solid var(--border); }
