@@ -3211,6 +3211,16 @@
     reais = (reais.replace(/\D/g, '') || '0').replace(/^0+(?=\d)/, '');
     return reais.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + cent;
   }
+  // Comissão do contrato = Valor Financiado × (Retorno × 1,2)% − 25%  (= financiado × retorno × 0,009).
+  function _calcComissao() {
+    const vf = _parseR(document.getElementById('fc_valor')?.value);
+    const r = parseFloat((document.getElementById('fc_retorno')?.value || '').replace(',', '.'));
+    const cel = document.getElementById('fc_comissao');
+    if (!cel || vf == null || !isFinite(r) || r <= 0) return;
+    const bruto = vf * (r * 1.2 / 100);   // Valor Financiado × (Retorno × 1,2)%
+    const com = bruto * 0.75;             // − 25%
+    cel.value = com.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
 
   function _desenharCarros() {
     const el = document.getElementById('modalCarrosLista');
@@ -9615,7 +9625,7 @@
         </div>
         <div>
           <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Retorno <span style="font-weight:400;color:#6b7280">(0, 1, 2, 3…)</span></label>
-          <input type="number" id="fc_retorno" min="0" max="20" step="1" placeholder="Ex: 3"
+          <input type="number" id="fc_retorno" min="0" max="20" step="1" placeholder="Ex: 3" oninput="_calcComissao()"
             style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
         </div>
@@ -9661,7 +9671,7 @@
           <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Valor Financiado (R$)</label>
           <input type="text" id="fc_valor" placeholder="Ex: 44699,00" inputmode="decimal"
             style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
-            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db';this.value=_fmtMoedaBR(this.value)">
+            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db';this.value=_fmtMoedaBR(this.value);_calcComissao()">
         </div>
         <div>
           <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Comissão (R$)</label>
