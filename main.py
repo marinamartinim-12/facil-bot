@@ -907,22 +907,51 @@ def _nome_so_prefixo(nome) -> bool:
     return len(resto) < 2
 
 
-def _buscar_parceiro_por_telefone(telefone: str, db) -> "Parceiro | None":
-    """Retorna o Parceiro ativo cujo telefone (principal ou extra) bate com o número.
-    Comparação robusta: ignora código do país e o 9º dígito (formatos diferentes do WhatsApp)."""
-    from models import Parceiro as _Parceiro
+# Cache em memória do mapa {telefone_canônico -> parceiro_id}. Evita varrer os ~869
+# parceiros (+ json.loads por linha) a CADA mensagem recebida no webhook — era um dos
+# pesos síncronos que deixavam a resposta lenta. Rebuild por TTL (parceiro novo entra
+# em até _PARCEIRO_TEL_TTL segundos; a invalidação imediata dá pra ligar depois no CRUD).
+_PARCEIRO_TEL_CACHE = {"map": None, "ts": 0.0}
+_PARCEIRO_TEL_TTL = 120  # segundos
+
+
+def _parceiro_id_por_telefone(telefone: str, db):
+    """id do parceiro ativo cujo telefone (principal ou extra) bate — O(1) via cache."""
     alvo = _tel_canonico(telefone)
     if not alvo:
         return None
-    for p in db.query(_Parceiro).filter(_Parceiro.ativo == True).all():
-        if _tel_canonico(p.telefone) == alvo:
-            return p
-        try:
-            if any(_tel_canonico(e) == alvo for e in json.loads(p.telefones_extras or "[]")):
-                return p
-        except Exception:
-            pass
-    return None
+    import time as _time
+    cache = _PARCEIRO_TEL_CACHE
+    if cache["map"] is None or (_time.time() - cache["ts"]) >= _PARCEIRO_TEL_TTL:
+        from models import Parceiro as _Parceiro
+        m = {}
+        for pid, tel, extras in (db.query(_Parceiro.id, _Parceiro.telefone, _Parceiro.telefones_extras)
+                                 .filter(_Parceiro.ativo == True).all()):
+            nums = [tel]
+            try:
+                nums += json.loads(extras or "[]")
+            except Exception:
+                pass
+            for _t in nums:
+                _c = _tel_canonico(_t)
+                if _c:
+                    m.setdefault(_c, pid)
+        cache["map"] = m
+        cache["ts"] = _time.time()
+    return cache["map"].get(alvo)
+
+
+def _buscar_parceiro_por_telefone(telefone: str, db) -> "Parceiro | None":
+    """Retorna o Parceiro ativo cujo telefone (principal ou extra) bate com o número.
+    Comparação robusta: ignora código do país e o 9º dígito. Usa o cache do mapa de
+    telefones (rebuild por TTL) — o objeto vem por PK do session atual (idêntico ao antigo)."""
+    from models import Parceiro as _Parceiro
+    pid = _parceiro_id_por_telefone(telefone, db)
+    if pid is None:
+        return None
+    # revalida ativo por PK: se o parceiro foi desativado, vale na hora (o cache só atrasa
+    # o reconhecimento de parceiro NOVO, até o TTL).
+    return db.query(_Parceiro).filter(_Parceiro.id == pid, _Parceiro.ativo == True).first()
 
 
 def _extrair_audio_url_zapi(body: dict) -> str | None:
