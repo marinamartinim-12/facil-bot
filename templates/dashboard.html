@@ -1367,12 +1367,10 @@
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem">
             <h3 style="margin:0">🏁 Contratos Fechados</h3>
             <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
-              <select id="filtroPeriodoContratos" onchange="carregarRelatorioContratosMes()"
-                style="border:1px solid var(--border);border-radius:8px;padding:.35rem .7rem;font-size:.82rem;outline:none">
-                <option value="semana">Esta semana</option>
-                <option value="mes" selected>Este mês</option>
-                <option value="tudo">Tudo</option>
-              </select>
+              <input type="date" id="contrIni" onchange="carregarRelatorioContratosMes()" style="border:1px solid var(--border);border-radius:8px;padding:.3rem .5rem;font-size:.82rem;outline:none">
+              <span style="font-size:.8rem;color:var(--muted)">até</span>
+              <input type="date" id="contrFim" onchange="carregarRelatorioContratosMes()" style="border:1px solid var(--border);border-radius:8px;padding:.3rem .5rem;font-size:.82rem;outline:none">
+              <button onclick="_contratosMes()" class="btn btn-sm btn-outline" style="padding:.3rem .7rem" title="Voltar pro mês atual">Este mês</button>
               <button id="btnExportContratos" onclick="_exportarContratosCSV()"
                 class="btn btn-sm btn-outline" style="padding:.35rem .9rem">⬇️ Excel</button>
             </div>
@@ -4647,6 +4645,12 @@
     document.getElementById('fechFim').value = _dataLocalStr(n);
     carregarRelatorioFechamentos();
   }
+  function _contratosMes() {
+    const n = new Date();
+    document.getElementById('contrIni').value = _dataLocalStr(new Date(n.getFullYear(), n.getMonth(), 1));
+    document.getElementById('contrFim').value = _dataLocalStr(n);
+    carregarRelatorioContratosMes();
+  }
   async function carregarFluxoPropostas() {
     const el = document.getElementById('relFluxoProp');
     if (!el) return;
@@ -5766,9 +5770,15 @@
   async function carregarRelatorioContratosMes() {
     const el = document.getElementById('relContratosMes');
     if (!el) return;
-    const periodo = document.getElementById('filtroPeriodoContratos')?.value || 'mes';
+    const iniEl = document.getElementById('contrIni'), fimEl = document.getElementById('contrFim');
+    if (iniEl && !iniEl.value) {   // 1ª carga: mês atual
+      const n = new Date();
+      iniEl.value = _dataLocalStr(new Date(n.getFullYear(), n.getMonth(), 1));
+      fimEl.value = _dataLocalStr(n);
+    }
+    const ini = iniEl?.value || '', fim = fimEl?.value || '';
     try {
-      const r = await fetch(`/api/relatorio/contratos-mes?periodo=${periodo}`);
+      const r = await fetch(`/api/relatorio/contratos-mes?inicio=${ini}&fim=${fim}`);
       if (!r.ok) { el.innerHTML = '<p style="font-size:.83rem;color:#dc2626;text-align:center;padding:1rem">Erro ao carregar os contratos. Tente atualizar.</p>'; return; }
       const d = await r.json();
       if (d.contratos) _contratosData = d.contratos;
@@ -5859,8 +5869,8 @@
   }
 
   function _exportarContratosCSV() {
-    const periodo = document.getElementById('filtroPeriodoContratos')?.value || 'mes';
-    window.location.href = `/api/relatorio/contratos/csv?periodo=${periodo}`;
+    const ini = document.getElementById('contrIni')?.value || '', fim = document.getElementById('contrFim')?.value || '';
+    window.location.href = `/api/relatorio/contratos/csv?inicio=${ini}&fim=${fim}`;
   }
 
   async function carregarRelatorioPerfil() {

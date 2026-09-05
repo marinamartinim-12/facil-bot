@@ -2438,22 +2438,37 @@ def _origem_label(origem: str | None, detalhe: str | None) -> str:
     return base
 
 
-def _contratos_periodo(db, periodo: str = "mes") -> list:
-    """Retorna leads fechados do período. periodo = 'semana' | 'mes' | 'tudo'.
+def _contratos_periodo(db, periodo: str = "mes", inicio: str = "", fim: str = "") -> list:
+    """Retorna leads fechados do período. Se inicio/fim (AAAA-MM-DD, BR) vierem, filtra por
+    INTERVALO de datas; senão usa periodo = 'semana' | 'mes' | 'tudo'.
     Usa fechado_em (data estável) — não atualizado_em, que muda a cada edição."""
-    hoje = _agora_br()
-    if periodo == "semana":
-        dia_semana = hoje.weekday()  # 0=seg
-        inicio_br = datetime(hoje.year, hoje.month, hoje.day, tzinfo=_TZ_BR) - timedelta(days=dia_semana)
-        inicio = inicio_br.astimezone(timezone.utc).replace(tzinfo=None)
-    elif periodo == "mes":
-        inicio = datetime(hoje.year, hoje.month, 1, tzinfo=_TZ_BR).astimezone(timezone.utc).replace(tzinfo=None)
-    else:
-        inicio = None
-
     q = db.query(Lead).filter(Lead.status == StatusLeadEnum.fechado)
-    if inicio:
-        q = q.filter(Lead.fechado_em >= inicio)
+    if inicio or fim:
+        _br = _agora_br()
+        _ini = inicio or f"{_br.year:04d}-{_br.month:02d}-01"
+        _fim = fim or _br.strftime("%Y-%m-%d")
+        def _bu(s, mais=False):
+            y, m, d = (int(x) for x in s.split("-"))
+            dt = datetime(y, m, d, tzinfo=_TZ_BR)
+            if mais:
+                dt = dt + timedelta(days=1)
+            return dt.astimezone(timezone.utc).replace(tzinfo=None)
+        try:
+            _iu, _fu = _bu(_ini), _bu(_fim, mais=True)
+            q = q.filter(Lead.fechado_em >= _iu, Lead.fechado_em < _fu)
+        except Exception:
+            pass
+    else:
+        hoje = _agora_br()
+        if periodo == "semana":
+            inicio_br = datetime(hoje.year, hoje.month, hoje.day, tzinfo=_TZ_BR) - timedelta(days=hoje.weekday())
+            inicio_dt = inicio_br.astimezone(timezone.utc).replace(tzinfo=None)
+        elif periodo == "mes":
+            inicio_dt = datetime(hoje.year, hoje.month, 1, tzinfo=_TZ_BR).astimezone(timezone.utc).replace(tzinfo=None)
+        else:
+            inicio_dt = None
+        if inicio_dt:
+            q = q.filter(Lead.fechado_em >= inicio_dt)
     return q.order_by(Lead.fechado_em.desc().nullslast()).all()
 
 
@@ -2476,11 +2491,13 @@ def _inicio_periodo(periodo: str):
 @app.get("/api/relatorio/contratos-mes")
 async def relatorio_contratos_mes(
     periodo: str = "mes",
+    inicio: str = "",
+    fim: str = "",
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
     """Retorna contagem e metas do período. Totais financeiros só para admin."""
-    leads_fechados = _contratos_periodo(db, periodo)
+    leads_fechados = _contratos_periodo(db, periodo, inicio, fim)
 
     hoje = datetime.utcnow()
     total = len(leads_fechados)
@@ -2536,13 +2553,15 @@ async def relatorio_contratos_mes(
 @app.get("/api/relatorio/contratos/csv")
 async def relatorio_contratos_csv(
     periodo: str = "mes",
+    inicio: str = "",
+    fim: str = "",
     db: Session = Depends(get_db),
     admin: Usuario = Depends(requer_admin),
 ):
     """Exporta contratos fechados do período como CSV (admin only)."""
     from fastapi.responses import StreamingResponse
     import csv, io
-    leads = _contratos_periodo(db, periodo)
+    leads = _contratos_periodo(db, periodo, inicio, fim)
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Cliente", "Idade", "Data", "Veículo", "Retorno",
@@ -2563,7 +2582,7 @@ async def relatorio_contratos_csv(
             l.deal_operadora or (l.responsavel.nome if l.responsavel else "—"),
         ])
     output.seek(0)
-    nome_arquivo = f"contratos_{periodo}.csv"
+    nome_arquivo = (f"contratos_{inicio or 'inicio'}_a_{fim or 'hoje'}.csv" if (inicio or fim) else f"contratos_{periodo}.csv")
     headers = {"Content-Disposition": f"attachment; filename={nome_arquivo}"}
     return StreamingResponse(iter([output.getvalue()]),
                              media_type="text/csv; charset=utf-8-sig", headers=headers)
