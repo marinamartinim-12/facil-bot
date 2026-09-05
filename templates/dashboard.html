@@ -1691,6 +1691,11 @@
 
       <!-- ═══ ABA 3: FINANCIAMENTO ═══ -->
       <div class="lead-panel" id="tabFinanciamento">
+        <!-- Copiar pro banco: dados do cliente com botão de copiar (colar no site do banco) -->
+        <div class="modal-section" id="finCopiarSection">
+          <h4 style="margin-bottom:.5rem">📋 Copiar pro banco</h4>
+          <div id="finCopiarBanco" style="display:flex;flex-wrap:wrap;gap:.45rem"></div>
+        </div>
         <div class="modal-section" id="modalCarrosSection">
           <h4 style="margin-bottom:.6rem">🚗 Carros em proposta</h4>
           <div id="modalCarrosLista" style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.6rem"></div>
@@ -3231,7 +3236,49 @@
 
   function renderCarros(lead) {
     _carrosLead = Array.isArray(lead?.carros_proposta) ? lead.carros_proposta.slice() : [];
+    _renderCopiarBanco(lead);
     _desenharCarros();
+  }
+
+  // ——— Copiar pro banco (colar no site do banco); feedback ✓ por ~1,3s ———
+  function _copiarTxt(btn) {
+    const txt = btn.dataset.copy || '';
+    if (!txt) return;
+    navigator.clipboard.writeText(txt).then(() => {
+      const o = btn.textContent; btn.textContent = '✓'; btn.style.color = '#166534';
+      setTimeout(() => { btn.textContent = o; btn.style.color = ''; }, 1300);
+    }).catch(() => {});
+  }
+  let _dadosCopiar = {};   // valores da faixa (evita problema de escape em atributo)
+  function _copiarCampo(chave, btn) {
+    const txt = _dadosCopiar[chave] || '';
+    if (!txt) return;
+    navigator.clipboard.writeText(txt).then(() => {
+      const o = btn.textContent; btn.textContent = '✓'; btn.style.color = '#166534';
+      setTimeout(() => { btn.textContent = o; btn.style.color = ''; }, 1300);
+    }).catch(() => {});
+  }
+  function _renderCopiarBanco(lead) {
+    const el = document.getElementById('finCopiarBanco');
+    if (!el) return;
+    const _limpo = v => (v != null && v !== '' && v !== '—') ? String(v) : '';
+    const rawNasc = _limpo(lead?.data_nascimento);
+    const nasc = rawNasc.includes('-') ? rawNasc.split('-').reverse().join('/') : rawNasc;
+    _dadosCopiar = {
+      nome:       _limpo(lead?.nome),
+      cpf:        _limpo(lead?.cpf),
+      telefone:   _limpo(lead?.telefone),
+      nascimento: nasc,
+    };
+    const campos = [['nome','Nome'], ['cpf','CPF'], ['telefone','Telefone'], ['nascimento','Nascimento']];
+    el.innerHTML = campos.map(([k, rot]) => {
+      const val = _dadosCopiar[k];
+      return `<div style="display:flex;align-items:center;gap:.35rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:.3rem .55rem">
+        <span style="font-size:.62rem;text-transform:uppercase;color:#64748b;font-weight:700">${rot}</span>
+        <span style="font-size:.82rem;font-weight:600;color:#0f172a">${escHtml(val || '—')}</span>
+        ${val ? `<button onclick="_copiarCampo('${k}',this)" title="Copiar ${rot}" class="btn btn-sm" style="padding:.1rem .4rem;font-size:.82rem;background:#e0e7ff;color:#3730a3;line-height:1">📋</button>` : ''}
+      </div>`;
+    }).join('');
   }
 
   // Financiamento por carro: status possíveis das propostas (valor, rótulo, cor de fundo, cor do texto)
@@ -3244,6 +3291,8 @@
   ];
   // Bancos sugeridos (a loja pode inserir outro pelo "+ Inserir manual").
   const _BANCOS = ['Banco Volks','BV','C6','Daycoval','Itaú','Mercado Livre','Omni','Pan','Safra','Santander','Sicredi'];
+  // Ordem de exibição das propostas por status (Enviada → Aprovada → Parcial → Pré → Recusada)
+  const _STORDEM = { enviada: 0, aprovada: 1, aprovada_parcial: 2, pre_aprovada: 3, recusada: 4 };
   function _corStatus(st){ const f = _STPROP.find(x => x[0] === st) || _STPROP[0]; return { bg: f[2], fg: f[3] }; }
   function _parseR(s){ if (s == null || s === '') return null; const n = parseFloat(String(s).replace(/[^\d,.-]/g,'').replace(/\.(?=\d{3}\b)/g,'').replace(',','.')); return isFinite(n) ? n : null; }
   function _fmtR(n){ return (n == null) ? '' : n.toLocaleString('pt-BR', { style:'currency', currency:'BRL' }); }
@@ -3303,7 +3352,9 @@
       const escolhido = !!c.escolhido;
       const anos = [c.ano_fab, c.ano_modelo].filter(Boolean).join('/') || c.ano || '';
       const props = Array.isArray(c.propostas) ? c.propostas : [];
-      const propsHtml = props.length ? props.map((p, j) => {
+      // Exibe em ordem por status; guarda o índice real j (os handlers usam o índice do array original)
+      const propsOrd = props.map((p, j) => ({ p, j })).sort((a, b) => (_STORDEM[a.p.status] ?? 99) - (_STORDEM[b.p.status] ?? 99));
+      const propsHtml = propsOrd.length ? propsOrd.map(({ p, j }) => {
         const cor = _corStatus(p.status);
         return `<div style="display:grid;grid-template-columns:1fr auto;gap:.3rem;align-items:center;margin-bottom:.3rem">
           <div style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">
@@ -3329,7 +3380,7 @@
         <div style="display:flex;align-items:flex-start;gap:.5rem">
           <div style="flex:1;min-width:0">
             <div style="font-size:.85rem;font-weight:700;color:#0d2b4e">${esc1(c.modelo) || '—'} ${anos?('· '+esc1(anos)):''}${c.cor?(' · '+esc1(c.cor)):''}</div>
-            <div style="font-size:.74rem;color:#64748b">🔖 ${esc1(c.placa)||'sem placa'}${c.chassi?(' · Chassi '+esc1(c.chassi)):''}${c.renavam?(' · RENAVAM '+esc1(c.renavam)):''}</div>
+            <div style="font-size:.74rem;color:#64748b">🔖 ${esc1(c.placa)||'sem placa'}${c.placa?` <button onclick="_copiarTxt(this)" data-copy="${esc1(c.placa)}" title="Copiar placa" style="border:none;background:none;cursor:pointer;font-size:.76rem;padding:0;vertical-align:baseline">📋</button>`:''}${c.chassi?(' · Chassi '+esc1(c.chassi)):''}${c.renavam?(' · RENAVAM '+esc1(c.renavam)):''}</div>
             ${escolhido?'<div style="font-size:.7rem;color:#166534;font-weight:700;margin-top:.15rem">⭐ Carro escolhido para fechar</div>':''}
           </div>
           <div style="display:flex;flex-direction:column;gap:.25rem">
