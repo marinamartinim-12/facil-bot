@@ -5785,7 +5785,8 @@
 
       const pct = Math.min(d.percentual || 0, 100);
       const corBarra = pct >= 100 ? '#065f46' : pct >= 60 ? '#f97316' : '#3b82f6';
-      const periodoLabel = {semana:'Esta Semana', mes: (d.mes||'').replace(/^\w/,c=>c.toUpperCase()), tudo:'Todos os tempos'}[periodo] || '';
+      const _dbr = s => s ? s.split('-').reverse().join('/') : '';
+      const periodoLabel = (ini || fim) ? `${_dbr(ini)} a ${_dbr(fim)}` : (d.mes || '');
 
       const resumoHtml = `
         <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;margin-bottom:1rem">
