@@ -3211,15 +3211,19 @@
     reais = (reais.replace(/\D/g, '') || '0').replace(/^0+(?=\d)/, '');
     return reais.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + cent;
   }
-  // Comissão do contrato = Valor Financiado × (Retorno × 1,2)% − 25%  (= financiado × retorno × 0,009).
-  function _calcComissao() {
-    const vf = _parseR(document.getElementById('fc_valor')?.value);
-    const r = parseFloat((document.getElementById('fc_retorno')?.value || '').replace(',', '.'));
-    const cel = document.getElementById('fc_comissao');
-    if (!cel || vf == null || !isFinite(r) || r <= 0) return;
-    const bruto = vf * (r * 1.2 / 100);   // Valor Financiado × (Retorno × 1,2)%
-    const com = bruto * 0.75;             // − 25%
-    cel.value = com.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // RETORNO em R$ = Valor Financiado × (nível × 1,2)% − 25%. (Comissão é OUTRA coisa — fica manual.)
+  function _retornoRS(nivel, financiado) {
+    const n = parseFloat(String(nivel == null ? '' : nivel).replace(',', '.'));
+    const v = _parseR(financiado);
+    if (!isFinite(n) || v == null || v <= 0) return '—';
+    const rs = v * (n * 1.2 / 100) * 0.75;
+    return 'R$ ' + rs.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function _calcRetorno() {
+    const el = document.getElementById('fc_retorno_rs');
+    if (!el) return;
+    const rs = _retornoRS(document.getElementById('fc_retorno')?.value, document.getElementById('fc_valor')?.value);
+    el.textContent = (rs === '—') ? '' : ('Retorno: ' + rs);
   }
 
   function _desenharCarros() {
@@ -5832,7 +5836,7 @@
               <thead><tr>
                 <th>Data</th><th>Cliente</th><th>Idade</th><th>Veículo</th>
                 <th>Operadora</th><th>Banco</th><th>Conta PG</th><th>Origem</th>
-                ${isAdm ? '<th>Retorno</th><th>Valor Financiado</th><th>Comissão</th>' : ''}
+                ${isAdm ? '<th>Retorno</th><th>Retorno R$</th><th>Valor Financiado</th><th>Comissão</th>' : ''}
               </tr></thead>
               <tbody>
                 ${d.contratos.map(c => `<tr>
@@ -5846,6 +5850,7 @@
                   <td style="font-size:.78rem">${esc(c.origem||'—')}</td>
                   ${isAdm ? `
                   <td style="text-align:center;font-weight:700">${esc(c.deal_retorno)}</td>
+                  <td style="font-weight:700;color:#7c3aed;white-space:nowrap">${_retornoRS(c.deal_retorno, c.deal_valor)}</td>
                   <td style="font-weight:700;color:#065f46;white-space:nowrap">${c.deal_valor !== '—' ? 'R$ '+esc(c.deal_valor) : '—'}</td>
                   <td style="font-weight:700;color:#92400e;white-space:nowrap">${c.deal_comissao !== '—' ? 'R$ '+esc(c.deal_comissao) : '—'}</td>` : ''}
                 </tr>`).join('')}
@@ -9625,9 +9630,10 @@
         </div>
         <div>
           <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Retorno <span style="font-weight:400;color:#6b7280">(0, 1, 2, 3…)</span></label>
-          <input type="number" id="fc_retorno" min="0" max="20" step="1" placeholder="Ex: 3"
+          <input type="number" id="fc_retorno" min="0" max="20" step="1" placeholder="Ex: 3" oninput="_calcRetorno()"
             style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
             onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db'">
+          <div id="fc_retorno_rs" style="font-size:.72rem;color:#7c3aed;font-weight:700;margin-top:.25rem"></div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:2fr 1fr;gap:.75rem">
@@ -9671,7 +9677,7 @@
           <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Valor Financiado (R$)</label>
           <input type="text" id="fc_valor" placeholder="Ex: 44699,00" inputmode="decimal"
             style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:.5rem .75rem;font-size:.87rem;outline:none;box-sizing:border-box"
-            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db';this.value=_fmtMoedaBR(this.value)">
+            onfocus="this.style.borderColor='#065f46'" onblur="this.style.borderColor='#d1d5db';this.value=_fmtMoedaBR(this.value)" onchange="_calcRetorno()">
         </div>
         <div>
           <label style="font-size:.75rem;font-weight:600;color:#374151;display:block;margin-bottom:.25rem">Comissão (R$)</label>
@@ -9799,6 +9805,7 @@
     document.getElementById('fc_valor').value    = _fmtMoedaBR(ld?.deal_valor    || '');
     document.getElementById('fc_comissao').value = _fmtMoedaBR(ld?.deal_comissao || '');
     document.getElementById('fc_retorno').value  = ld?.deal_retorno  || '';
+    _calcRetorno();
     document.getElementById('fc_banco').value    = ld?.deal_banco    || '';
     document.getElementById('fc_conta_pg').value = ld?.deal_conta_pg || '';
     document.getElementById('fc_erro').style.display = 'none';
