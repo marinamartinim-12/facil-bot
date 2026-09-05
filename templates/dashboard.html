@@ -8245,34 +8245,43 @@
 
   // ═══════ ALERTA ATENDIMENTO HUMANO ═══════
   let _qualificadosSemAtendente = new Set();
+  let _alertaHumanoDispensados = new Set();   // ids que a pessoa fechou no ✕ (não reaparecem)
   let _alertaTimeout = null;
 
   function verificarAlertaHumano(leads) {
     const novos = leads.filter(l => l.status === 'qualificado' && !l.responsavel);
     const ids = new Set(novos.map(l => l.id));
-    const temNovos = [...ids].some(id => !_qualificadosSemAtendente.has(id));
 
-    if (novos.length > 0) {
-      const nomes = novos.map(l => l.nome !== '—' ? l.nome : l.telefone).join(', ');
-      document.getElementById('alertaHumanoNomes').textContent = novos.length > 1
-        ? `${novos.length} clientes: ${nomes}`
+    // Tira da lista de "dispensados" quem já saiu da fila (ganhou atendente / mudou de status)
+    for (const id of [..._alertaHumanoDispensados]) if (!ids.has(id)) _alertaHumanoDispensados.delete(id);
+
+    // Só mostra quem ainda NÃO foi dispensado no ✕
+    const mostrar = novos.filter(l => !_alertaHumanoDispensados.has(l.id));
+    const temNovos = mostrar.some(l => !_qualificadosSemAtendente.has(l.id));
+
+    if (mostrar.length > 0) {
+      const nomes = mostrar.map(l => l.nome !== '—' ? l.nome : l.telefone).join(', ');
+      document.getElementById('alertaHumanoNomes').textContent = mostrar.length > 1
+        ? `${mostrar.length} clientes: ${nomes}`
         : nomes;
       document.getElementById('alertaHumanoTxt').textContent =
-        novos.length === 1 ? 'Cliente aguardando atendimento humano!' : `${novos.length} clientes aguardando atendimento!`;
+        mostrar.length === 1 ? 'Cliente aguardando atendimento humano!' : `${mostrar.length} clientes aguardando atendimento!`;
       document.getElementById('alertaHumano').classList.add('show');
       _ajustarOffsetAlerta();
-      if (temNovos) {
-        tocarNotificacaoAlerta();
-        document.getElementById('alertaHumano').classList.add('shake');
-        setTimeout(() => document.getElementById('alertaHumano').classList.remove('shake'), 500);
-      }
+      if (temNovos) tocarNotificacaoAlerta();   // som só quando chega alguém NOVO (sem tremer)
     } else {
-      fecharAlertaHumano();
+      _esconderAlertaHumano();
     }
     _qualificadosSemAtendente = ids;
   }
 
+  // ✕ / "Ver agora": dispensa quem está na fila agora — só volta a aparecer se chegar um cliente NOVO
   function fecharAlertaHumano() {
+    _qualificadosSemAtendente.forEach(id => _alertaHumanoDispensados.add(id));
+    _esconderAlertaHumano();
+  }
+
+  function _esconderAlertaHumano() {
     document.getElementById('alertaHumano').classList.remove('show');
     _ajustarOffsetAlerta();
   }
