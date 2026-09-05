@@ -1755,6 +1755,8 @@
   let allLeads = [];
   let statsData = {};
   let modalLeadId = null;
+  let _modalChatPoll = null;   // polling do chat do modal do funil (atualiza ao vivo)
+  let _modalChatSig = '';      // assinatura das msgs — só re-renderiza quando muda
 
   // ═══════ AUTH ═══════
   async function fazerLogin() {
@@ -2495,6 +2497,8 @@
 
       // Chat
       const _msgs = (conv && Array.isArray(conv.mensagens)) ? conv.mensagens : [];
+      const _ult = _msgs[_msgs.length - 1] || {};
+      _modalChatSig = _msgs.length + '|' + (_ult.horario || '') + '|' + String(_ult.conteudo || '').slice(0, 24);
       if (!_msgs.length) {
         document.getElementById('modalChat').innerHTML = '<div class="loading-msg">Nenhuma mensagem registrada.</div>';
       } else {
@@ -2502,6 +2506,9 @@
         const chat = document.getElementById('modalChat');
         chat.scrollTop = chat.scrollHeight;
       }
+      // Chat do funil ao vivo: atualiza sozinho a cada 5s enquanto o modal está aberto
+      if (_modalChatPoll) clearInterval(_modalChatPoll);
+      _modalChatPoll = setInterval(_pollModalChat, 5000);
     } catch(err) {
       document.getElementById('modalChat').innerHTML = '<div class="loading-msg" style="color:var(--red)">Erro ao carregar.</div>';
     }
@@ -3715,8 +3722,34 @@
   }
 
   function fecharModal(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
-  function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); modalLeadId = null; }
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('open');
+    modalLeadId = null;
+    if (_modalChatPoll) { clearInterval(_modalChatPoll); _modalChatPoll = null; }
+  }
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  // Chat do funil AO VIVO: enquanto o modal está aberto, busca a conversa e só re-renderiza
+  // quando chega msg nova (respeita áudio tocando e não puxa a rolagem se você subiu pra ler).
+  async function _pollModalChat() {
+    if (!modalLeadId) return;
+    const box = document.getElementById('modalChat');
+    if (!box) return;
+    if (Array.from(box.querySelectorAll('audio')).some(a => !a.paused && !a.ended)) return;
+    try {
+      const r = await fetch(`/api/leads/${modalLeadId}/conversa`);
+      if (!r.ok) return;
+      const conv = await r.json();
+      const msgs = (conv && Array.isArray(conv.mensagens)) ? conv.mensagens : [];
+      const ult = msgs[msgs.length - 1] || {};
+      const sig = msgs.length + '|' + (ult.horario || '') + '|' + String(ult.conteudo || '').slice(0, 24);
+      if (sig === _modalChatSig) return;   // nada novo
+      _modalChatSig = sig;
+      const perto = box.scrollTop + box.clientHeight >= box.scrollHeight - 60;
+      box.innerHTML = msgs.length ? renderMensagens(msgs) : '<div class="loading-msg">Nenhuma mensagem registrada.</div>';
+      if (perto) box.scrollTop = box.scrollHeight;   // só rola se você já estava no fim
+    } catch {}
+  }
 
   // ═══════ LISTA ═══════
   function renderLista() {
