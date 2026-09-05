@@ -3222,6 +3222,8 @@
   function _calcRetorno() {
     const el = document.getElementById('fc_retorno_rs');
     if (!el) return;
+    // Só o admin vê quanto a empresa ganha (Retorno em R$). Funcionária só informa o nível do R.
+    if (currentUser?.role !== 'admin') { el.textContent = ''; return; }
     const rs = _retornoRS(document.getElementById('fc_retorno')?.value, document.getElementById('fc_valor')?.value);
     el.textContent = (rs === '—') ? '' : ('Retorno: ' + rs);
   }
