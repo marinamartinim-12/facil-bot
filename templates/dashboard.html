@@ -621,23 +621,6 @@
     .btn-toggle { background: none; border: 1.5px solid var(--border); border-radius: 8px; font-size: 1.1rem; cursor: pointer; color: var(--navy); padding: .25rem .55rem; line-height: 1; transition: background .12s; }
     .btn-toggle:hover { background: var(--border); }
 
-    /* ── ALERTA ATENDIMENTO HUMANO ── */
-    @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-5px)} 40%,80%{transform:translateX(5px)} }
-    #alertaHumano {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
-      background: linear-gradient(135deg, #b91c1c, #ef4444);
-      color: #fff; padding: .7rem 1.5rem;
-      display: flex; align-items: center; gap: 1rem;
-      box-shadow: 0 4px 20px rgba(185,28,28,.5);
-      transform: translateY(-100%); transition: transform .35s cubic-bezier(.34,1.56,.64,1);
-    }
-    #alertaHumano.show { transform: translateY(0); }
-    #alertaHumano.shake { animation: shake .4s ease; }
-    #alertaHumano strong { font-size: .92rem; }
-    #alertaHumano .alerta-msg { flex: 1; font-size: .85rem; }
-    #alertaHumano button { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.4); color: #fff; border-radius: 7px; padding: .3rem .8rem; cursor: pointer; font-size: .82rem; font-weight: 600; white-space: nowrap; }
-    #alertaHumano button:hover { background: rgba(255,255,255,.35); }
-
     /* ── CHAT BUBBLE SPACING ── */
     .wsp-row { display: flex; margin-bottom: 3px; }
 
@@ -688,16 +671,6 @@
   </div>
 </div>
 
-<!-- ═══════════ ALERTA HUMANO ═══════════ -->
-<div id="alertaHumano">
-  <span style="font-size:1.4rem">🔔</span>
-  <div class="alerta-msg">
-    <strong id="alertaHumanoTxt">Cliente aguardando atendimento humano!</strong>
-    <span id="alertaHumanoNomes" style="font-size:.78rem;opacity:.85;display:block"></span>
-  </div>
-  <button onclick="showView('atendimento');fecharAlertaHumano()">👀 Ver agora</button>
-  <button onclick="fecharAlertaHumano()" style="background:none;border:none;font-size:1.2rem;padding:.2rem .4rem">✕</button>
-</div>
 <div id="sidebarOverlay" onclick="toggleSidebar()"></div>
 
 <!-- ═══════════ APP ═══════════ -->
@@ -715,6 +688,7 @@
       </button>
       <button class="nav-item active" onclick="showView('funil')" id="nav-funil">
         <span class="nav-icon">📊</span> Funil de Leads
+        <span id="badgeAguardando" title="clientes aguardando atendimento" style="display:none;margin-left:auto;background:var(--red);color:#fff;border-radius:99px;padding:.1rem .45rem;font-size:.68rem;font-weight:700"></span>
       </button>
       <button class="nav-item" onclick="showView('lista')" id="nav-lista">
         <span class="nav-icon">📋</span> Lista de Leads
@@ -8410,62 +8384,30 @@
     }
   }
 
-  // ═══════ ALERTA ATENDIMENTO HUMANO ═══════
+  // ═══════ CLIENTE AGUARDANDO ATENDIMENTO (contador no menu "Funil de Leads") ═══════
   let _qualificadosSemAtendente = new Set();
-  let _alertaHumanoDispensados = new Set();   // ids que a pessoa fechou no ✕ (não reaparecem)
   let _alertaTimeout = null;
 
   function verificarAlertaHumano(leads) {
     const novos = leads.filter(l => l.status === 'qualificado' && !l.responsavel);
     const ids = new Set(novos.map(l => l.id));
-
-    // Tira da lista de "dispensados" quem já saiu da fila (ganhou atendente / mudou de status)
-    for (const id of [..._alertaHumanoDispensados]) if (!ids.has(id)) _alertaHumanoDispensados.delete(id);
-
-    // Só mostra quem ainda NÃO foi dispensado no ✕
-    const mostrar = novos.filter(l => !_alertaHumanoDispensados.has(l.id));
-    const temNovos = mostrar.some(l => !_qualificadosSemAtendente.has(l.id));
-
-    if (mostrar.length > 0) {
-      const nomes = mostrar.map(l => l.nome !== '—' ? l.nome : l.telefone).join(', ');
-      document.getElementById('alertaHumanoNomes').textContent = mostrar.length > 1
-        ? `${mostrar.length} clientes: ${nomes}`
-        : nomes;
-      document.getElementById('alertaHumanoTxt').textContent =
-        mostrar.length === 1 ? 'Cliente aguardando atendimento humano!' : `${mostrar.length} clientes aguardando atendimento!`;
-      document.getElementById('alertaHumano').classList.add('show');
-      _ajustarOffsetAlerta();
-      if (temNovos) tocarNotificacaoAlerta();   // som só quando chega alguém NOVO (sem tremer)
-    } else {
-      _esconderAlertaHumano();
+    const temNovos = [...ids].some(id => !_qualificadosSemAtendente.has(id));
+    // Contador discreto no menu "Funil de Leads" (no lugar da antiga barra vermelha)
+    const badge = document.getElementById('badgeAguardando');
+    if (badge) {
+      if (novos.length > 0) {
+        badge.textContent = novos.length;
+        badge.title = novos.length === 1
+          ? '1 cliente aguardando atendimento'
+          : `${novos.length} clientes aguardando atendimento`;
+        badge.style.display = '';
+      } else {
+        badge.style.display = 'none';
+      }
     }
+    // Som só quando chega um cliente NOVO aguardando (sem visual atrapalhando)
+    if (temNovos && novos.length > 0) tocarNotificacaoAlerta();
     _qualificadosSemAtendente = ids;
-  }
-
-  // ✕ / "Ver agora": dispensa quem está na fila agora — só volta a aparecer se chegar um cliente NOVO
-  function fecharAlertaHumano() {
-    _qualificadosSemAtendente.forEach(id => _alertaHumanoDispensados.add(id));
-    _esconderAlertaHumano();
-  }
-
-  function _esconderAlertaHumano() {
-    document.getElementById('alertaHumano').classList.remove('show');
-    _ajustarOffsetAlerta();
-  }
-
-  // Empurra o app pra baixo na altura exata do alerta (em vez de ele cobrir o conteúdo)
-  function _ajustarOffsetAlerta() {
-    const alerta = document.getElementById('alertaHumano');
-    const app = document.getElementById('appView');
-    if (!app) return;
-    if (alerta && alerta.classList.contains('show')) {
-      const h = alerta.offsetHeight;
-      app.style.marginTop = h + 'px';
-      app.style.height = 'calc(100vh - ' + h + 'px)';
-    } else {
-      app.style.marginTop = '';
-      app.style.height = '';
-    }
   }
 
   function tocarNotificacaoAlerta() {
