@@ -76,12 +76,14 @@ Responda SOMENTE com JSON válido. Zero texto fora do JSON.
     "restricao": null,
     "modalidade": null
   },
-  "qualificado": true
+  "qualificado": true,
+  "perdido": false
 }
 
 - "mensagens" é sempre um array, mesmo com 1 item: ["texto"].
 - Preencha dados_coletados apenas com o que o cliente enviou NESTA mensagem.
 - qualificado: false somente quando desqualificado.
+- perdido: true SOMENTE no estado "restricao_oferta" quando o cliente NÃO tem CPF de outra pessoa (ver esse estado). Em todos os outros casos, perdido é false.
 
 ══════════════════════════════════════════════════
 REGRAS INVIOLÁVEIS
@@ -178,14 +180,36 @@ Salve o veículo. Envie e salve proximo_estado: "coletando_restricao"
 
 ━━━ ESTADO "coletando_restricao" ━━━
 Salve a resposta no campo restricao: "sim" se o cliente tiver restrição (ex: "tenho", "sim", "estou negativado", "nome sujo") ou "não" se não tiver (ex: "não tenho", "nome limpo", "não"). Se ficar em dúvida, salve exatamente o que ele respondeu.
-Envie e salve proximo_estado: "transferido"
+
+• Se restricao "não" (nome limpo) → proximo_estado: "transferido"
   "Ótimo ! Já tenho os dados que preciso, aguarde um momento que um dos nossos especialistas irá seguir com você. 😊"
+
+• Se restricao "sim" (tem restrição) → proximo_estado: "restricao_oferta"
+  "Agradeço muito a sua sinceridade! 🙏 E fica tranquilo(a), isso não te impede: muita gente realiza o financiamento no nome de uma pessoa de confiança (um parente ou amigo próximo) que não tenha restrição. Você tem o CPF de alguém assim que poderia entrar na proposta com você ?"
+
+━━━ ESTADO "restricao_oferta" ━━━
+O cliente está respondendo se tem o CPF de outra pessoa (sem restrição) para usar na proposta.
+
+• Se SIM (tem/consegue — ex: "tenho", "sim", "da minha esposa", "posso usar o do meu pai") → proximo_estado: "coletando_cpf_alt"
+  "Que bom ! 😊 Pode me passar o CPF dessa pessoa, por favor ?"
+
+• Se NÃO (não tem/não quer — ex: "não tenho", "não", "só o meu mesmo") → proximo_estado: "finalizado", perdido: true
+  "Sem problemas, e obrigada demais pelo seu contato! Permanecemos totalmente à disposição, se a situação mudar ou precisar de qualquer coisa, é só chamar aqui. Um abraço! 😊"
+
+━━━ ESTADO "coletando_cpf_alt" ━━━
+Salve o CPF informado no campo cpf. Envie e salve proximo_estado: "coletando_data_alt"
+  "E qual a data de nascimento dessa pessoa ?"
+
+━━━ ESTADO "coletando_data_alt" ━━━
+Salve a data de nascimento no campo data_nascimento (mesmo formato DD/MM/YYYY das outras etapas). Envie e salve proximo_estado: "transferido"
+  "Perfeito ! Já tenho o que preciso, aguarde um momento que um dos nossos especialistas irá seguir com você. 😊"
 
 ══════════════════════════════════════════════════
 Estados válidos para proximo_estado:
 aguardando_nome | aguardando_modalidade | coletando_cidade |
 coletando_cpf | coletando_data_nasc | coletando_carro |
-coletando_restricao | transferido | desqualificado
+coletando_restricao | restricao_oferta | coletando_cpf_alt |
+coletando_data_alt | transferido | finalizado | desqualificado
 ══════════════════════════════════════════════════
 """
 
@@ -217,7 +241,10 @@ _TRANSICOES_VALIDAS: dict[str, list[str]] = {
     EstadoConversaEnum.coletando_cpf:         ["coletando_data_nasc"],
     EstadoConversaEnum.coletando_data_nasc:   ["coletando_carro"],
     EstadoConversaEnum.coletando_carro:       ["coletando_restricao"],
-    EstadoConversaEnum.coletando_restricao:   ["transferido"],
+    EstadoConversaEnum.coletando_restricao:   ["transferido", "restricao_oferta"],
+    EstadoConversaEnum.restricao_oferta:      ["coletando_cpf_alt", "finalizado"],
+    EstadoConversaEnum.coletando_cpf_alt:     ["coletando_data_alt"],
+    EstadoConversaEnum.coletando_data_alt:    ["transferido"],
 }
 
 
@@ -346,7 +373,7 @@ def _salvar_mensagem(db: Session, telefone: str, role: str, conteudo: str):
     db.commit()
 
 
-def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, qualificado: bool):
+def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, qualificado: bool, perdido: bool = False):
     if dados.get("nome"):
         lead.nome = dados["nome"]
     if dados.get("cpf"):
@@ -372,7 +399,10 @@ def _atualizar_lead(db: Session, lead: Lead, dados: dict, proximo_estado: str, q
     lead.estado_conversa = proximo_estado
     lead.atualizado_em   = datetime.utcnow()
 
-    if not qualificado:
+    if perdido:
+        lead.status = StatusLeadEnum.perdido
+        lead.motivo_perda = "Restrição — sem CPF de terceiro"
+    elif not qualificado:
         lead.status = StatusLeadEnum.desqualificado
     elif proximo_estado in (EstadoConversaEnum.finalizado, EstadoConversaEnum.transferido):
         lead.status = StatusLeadEnum.qualificado
@@ -568,9 +598,10 @@ def processar_mensagem(telefone: str, mensagem_cliente: str, db: Session) -> lis
         proximo_estado  = dados.get("proximo_estado", lead.estado_conversa)
         dados_coletados = {k: v for k, v in (dados.get("dados_coletados") or {}).items() if v}
         qualificado     = dados.get("qualificado", True)
+        perdido         = bool(dados.get("perdido", False))
         estado_antes    = lead.estado_conversa  # Guarda antes de atualizar
 
-        _atualizar_lead(db, lead, dados_coletados, proximo_estado, qualificado)
+        _atualizar_lead(db, lead, dados_coletados, proximo_estado, qualificado, perdido)
 
         # Ao TRANSFERIR para o atendente (qualquer caminho), se estiver fora do
         # horário, o código acrescenta a mensagem padrão — com o nome do cliente.

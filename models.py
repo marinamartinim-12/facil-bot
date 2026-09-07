@@ -86,6 +86,9 @@ class EstadoConversaEnum(str, enum.Enum):
     coletando_data_nasc = "coletando_data_nasc"
     coletando_carro = "coletando_carro"
     coletando_restricao = "coletando_restricao"
+    restricao_oferta = "restricao_oferta"       # tem restrição → oferece usar CPF de terceiro
+    coletando_cpf_alt = "coletando_cpf_alt"     # coleta o CPF do terceiro (sem restrição)
+    coletando_data_alt = "coletando_data_alt"   # coleta o nascimento do terceiro
     finalizado = "finalizado"
     transferido = "transferido"
     desqualificado = "desqualificado"
