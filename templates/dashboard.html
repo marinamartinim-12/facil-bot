@@ -174,7 +174,7 @@
     .dash-tarja-label { font-size:.65rem;font-weight:700;text-transform:uppercase;color:#94a3b8; }
     .dash-tarja-val { font-size:1.1rem;font-weight:900;color:#fff; }
     /* Funil enxuto: esconde os cards de métricas e a faixa "Seu dia" — sobra só busca + kanban */
-    #funilStats, #funilPendencias { display: none !important; }
+    #funilStats { display: none !important; }
     /* funil stats cards */
     #funilStats { display:flex; flex-direction:column; gap:.45rem; margin-bottom:.55rem; }
     .funil-stats-row { display:flex; gap:.45rem; flex-wrap:wrap; }
@@ -775,14 +775,6 @@
         </div>
         <!-- Métricas -->
         <div style="display:flex;flex-direction:column;gap:.75rem">
-          <!-- Briefing do dia (IA) -->
-          <div class="form-card" id="dashBriefingCard" style="padding:.95rem 1.15rem;background:linear-gradient(135deg,#7c3aed,#9333ea);border:none;box-shadow:0 4px 16px rgba(124,58,237,.4);color:#fff">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.4rem">
-              <div style="font-size:.76rem;font-weight:800;text-transform:uppercase;letter-spacing:.3px">☀️ Seu dia <span style="font-weight:600;color:#e9d5ff;text-transform:none">· resumo da IA</span></div>
-              <button onclick="carregarBriefing(true)" title="Atualizar" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:7px;padding:.2rem .55rem;font-size:.75rem;cursor:pointer">🔄</button>
-            </div>
-            <div id="dashBriefingTexto" style="font-size:.9rem;color:#fff;line-height:1.55;white-space:pre-wrap">Carregando seu resumo do dia…</div>
-          </div>
           <!-- Tarja admin -->
           <div id="dashTarjaAdmin" style="display:none"></div>
 
@@ -856,14 +848,6 @@
         <div id="funilStats">
           <div id="funilOrigens" class="funil-stats-row" style="display:none"></div>
           <div id="funilMetrics" class="funil-stats-row"></div>
-        </div>
-        <!-- Banner clicável "Seu dia" → abre o briefing completo no Dashboard -->
-        <div id="funilPendencias" onclick="showView('dashboard')" title="Abrir seu briefing completo no Dashboard"
-          onmouseover="this.style.filter='brightness(1.08)'" onmouseout="this.style.filter='none'"
-          style="display:none;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem;background:linear-gradient(135deg,#7c3aed,#9333ea);border:none;border-radius:10px;padding:.6rem 1rem;font-size:.85rem;color:#fff;cursor:pointer;transition:filter .15s;box-shadow:0 2px 10px rgba(124,58,237,.35)">
-          <span style="font-weight:800">☀️ Seu dia:</span>
-          <span id="funilPendTexto">—</span>
-          <span style="margin-left:auto;font-weight:800;white-space:nowrap;background:rgba(255,255,255,.22);padding:.2rem .65rem;border-radius:99px">📖 leia seu briefing →</span>
         </div>
         <!-- Barra fila rotativa -->
         <div id="filaBarra" style="display:none">
@@ -1857,13 +1841,7 @@
     setInterval(carregarAtendentesAtivos, 120000);  // atualiza a cada 2min (nova funcionária entra sozinha)
     carregarDashboard();   // Métricas da aba Dashboard
     _moverCardsRH();       // tira os cards de RH de Relatórios e leva pra aba RH (antes de renderizar)
-    // Na 1ª abertura de cada período (manhã/tarde), cai no Dashboard p/ ver o briefing; depois, última aba.
-    const _periodoAtual = new Date().toDateString() + (new Date().getHours() < 13 ? '-m' : '-t');
     let viewInicial = localStorage.getItem('ultimaView') || 'funil';
-    if (localStorage.getItem('briefingLanding') !== _periodoAtual) {
-      localStorage.setItem('briefingLanding', _periodoAtual);
-      viewInicial = 'dashboard';
-    }
     if (currentUser.role === 'dono') viewInicial = 'dashboard';   // dono sempre abre no Dashboard
     showView(viewInicial);
     refresh();
@@ -1902,8 +1880,7 @@
     document.getElementById('pageTitle').textContent = titles[v] || v;
     document.getElementById('mainContent').classList.toggle('funil-mode', v === 'funil');
     if (v === 'contratos') carregarContratosFechados();
-    if (v === 'dashboard') { carregarDashboard(); carregarBriefing(); }
-    if (v === 'funil') carregarPendenciasFunil();
+    if (v === 'dashboard') carregarDashboard();
     if (v === 'usuarios') carregarUsuarios();
     if (v === 'relatorios') carregarRelatorios();
     if (v === 'rh') carregarRH();
@@ -2694,10 +2671,9 @@
     }
   }
 
-  // Atualiza o selo "sem próximo passo" no funil + a faixa "Seu dia" (após criar/concluir/remover agendamento)
+  // Atualiza o selo "sem próximo passo" no funil (após criar/concluir/remover agendamento)
   function _atualizarPassoFunil() {
     carregarLeads();
-    carregarPendenciasFunil();
   }
 
   async function criarAgendamento() {
@@ -8326,49 +8302,6 @@
     } finally {
       input.disabled = false; input.placeholder = ph; if (btn) btn.disabled = false; input.focus();
     }
-  }
-
-  let _briefingPeriodo = null;
-  async function carregarBriefing(force) {
-    const el = document.getElementById('dashBriefingTexto');
-    if (!el) return;
-    const _h = new Date().getHours();
-    const periodo = new Date().toDateString() + (_h < 13 ? '-manha' : '-tarde');
-    if (!force && _briefingPeriodo === periodo) return;   // já carregou neste período (manhã/tarde)
-    _briefingPeriodo = periodo;
-    el.textContent = '☀️ Montando seu dia…';
-    try {
-      const r = await fetch('/api/briefing-dia');
-      const d = await r.json();
-      if (r.ok && d.briefing) {
-        // escapa HTML e converte **negrito** em <b> (seguro)
-        el.innerHTML = d.briefing
-          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-          .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-      } else {
-        el.textContent = 'Não consegui montar o briefing agora.';
-      }
-    } catch {
-      el.textContent = 'Não consegui montar o briefing agora.';
-      _briefingPeriodo = null;   // deu erro: permite tentar de novo
-    }
-  }
-
-  async function carregarPendenciasFunil() {
-    const wrap = document.getElementById('funilPendencias');
-    const txt = document.getElementById('funilPendTexto');
-    if (!wrap || !txt) return;
-    try {
-      const r = await fetch('/api/pendencias');
-      if (!r.ok) { wrap.style.display = 'none'; return; }
-      const d = await r.json();
-      const partes = [];
-      if (d.atrasados) partes.push(`<b style="color:#fde68a">${d.atrasados}</b> atrasado(s)`);
-      if (d.hoje)      partes.push(`<b style="color:#fde68a">${d.hoje}</b> pra hoje`);
-      if (d.sem_passo) partes.push(`<b style="color:#fde68a">${d.sem_passo}</b> sem próximo passo`);
-      txt.innerHTML = partes.length ? partes.join(' · ') : 'tudo em dia ✅';
-      wrap.style.display = 'flex';
-    } catch { wrap.style.display = 'none'; }
   }
 
   // ═══════ SIDEBAR TOGGLE ═══════
