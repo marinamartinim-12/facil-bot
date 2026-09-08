@@ -57,6 +57,8 @@ app = FastAPI(title="Fácil Financiamentos", version="2.0.0")
 # Bloqueia qualquer escrita (POST/PUT/DELETE/PATCH) vinda de um token de dono.
 # Segurança de verdade no servidor — não depende de esconder botão no front.
 _DONO_ESCRITA_LIBERADA = {"/auth/login", "/auth/logout", "/api/logout", "/api/heartbeat"}
+# O dono é leitura no geral, MAS pode INSERIR observações nos leads (POST .../observacoes).
+_DONO_ESCRITA_LIBERADA_SUFIXO = ("/observacoes",)
 _DONO_GET_BLOQUEADO_PREFIX = ("/api/admin/", "/api/debug/", "/api/placa-debug")
 _DONO_GET_BLOQUEADO_EXATO = {"/api/diagnostico-ia", "/api/config"}
 
@@ -65,8 +67,10 @@ async def _guarda_dono_somente_leitura(request: Request, call_next):
     metodo = request.method
     path = request.url.path
     if metodo not in ("GET", "HEAD", "OPTIONS"):
-        # Escrita: bloqueia TUDO pro dono (exceto login/logout/heartbeat)
-        if path not in _DONO_ESCRITA_LIBERADA and role_do_token(request.cookies.get("access_token")) == "dono":
+        # Escrita: bloqueia pro dono, EXCETO login/logout/heartbeat e inserir observação
+        if role_do_token(request.cookies.get("access_token")) == "dono" \
+                and path not in _DONO_ESCRITA_LIBERADA \
+                and not path.endswith(_DONO_ESCRITA_LIBERADA_SUFIXO):
             return JSONResponse(
                 {"detail": "Perfil do dono é somente leitura — sem permissão para alterar."},
                 status_code=403,
