@@ -190,11 +190,23 @@ Salve a resposta no campo restricao: "sim" se o cliente tiver restrição (ex: "
 ━━━ ESTADO "restricao_oferta" ━━━
 O cliente está respondendo se tem o CPF de outra pessoa (sem restrição) para usar na proposta.
 
-• Se SIM (tem/consegue — ex: "tenho", "sim", "da minha esposa", "posso usar o do meu pai") → proximo_estado: "coletando_cpf_alt"
-  "Que bom ! 😊 Pode me passar o CPF dessa pessoa, por favor ?"
-
 • Se NÃO (não tem/não quer — ex: "não tenho", "não", "só o meu mesmo") → proximo_estado: "finalizado", perdido: true
   "Sem problemas, e obrigada demais pelo seu contato! Permanecemos totalmente à disposição, se a situação mudar ou precisar de qualquer coisa, é só chamar aqui. Um abraço! 😊"
+
+• Se SIM (tem/consegue — ex: "tenho", "sim", "da minha esposa", "posso usar o do meu pai") — OLHE A MODALIDADE:
+   ◦ Se a Modalidade for "refinanciamento" → proximo_estado: "restricao_geo"  (IMPORTANTE: usar o CPF de outra pessoa transforma o refinanciamento em FINANCIAMENTO, que fecha presencial em BH)
+     "Que bom ! 😊 Só um detalhe importante: usando o CPF de outra pessoa, a operação passa a ser um financiamento — e o fechamento do financiamento é presencial aqui na nossa sede em BH. Vocês conseguem vir até a gente ?"
+   ◦ Caso contrário (Modalidade "financiamento") → proximo_estado: "coletando_cpf_alt"  (financiamento já confirmou que vem a BH lá no início — não pergunte de novo)
+     "Que bom ! 😊 Pode me passar o CPF dessa pessoa, por favor ?"
+
+━━━ ESTADO "restricao_geo" ━━━
+O refinanciamento virou financiamento (usa o CPF de outra pessoa) e o cliente está respondendo se consegue vir até a sede em BH.
+
+• Se SIM (consegue vir) → modalidade: "financiamento", proximo_estado: "coletando_cpf_alt"
+  "Perfeito ! 😊 Então pode me passar o CPF dessa pessoa, por favor ?"
+
+• Se NÃO (não consegue vir) → proximo_estado: "finalizado", perdido: true
+  "Poxa, nesse caso não conseguimos seguir agora — mas agradecemos demais o seu contato e ficamos totalmente à disposição! Um abraço 😊"
 
 ━━━ ESTADO "coletando_cpf_alt" ━━━
 Salve o CPF informado no campo cpf. Envie e salve proximo_estado: "coletando_data_alt"
@@ -208,7 +220,7 @@ Salve a data de nascimento no campo data_nascimento (mesmo formato DD/MM/YYYY da
 Estados válidos para proximo_estado:
 aguardando_nome | aguardando_modalidade | coletando_cidade |
 coletando_cpf | coletando_data_nasc | coletando_carro |
-coletando_restricao | restricao_oferta | coletando_cpf_alt |
+coletando_restricao | restricao_oferta | restricao_geo | coletando_cpf_alt |
 coletando_data_alt | transferido | finalizado | desqualificado
 ══════════════════════════════════════════════════
 """
@@ -242,7 +254,8 @@ _TRANSICOES_VALIDAS: dict[str, list[str]] = {
     EstadoConversaEnum.coletando_data_nasc:   ["coletando_carro"],
     EstadoConversaEnum.coletando_carro:       ["coletando_restricao"],
     EstadoConversaEnum.coletando_restricao:   ["transferido", "restricao_oferta"],
-    EstadoConversaEnum.restricao_oferta:      ["coletando_cpf_alt", "finalizado"],
+    EstadoConversaEnum.restricao_oferta:      ["coletando_cpf_alt", "restricao_geo", "finalizado"],
+    EstadoConversaEnum.restricao_geo:         ["coletando_cpf_alt", "finalizado"],
     EstadoConversaEnum.coletando_cpf_alt:     ["coletando_data_alt"],
     EstadoConversaEnum.coletando_data_alt:    ["transferido"],
 }
