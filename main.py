@@ -2261,6 +2261,8 @@ async def mover_lead(
     if novo_status == StatusLeadEnum.perdido.value:
         _mp = (body.get("motivo_perda") or "").strip()
         _det = (body.get("motivo_perda_detalhe") or "").strip()
+        if _mp.lower() == "outros" and not _det:
+            raise HTTPException(status_code=400, detail='Em "Outros", descreva o motivo da perda.')
         if _mp:
             lead.motivo_perda = f"{_mp} — {_det}" if _det else _mp
     if novo_status == StatusLeadEnum.assumido and not lead.atribuido_para:

@@ -2264,7 +2264,7 @@
   // Resolve com {motivo, detalhe} ou null se cancelar.
   function pedirMotivoPerda() {
     return new Promise(resolve => {
-      const motivos = ['Pré-análise recusada','Proposta recusada','Não respondeu','Juros alto','Não aprova tudo que o cliente precisa','Desistência do cliente'];
+      const motivos = ['Pré-análise recusada','Proposta recusada','Não respondeu','Juros alto','Não aprova tudo que o cliente precisa','Desistência do cliente','Outros'];
       const ov = document.createElement('div');
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:100000;display:flex;align-items:center;justify-content:center;padding:1rem';
       ov.innerHTML = `
@@ -2289,6 +2289,16 @@
           escolhido = m;
           box.querySelectorAll('button').forEach(x => { x.style.background='#f8fafc'; x.style.borderColor='#e2e8f0'; x.style.color='#0f172a'; });
           b.style.background='#fee2e2'; b.style.borderColor='#dc2626'; b.style.color='#991b1b';
+          // "Outros" exige descrição escrita
+          const det = ov.querySelector('#mpDet');
+          if (m === 'Outros') {
+            det.placeholder = 'Descreva o motivo (obrigatório)…';
+            det.style.borderColor = '#dc2626';
+            det.focus();
+          } else {
+            det.placeholder = 'Detalhe (opcional)…';
+            det.style.borderColor = '#e2e8f0';
+          }
         };
         box.appendChild(b);
       });
@@ -2296,7 +2306,13 @@
       ov.querySelector('#mpCancel').onclick = () => fim(null);
       ov.querySelector('#mpOk').onclick = () => {
         if (!escolhido) { alert('Escolha um motivo.'); return; }
-        fim({ motivo: escolhido, detalhe: (ov.querySelector('#mpDet').value || '').trim() });
+        const _det = (ov.querySelector('#mpDet').value || '').trim();
+        if (escolhido === 'Outros' && !_det) {
+          alert('Em "Outros", descreva o motivo.');
+          ov.querySelector('#mpDet').focus();
+          return;
+        }
+        fim({ motivo: escolhido, detalhe: _det });
       };
       ov.onclick = e => { if (e.target === ov) fim(null); };
     });
