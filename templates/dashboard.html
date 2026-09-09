@@ -3969,7 +3969,8 @@
   let _parceirosCache = [];
 
   async function abrirNovoLead() {
-    ['nlNome','nlTelefone','nlObs'].forEach(id => document.getElementById(id).value = '');
+    ['nlNome','nlTelefone','nlCpf','nlObs'].forEach(id => document.getElementById(id).value = '');
+    _nlCpfLimparDup();
     document.getElementById('nlOrigem').value     = 'rede_social';
     document.getElementById('nlModalidade').value = 'indefinido';
     document.getElementById('nlRedeSocial').value = 'instagram';
@@ -4085,12 +4086,102 @@
     document.getElementById('modalNovoLead').classList.remove('open');
   }
 
+  // ─── CPF: máscara + checagem de card duplicado ────────────────────────────
+  let _nlCpfDupId = null;
+  let _nlCpfTimer = null;
+
+  function _nlMaskCpf(v) {
+    const d = (v || '').replace(/\D/g, '').slice(0, 11);
+    if (d.length > 9)      return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+    if (d.length > 6)      return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`;
+    if (d.length > 3)      return `${d.slice(0,3)}.${d.slice(3)}`;
+    return d;
+  }
+
+  function _cpfValido(d) {
+    if (!/^\d{11}$/.test(d) || /^(\d)\1{10}$/.test(d)) return false;
+    let s = 0;
+    for (let i = 0; i < 9; i++) s += parseInt(d[i], 10) * (10 - i);
+    let r = (s * 10) % 11; if (r === 10) r = 0;
+    if (r !== parseInt(d[9], 10)) return false;
+    s = 0;
+    for (let i = 0; i < 10; i++) s += parseInt(d[i], 10) * (11 - i);
+    r = (s * 10) % 11; if (r === 10) r = 0;
+    return r === parseInt(d[10], 10);
+  }
+
+  function _nlCpfHint(msg) {
+    const h = document.getElementById('nlCpfHint');
+    if (!h) return;
+    if (!msg) { h.style.display = 'none'; h.textContent = ''; return; }
+    h.textContent = '⚠️ ' + msg;
+    h.style.display = 'block';
+  }
+
+  function _nlCpfInput() {
+    const el = document.getElementById('nlCpf');
+    el.value = _nlMaskCpf(el.value);
+    const d = el.value.replace(/\D/g, '');
+    _nlCpfLimparDup();
+    if (d.length !== 11) return;              // ainda digitando
+    if (!_cpfValido(d)) { _nlCpfHint('CPF inválido'); return; }
+    clearTimeout(_nlCpfTimer);
+    _nlCpfTimer = setTimeout(() => _nlCpfVerificar(d), 250);
+  }
+
+  async function _nlCpfVerificar(digits) {
+    try {
+      const r = await fetch('/api/leads/por-cpf?cpf=' + encodeURIComponent(digits));
+      if (!r.ok) return;
+      const data = await r.json();
+      // só mostra se o CPF no campo ainda é o mesmo que foi consultado
+      const atual = (document.getElementById('nlCpf').value || '').replace(/\D/g, '');
+      if (atual === digits && data.existe && data.lead) _nlCpfMostrarDup(data.lead);
+    } catch {}
+  }
+
+  function _nlCpfMostrarDup(lead) {
+    _nlCpfDupId = lead.id;
+    document.getElementById('nlCpfDupTxt').innerHTML =
+      `⚠️ Esse CPF já tem um card: <b>${escHtml(lead.nome || '—')}</b>` +
+      (lead.telefone ? ` · ${escHtml(lead.telefone)}` : '') +
+      (lead.criado_em ? ` <span style="opacity:.75">(desde ${escHtml(lead.criado_em)})</span>` : '') +
+      `<br><span style="font-weight:400">Abra o card que já existe pra manter todo o histórico do cliente em um só lugar.</span>`;
+    document.getElementById('nlCpfDup').style.display = 'block';
+    const btn = document.getElementById('btnSalvarNovoLead');
+    btn.disabled = true;
+    btn.textContent = 'CPF já cadastrado';
+  }
+
+  function _nlCpfLimparDup() {
+    _nlCpfDupId = null;
+    document.getElementById('nlCpfDup').style.display = 'none';
+    _nlCpfHint('');
+    const btn = document.getElementById('btnSalvarNovoLead');
+    if (btn.textContent === 'CPF já cadastrado') { btn.disabled = false; btn.textContent = 'Criar Lead'; }
+  }
+
+  function _nlAbrirCardDup() {
+    const id = _nlCpfDupId;
+    if (!id) return;
+    fecharNovoLead();
+    verLead(id);
+  }
+
   async function salvarNovoLead() {
     const nome   = document.getElementById('nlNome').value.trim();
     const btn    = document.getElementById('btnSalvarNovoLead');
     const origem = document.getElementById('nlOrigem').value;
 
     if (!nome) { mostrarNovoLeadMsg('O nome é obrigatório.', false); return; }
+
+    // CPF é opcional, mas se preenchido tem que ser válido (senão vira lixo/dedup falsa)
+    const _cpfD = document.getElementById('nlCpf').value.replace(/\D/g, '');
+    if (_cpfD && !_cpfValido(_cpfD)) {
+      _nlCpfHint('CPF inválido');
+      mostrarNovoLeadMsg('CPF inválido — corrija ou deixe em branco.', false);
+      return;
+    }
 
     // origem_detalhe
     let origem_detalhe = '';
@@ -4110,6 +4201,7 @@
     const body = {
       nome,
       telefone:       document.getElementById('nlTelefone').value.trim(),
+      cpf:            document.getElementById('nlCpf').value.trim(),
       origem,
       origem_detalhe,
       parceiro_id:    parceiro_id ? parseInt(parceiro_id) : null,
@@ -4124,12 +4216,26 @@
         method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
       });
       const data = await r.json();
-      if (!r.ok) { mostrarNovoLeadMsg(data.detail || 'Erro ao criar lead.', false); return; }
+      if (!r.ok) {
+        // 409 = já existe card com este CPF → mostra alerta + botão pra abrir
+        if (r.status === 409 && data.detail && data.detail.lead_id) {
+          _nlCpfMostrarDup({ id: data.detail.lead_id, nome: data.detail.nome });
+          mostrarNovoLeadMsg('Esse CPF já tem um card — abra o card existente.', false);
+          return;
+        }
+        const msg = (data.detail && data.detail.msg) ? data.detail.msg
+                  : (typeof data.detail === 'string' ? data.detail : 'Erro ao criar lead.');
+        mostrarNovoLeadMsg(msg, false);
+        return;
+      }
       mostrarNovoLeadMsg('✓ Lead criado com sucesso!', true);
       await refresh();
       setTimeout(fecharNovoLead, 1000);
     } catch { mostrarNovoLeadMsg('Erro de conexão.', false); }
-    finally { btn.disabled = false; btn.textContent = 'Criar Lead'; }
+    finally {
+      // não reabilita se um CPF duplicado foi travado
+      if (!_nlCpfDupId) { btn.disabled = false; btn.textContent = 'Criar Lead'; }
+    }
   }
 
   function mostrarNovoLeadMsg(texto, ok) {
@@ -8682,6 +8788,22 @@
           </label>
           <input id="nlTelefone" type="tel" placeholder="Ex: 31999990000"
             style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+        </div>
+
+        <!-- CPF (evita card duplicado) -->
+        <div style="grid-column:1/-1">
+          <label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem">
+            CPF
+            <span style="font-weight:400;text-transform:none;font-size:.7rem">(evita card duplicado)</span>
+          </label>
+          <input id="nlCpf" type="text" inputmode="numeric" placeholder="000.000.000-00" maxlength="14"
+            oninput="_nlCpfInput()"
+            style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+          <div id="nlCpfHint" style="display:none;margin-top:.35rem;font-size:.78rem;font-weight:600;color:#b91c1c"></div>
+          <div id="nlCpfDup" style="display:none;margin-top:.5rem;padding:.6rem .8rem;border-radius:8px;background:#fef3c7;border:1.5px solid #fcd34d;font-size:.83rem;color:#92400e">
+            <div id="nlCpfDupTxt" style="margin-bottom:.45rem;line-height:1.35"></div>
+            <button type="button" onclick="_nlAbrirCardDup()" class="btn btn-sm" style="background:#d97706;color:#fff;border:none">Abrir card existente →</button>
+          </div>
         </div>
 
         <!-- Origem -->

@@ -1951,6 +1951,19 @@ async def remover_contato(
 
 # ─── API Leads ───────────────────────────────────────────────────────────────────
 
+def _cpf_valido(d: str) -> bool:
+    """Valida CPF: 11 dígitos, não todos iguais e dígitos verificadores corretos."""
+    if not d or len(d) != 11 or not d.isdigit() or d == d[0] * 11:
+        return False
+    soma = sum(int(d[i]) * (10 - i) for i in range(9))
+    r = (soma * 10) % 11
+    if (0 if r == 10 else r) != int(d[9]):
+        return False
+    soma = sum(int(d[i]) * (11 - i) for i in range(10))
+    r = (soma * 10) % 11
+    return (0 if r == 10 else r) == int(d[10])
+
+
 @app.post("/api/leads")
 async def criar_lead_manual(
     request: Request,
@@ -1959,6 +1972,7 @@ async def criar_lead_manual(
 ):
     """Cria um lead manualmente (sem passar pelo bot do WhatsApp)."""
     import time
+    from sqlalchemy import func
     body = await request.json()
 
     nome            = body.get("nome", "").strip()
@@ -1969,9 +1983,32 @@ async def criar_lead_manual(
     modalidade      = body.get("modalidade", ModalidadeEnum.indefinido)
     obs             = body.get("observacao", "").strip()
     atrib_id        = body.get("atribuido_para")
+    cpf_in          = (body.get("cpf") or "").strip()
 
     if not nome:
         raise HTTPException(status_code=400, detail="O nome do lead é obrigatório")
+
+    # CPF: valida, normaliza e barra card duplicado — 1 card por cliente.
+    # Só grava/deduplica CPF de verdade (11 dígitos válidos); parcial ou lixo é recusado
+    # pra não virar chave de dedup falsa.
+    cpf_digits = "".join(c for c in cpf_in if c.isdigit())
+    cpf_fmt = None
+    if cpf_digits:
+        if not _cpf_valido(cpf_digits):
+            raise HTTPException(status_code=400, detail="CPF inválido — corrija ou deixe em branco.")
+        cpf_fmt = f"{cpf_digits[:3]}.{cpf_digits[3:6]}.{cpf_digits[6:9]}-{cpf_digits[9:]}"
+        existente = (
+            db.query(Lead)
+            .filter(func.regexp_replace(func.coalesce(Lead.cpf, ""), "[^0-9]", "", "g") == cpf_digits)
+            .order_by(Lead.criado_em.asc())
+            .first()
+        )
+        if existente:
+            raise HTTPException(status_code=409, detail={
+                "msg": "Já existe um card para este CPF.",
+                "lead_id": existente.id,
+                "nome": existente.nome,
+            })
 
     # Telefone é único — se não informado, gera placeholder
     if not telefone:
@@ -1998,6 +2035,7 @@ async def criar_lead_manual(
     lead = Lead(
         nome=nome,
         telefone=telefone,
+        cpf=cpf_fmt,
         origem=origem,
         origem_detalhe=origem_detalhe,
         parceiro_id=int(parceiro_id) if parceiro_id else None,
@@ -2026,6 +2064,39 @@ async def criar_lead_manual(
     db.commit()
     db.refresh(lead)
     return _serial_lead(lead, db)
+
+
+@app.get("/api/leads/por-cpf")
+async def buscar_lead_por_cpf(
+    cpf: str = "",
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Procura um card existente pelo CPF (comparando só os dígitos).
+    Usado no 'Novo Lead' pra evitar cards duplicados do mesmo cliente."""
+    from sqlalchemy import func
+    digits = "".join(c for c in (cpf or "") if c.isdigit())
+    if not _cpf_valido(digits):
+        return {"existe": False}
+    row = (
+        db.query(Lead)
+        .filter(func.regexp_replace(func.coalesce(Lead.cpf, ""), "[^0-9]", "", "g") == digits)
+        .order_by(Lead.criado_em.asc())
+        .first()
+    )
+    if not row:
+        return {"existe": False}
+    st = row.status.value if hasattr(row.status, "value") else row.status
+    return {
+        "existe": True,
+        "lead": {
+            "id": row.id,
+            "nome": row.nome,
+            "telefone": row.telefone,
+            "status": st,
+            "criado_em": row.criado_em.strftime("%d/%m/%Y") if row.criado_em else "",
+        },
+    }
 
 
 def _leads_sync(db, status, modalidade):
