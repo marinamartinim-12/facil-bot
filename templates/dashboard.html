@@ -3323,6 +3323,18 @@
     reais = (reais.replace(/\D/g, '') || '0').replace(/^0+(?=\d)/, '');
     return reais.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + cent;
   }
+  // Total financiado = Valor financiado + Comissão (do carro). null se ambos vazios.
+  function _totalFinNum(c){
+    const vf = _parseR(c && c.valor_financiado), vcom = _parseR(c && c.valor_comissao);
+    if (vf == null && vcom == null) return null;
+    return Math.max(0, (vf || 0) + (vcom || 0));
+  }
+  // Líquido liberado = Valor aprovado − Comissão (da proposta do banco). null se sem aprovado.
+  function _liquidoNum(aprovado, comissao){
+    const a = _parseR(aprovado);
+    if (a == null) return null;
+    return a - (_parseR(comissao) || 0);   // pode ficar negativo → sinaliza erro (comissão > aprovado)
+  }
   // RETORNO em R$ = Valor Financiado × (nível × 1,2)% − 25%. (Comissão é OUTRA coisa — fica manual.)
   function _retornoRS(nivel, financiado) {
     const n = parseFloat(String(nivel == null ? '' : nivel).replace(',', '.'));
@@ -3365,6 +3377,8 @@
       const propsOrd = props.map((p, j) => ({ p, j })).sort((a, b) => (_STORDEM[a.p.status] ?? 99) - (_STORDEM[b.p.status] ?? 99));
       const propsHtml = propsOrd.length ? propsOrd.map(({ p, j }) => {
         const cor = _corStatus(p.status);
+        const _lq = _liquidoNum(p.valor_aprovado, p.comissao);
+        const _lqNeg = (_lq != null && _lq < 0);
         return `<div style="display:grid;grid-template-columns:1fr auto;gap:.3rem;align-items:center;margin-bottom:.3rem">
           <div style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">
             <select onchange="_setBanco(${i},${j},this.value)" style="${inp};flex:1;min-width:120px">
@@ -3377,6 +3391,8 @@
               ${_STPROP.map(s => `<option value="${s[0]}" ${p.status === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}
             </select>
             <input value="${esc1(p.valor_aprovado)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'valor_aprovado',this.value)" placeholder="Aprovado R$" style="${inp};width:98px">
+            <input value="${esc1(p.comissao)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'comissao',this.value)" placeholder="Comissão R$" style="${inp};width:98px">
+            <div id="liq${i}_${j}" title="${_lqNeg?'Comissão maior que o aprovado — confira os valores':'Líquido liberado = Aprovado − Comissão (calculado)'}" style="${inp};width:104px;font-weight:700;box-sizing:border-box;display:flex;align-items:center;${_lqNeg?'background:#fee2e2;color:#991b1b':'background:#f1f5f9;color:#0d2b4e'}">${_lq!=null?esc1(_fmtR(_lq)):'—'}</div>
             <input value="${esc1(p.qtd_parcelas)}" oninput="_setProp(${i},${j},'qtd_parcelas',this.value.replace(/\D/g,''))" placeholder="Parc." inputmode="numeric" style="${inp};width:46px;text-align:center">
             <input value="${esc1(p.valor_parcela)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'valor_parcela',this.value)" placeholder="Parcela R$" style="${inp};width:98px">
             <input value="${esc1(p.retorno)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'retorno',this.value)" placeholder="R (retorno)" title="Retorno — comissão da loja" style="${inp};width:98px">
@@ -3400,12 +3416,16 @@
         <div style="margin-top:.5rem;border-top:1px dashed #e2e8f0;padding-top:.45rem">
           <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:.35rem">💳 Financiamento</div>
           <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.45rem">
-            <label style="flex:1;min-width:88px;font-size:.66rem;color:#64748b">Valor do carro
+            <label style="flex:1;min-width:84px;font-size:.66rem;color:#64748b">Valor do carro
               <input value="${esc1(c.valor_carro)}" oninput="this.value=_maskMoney(this.value);_setCarVal(${i},'valor_carro',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
-            <label style="flex:1;min-width:88px;font-size:.66rem;color:#64748b">Entrada
+            <label style="flex:1;min-width:84px;font-size:.66rem;color:#64748b">Entrada
               <input id="entVal${i}" value="${esc1(c.valor_entrada)}" oninput="this.value=_maskMoney(this.value);_setCarVal(${i},'valor_entrada',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
-            <label style="flex:1;min-width:88px;font-size:.66rem;color:#64748b">Financiado
+            <label style="flex:1;min-width:84px;font-size:.66rem;color:#64748b">Financiado
               <input id="finVal${i}" value="${esc1(c.valor_financiado)}" oninput="this.value=_maskMoney(this.value);_setCarVal(${i},'valor_financiado',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem;font-weight:700;color:#0d2b4e"></label>
+            <label style="flex:1;min-width:84px;font-size:.66rem;color:#64748b">Comissão
+              <input value="${esc1(c.valor_comissao)}" oninput="this.value=_maskMoney(this.value);_setCarVal(${i},'valor_comissao',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
+            <label style="flex:1;min-width:84px;font-size:.66rem;color:#64748b">Total financiado
+              <div id="carTot${i}" title="Financiado + Comissão (calculado)" style="${inp};width:100%;margin-top:.12rem;background:#f1f5f9;color:#0d2b4e;font-weight:700;box-sizing:border-box;min-height:1.15rem">${_totalFinNum(c)!=null?esc1(_fmtR(_totalFinNum(c))):'—'}</div></label>
           </div>
           <div style="font-size:.66rem;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:.3rem">Propostas aos bancos</div>
           ${propsHtml}
@@ -3446,9 +3466,35 @@
       if (ve != null) setF('valor_financiado', vc - ve);
       else if (vf != null) setF('valor_entrada', vc - vf);
     }
+    _recalcTotalFin(i);            // Total financiado = Financiado + Comissão (travado)
     _saveCarrosDeb();
   }
-  function _setProp(i, j, campo, val) { if (!_carrosLead[i].propostas) _carrosLead[i].propostas = []; _carrosLead[i].propostas[j][campo] = val; _saveCarrosDeb(); }
+  function _recalcTotalFin(i) {
+    const c = _carrosLead[i];
+    const n = _totalFinNum(c);
+    c.valor_total_financiado = n != null ? _fmtR(n) : '';
+    const el = document.getElementById('carTot' + i);
+    if (el) el.textContent = n != null ? _fmtR(n) : '—';
+  }
+  function _setProp(i, j, campo, val) {
+    if (!_carrosLead[i].propostas) _carrosLead[i].propostas = [];
+    _carrosLead[i].propostas[j][campo] = val;
+    if (campo === 'comissao' || campo === 'valor_aprovado') {   // Líquido = Aprovado − Comissão (calculado)
+      const p = _carrosLead[i].propostas[j];
+      const n = _liquidoNum(p.valor_aprovado, p.comissao);
+      p.liquido_liberado = n != null ? _fmtR(n) : '';
+      _pintaLiq(document.getElementById('liq' + i + '_' + j), n);
+    }
+    _saveCarrosDeb();
+  }
+  function _pintaLiq(el, n) {
+    if (!el) return;
+    const neg = (n != null && n < 0);
+    el.textContent = n != null ? _fmtR(n) : '—';
+    el.style.background = neg ? '#fee2e2' : '#f1f5f9';
+    el.style.color = neg ? '#991b1b' : '#0d2b4e';
+    el.title = neg ? 'Comissão maior que o aprovado — confira os valores' : 'Líquido liberado = Aprovado − Comissão (calculado)';
+  }
   function _setBanco(i, j, val) {
     if (val === '__outro__') {
       const nome = (prompt('Nome do banco:') || '').trim();
@@ -3462,7 +3508,7 @@
     _saveCarrosDeb();
   }
   function _setPropStatus(i, j, val) { _carrosLead[i].propostas[j].status = val; _desenharCarros(); _saveCarrosDeb(); }
-  function _addProp(i) { if (!_carrosLead[i].propostas) _carrosLead[i].propostas = []; _carrosLead[i].propostas.push({ banco: '', status: 'enviada', valor_aprovado: '', qtd_parcelas: '', valor_parcela: '' }); _desenharCarros(); }
+  function _addProp(i) { if (!_carrosLead[i].propostas) _carrosLead[i].propostas = []; _carrosLead[i].propostas.push({ banco: '', status: 'enviada', valor_aprovado: '', comissao: '', liquido_liberado: '', qtd_parcelas: '', valor_parcela: '' }); _desenharCarros(); }
   function _delProp(i, j) { _carrosLead[i].propostas.splice(j, 1); _desenharCarros(); _saveCarrosDeb(); }
 
   async function buscarPlaca() {
