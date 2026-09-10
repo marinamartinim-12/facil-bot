@@ -3378,6 +3378,13 @@
     if (a == null) return null;
     return a - (_parseR(comissao) || 0);   // pode ficar negativo → sinaliza erro (comissão > aprovado)
   }
+  // R (nível do retorno) é NÚMERO puro, não dinheiro. Normaliza valores antigos salvos com máscara ("R$ 6,00" → "6").
+  function _nivelFmt(v){
+    if (v == null || v === '') return '';
+    const s = String(v);
+    if (/r\$/i.test(s)) { const n = _parseR(s); return n == null ? '' : String(n).replace('.', ','); }
+    return s;
+  }
   // RETORNO em R$ = Valor Financiado × (nível × 1,2)% − 25%. (Comissão é OUTRA coisa — fica manual.)
   function _retornoRS(nivel, financiado) {
     const n = parseFloat(String(nivel == null ? '' : nivel).replace(',', '.'));
@@ -3422,23 +3429,32 @@
         const cor = _corStatus(p.status);
         const _lq = _liquidoNum(p.valor_aprovado, p.comissao);
         const _lqNeg = (_lq != null && _lq < 0);
-        return `<div style="display:grid;grid-template-columns:1fr auto;gap:.3rem;align-items:center;margin-bottom:.3rem">
-          <div style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">
-            <select onchange="_setBanco(${i},${j},this.value)" style="${inp};flex:1;min-width:120px">
-              <option value="" ${!p.banco?'selected':''}>Banco…</option>
-              ${_BANCOS.map(b => `<option value="${b}" ${p.banco===b?'selected':''}>${b}</option>`).join('')}
-              ${p.banco && !_BANCOS.includes(p.banco) ? `<option value="${esc1(p.banco)}" selected>${esc1(p.banco)}</option>` : ''}
-              <option value="__outro__">➕ Inserir manual…</option>
-            </select>
-            <select onchange="_setPropStatus(${i},${j},this.value)" style="${inp};font-weight:700;background:${cor.bg};color:${cor.fg}">
-              ${_STPROP.map(s => `<option value="${s[0]}" ${p.status === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}
-            </select>
-            <input value="${esc1(p.valor_aprovado)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'valor_aprovado',this.value)" placeholder="Aprovado R$" style="${inp};width:98px">
-            <input value="${esc1(p.comissao)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'comissao',this.value)" placeholder="Comissão R$" style="${inp};width:98px">
-            <div id="liq${i}_${j}" title="${_lqNeg?'Comissão maior que o aprovado — confira os valores':'Líquido liberado = Aprovado − Comissão (calculado)'}" style="${inp};width:104px;font-weight:700;box-sizing:border-box;display:flex;align-items:center;${_lqNeg?'background:#fee2e2;color:#991b1b':'background:#f1f5f9;color:#0d2b4e'}">${_lq!=null?esc1(_fmtR(_lq)):'—'}</div>
-            <input value="${esc1(p.qtd_parcelas)}" oninput="_setProp(${i},${j},'qtd_parcelas',this.value.replace(/\D/g,''))" placeholder="Parc." inputmode="numeric" style="${inp};width:46px;text-align:center">
-            <input value="${esc1(p.valor_parcela)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'valor_parcela',this.value)" placeholder="Parcela R$" style="${inp};width:98px">
-            <input value="${esc1(p.retorno)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'retorno',this.value)" placeholder="R (retorno)" title="Retorno — comissão da loja" style="${inp};width:98px">
+        const cap = 'display:flex;flex-direction:column;gap:2px;font-size:.58rem;font-weight:700;text-transform:uppercase;color:#64748b;letter-spacing:.02em';
+        return `<div style="display:grid;grid-template-columns:1fr auto;gap:.3rem;align-items:flex-end;margin-bottom:.5rem">
+          <div style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:flex-end">
+            <label style="${cap};flex:1;min-width:120px">Banco
+              <select onchange="_setBanco(${i},${j},this.value)" style="${inp};width:100%">
+                <option value="" ${!p.banco?'selected':''}>Banco…</option>
+                ${_BANCOS.map(b => `<option value="${b}" ${p.banco===b?'selected':''}>${b}</option>`).join('')}
+                ${p.banco && !_BANCOS.includes(p.banco) ? `<option value="${esc1(p.banco)}" selected>${esc1(p.banco)}</option>` : ''}
+                <option value="__outro__">➕ Inserir manual…</option>
+              </select></label>
+            <label style="${cap}">Status
+              <select onchange="_setPropStatus(${i},${j},this.value)" style="${inp};font-weight:700;background:${cor.bg};color:${cor.fg}">
+                ${_STPROP.map(s => `<option value="${s[0]}" ${p.status === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}
+              </select></label>
+            <label style="${cap}">Aprovado
+              <input value="${esc1(p.valor_aprovado)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'valor_aprovado',this.value)" placeholder="R$" style="${inp};width:98px"></label>
+            <label style="${cap}">Comissão
+              <input value="${esc1(p.comissao)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'comissao',this.value)" placeholder="R$" style="${inp};width:98px"></label>
+            <label style="${cap}">Líquido liberado
+              <div id="liq${i}_${j}" title="${_lqNeg?'Comissão maior que o aprovado — confira os valores':'Líquido liberado = Aprovado − Comissão (calculado)'}" style="${inp};width:104px;font-weight:700;box-sizing:border-box;display:flex;align-items:center;${_lqNeg?'background:#fee2e2;color:#991b1b':'background:#f1f5f9;color:#0d2b4e'}">${_lq!=null?esc1(_fmtR(_lq)):'—'}</div></label>
+            <label style="${cap}">Parcelas
+              <input value="${esc1(p.qtd_parcelas)}" oninput="_setProp(${i},${j},'qtd_parcelas',this.value.replace(/\D/g,''))" placeholder="nº" inputmode="numeric" style="${inp};width:52px;text-align:center"></label>
+            <label style="${cap}">Valor parcela
+              <input value="${esc1(p.valor_parcela)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'valor_parcela',this.value)" placeholder="R$" style="${inp};width:98px"></label>
+            <label style="${cap}">R (nível)
+              <input value="${esc1(_nivelFmt(p.retorno))}" oninput="this.value=this.value.replace(/[^0-9.,]/g,'');_setProp(${i},${j},'retorno',this.value)" placeholder="6" title="Nível do retorno — número (ex.: 6)" inputmode="decimal" style="${inp};width:64px;text-align:center"></label>
           </div>
           <button onclick="_delProp(${i},${j})" title="Remover banco" class="btn btn-sm" style="padding:.15rem .4rem;font-size:.72rem;background:#fee2e2;color:#991b1b">✕</button>
         </div>`;
