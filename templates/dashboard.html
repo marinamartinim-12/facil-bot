@@ -1673,6 +1673,14 @@
 
       <!-- ═══ ABA 3: FINANCIAMENTO ═══ -->
       <div class="lead-panel" id="tabFinanciamento">
+        <!-- Tipo de operação: EGV (Refinanciamento) ou Financiamento -->
+        <div class="modal-section" id="finModalidadeSection">
+          <h4 style="margin-bottom:.5rem">🏷️ Tipo de operação</h4>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            <button type="button" id="finModEgv" onclick="_setModalidade('refinanciamento')" style="flex:1;min-width:150px;padding:.5rem .8rem;border:1.5px solid #cbd5e1;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer;background:#fff;color:#0d2b4e">EGV (Refinanciamento)</button>
+            <button type="button" id="finModFin" onclick="_setModalidade('financiamento')" style="flex:1;min-width:150px;padding:.5rem .8rem;border:1.5px solid #cbd5e1;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer;background:#fff;color:#0d2b4e">Financiamento</button>
+          </div>
+        </div>
         <!-- Copiar pro banco: dados do cliente com botão de copiar (colar no site do banco) -->
         <div class="modal-section" id="finCopiarSection">
           <h4 style="margin-bottom:.5rem">📋 Copiar pro banco</h4>
@@ -3245,8 +3253,43 @@
 
   function renderCarros(lead) {
     _carrosLead = Array.isArray(lead?.carros_proposta) ? lead.carros_proposta.slice() : [];
+    _renderModalidadeToggle(lead);
     _renderCopiarBanco(lead);
     _desenharCarros();
+  }
+
+  // Seletor EGV (refinanciamento) x Financiamento no topo da aba — ligado na lead.modalidade
+  function _renderModalidadeToggle(lead) {
+    const m = lead && lead.modalidade;
+    const set = (el, active) => {
+      if (!el) return;
+      el.style.background  = active ? '#0d2b4e' : '#fff';
+      el.style.color       = active ? '#fff'    : '#0d2b4e';
+      el.style.borderColor = active ? '#0d2b4e' : '#cbd5e1';
+    };
+    set(document.getElementById('finModEgv'), m === 'refinanciamento');
+    set(document.getElementById('finModFin'), m === 'financiamento');
+  }
+
+  async function _setModalidade(m) {
+    if (!modalLeadId) return;
+    try {
+      const r = await fetch(`/api/leads/${modalLeadId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modalidade: m }),
+      });
+      if (!r.ok) return;
+      const lead = await r.json();
+      window._modalLeadData = lead;
+      const idx = allLeads.findIndex(l => l.id === modalLeadId);
+      if (idx !== -1) allLeads[idx] = lead;
+      _renderModalidadeToggle(lead);
+      // atualiza o subtítulo do cabeçalho (telefone · modalidade)
+      const _mod = (lead.modalidade && lead.modalidade !== 'indefinido')
+        ? (lead.modalidade.charAt(0).toUpperCase() + lead.modalidade.slice(1)) : '';
+      const _subEl = document.getElementById('modalSubtitle');
+      if (_subEl) _subEl.textContent = [lead.telefone, _mod].filter(Boolean).join(' · ');
+    } catch {}
   }
 
   // ——— Copiar pro banco (colar no site do banco); feedback ✓ por ~1,3s ———
