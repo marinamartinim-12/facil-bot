@@ -1865,6 +1865,13 @@
   const adminViews = ['contratos', 'usuarios', 'relatorios', 'rh', 'configuracoes'];
   const donoViews = ['dashboard', 'funil', 'relatorios'];   // o que o Dono pode abrir
   function showView(v) {
+    // Se um lead está aberto, fecha antes de trocar de tela (senão ele fica por cima do menu).
+    // Avisa só se houver algo digitado e não salvo (observação / dados em edição).
+    const _ovLead = document.getElementById('modalOverlay');
+    if (_ovLead && _ovLead.classList.contains('open')) {
+      if (_leadSujo() && !confirm('Você tem alterações não salvas neste lead. Sair sem salvar?')) return;
+      closeModal();
+    }
     // Bloqueia telas de admin p/ quem não é admin — exceto o Dono nas telas dele
     if (adminViews.includes(v) && currentUser?.role !== 'admin'
         && !(currentUser?.role === 'dono' && donoViews.includes(v))) return;
@@ -3713,7 +3720,21 @@
   }
 
   function fecharModal(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
+  // Há algo digitado e não salvo no lead aberto? (financiamento auto-salva, então não conta)
+  function _leadSujo() {
+    const obs = document.getElementById('novaObs');
+    if (obs && obs.value.trim()) return true;                 // observação escrita e não salva
+    if (document.getElementById('ei_nome')) return true;      // Dados do lead em modo de edição
+    if (document.querySelector('#modalOverlay [id^="dc_"]')) return true;   // Dados do requerimento em edição
+    return false;
+  }
+
   function closeModal() {
+    // Descarrega um auto-save do financiamento que esteja pendente (debounce) antes de fechar
+    if (typeof _saveCarTO !== 'undefined' && _saveCarTO && modalLeadId) {
+      clearTimeout(_saveCarTO); _saveCarTO = null;
+      try { _salvarCarros(); } catch (e) {}
+    }
     document.getElementById('modalOverlay').classList.remove('open');
     modalLeadId = null;
     if (_modalChatPoll) { clearInterval(_modalChatPoll); _modalChatPoll = null; }
