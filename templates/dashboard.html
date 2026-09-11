@@ -3378,6 +3378,9 @@
     if (a == null) return null;
     return a - (_parseR(comissao) || 0);   // pode ficar negativo → sinaliza erro (comissão > aprovado)
   }
+  // Comissão % ↔ R$: % é número (aceita vírgula). Formata sem casas inúteis (5 → "5", 4.166 → "4,17").
+  function _parsePct(s){ if (s == null || s === '') return null; const n = parseFloat(String(s).replace(',', '.').replace(/[^\d.]/g, '')); return isFinite(n) ? n : null; }
+  function _fmtPct(n){ if (n == null || !isFinite(n)) return ''; return (Math.round(n * 100) / 100).toString().replace('.', ','); }
   // R (nível do retorno) é NÚMERO puro, não dinheiro. Normaliza valores antigos salvos com máscara ("R$ 6,00" → "6").
   function _nivelFmt(v){
     if (v == null || v === '') return '';
@@ -3445,8 +3448,10 @@
               </select></label>
             <label style="${cap}">Aprovado
               <input value="${esc1(p.valor_aprovado)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'valor_aprovado',this.value)" placeholder="R$" style="${inp};width:98px"></label>
-            <label style="${cap}">Comissão
-              <input value="${esc1(p.comissao)}" oninput="this.value=_maskMoney(this.value);_setProp(${i},${j},'comissao',this.value)" placeholder="R$" style="${inp};width:98px"></label>
+            <label style="${cap}">Comissão (% / R$)
+              <div style="display:flex;gap:.25rem">
+                <input id="propComPct${i}_${j}" value="${esc1(p.comissao_pct)}" oninput="this.value=this.value.replace(/[^0-9.,]/g,'');_setPropComPct(${i},${j},this.value)" placeholder="%" inputmode="decimal" title="% sobre o valor aprovado" style="${inp};width:42px;text-align:center">
+                <input id="propComRs${i}_${j}" value="${esc1(p.comissao)}" oninput="this.value=_maskMoney(this.value);_setPropComRs(${i},${j},this.value)" placeholder="R$" style="${inp};width:88px"></div></label>
             <label style="${cap}">Líquido liberado
               <div id="liq${i}_${j}" title="${_lqNeg?'Comissão maior que o aprovado — confira os valores':'Líquido liberado = Aprovado − Comissão (calculado)'}" style="${inp};width:104px;font-weight:700;box-sizing:border-box;display:flex;align-items:center;${_lqNeg?'background:#fee2e2;color:#991b1b':'background:#f1f5f9;color:#0d2b4e'}">${_lq!=null?esc1(_fmtR(_lq)):'—'}</div></label>
             <label style="${cap}">Parcelas
@@ -3481,8 +3486,10 @@
               <input id="entVal${i}" value="${esc1(c.valor_entrada)}" oninput="this.value=_maskMoney(this.value);_setCarVal(${i},'valor_entrada',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
             <label style="flex:1;min-width:84px;font-size:.66rem;color:#64748b">Financiado
               <input id="finVal${i}" value="${esc1(c.valor_financiado)}" oninput="this.value=_maskMoney(this.value);_setCarVal(${i},'valor_financiado',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem;font-weight:700;color:#0d2b4e"></label>
-            <label style="flex:1;min-width:84px;font-size:.66rem;color:#64748b">Comissão
-              <input value="${esc1(c.valor_comissao)}" oninput="this.value=_maskMoney(this.value);_setCarVal(${i},'valor_comissao',this.value)" placeholder="R$" style="${inp};width:100%;margin-top:.12rem"></label>
+            <label style="flex:1;min-width:120px;font-size:.66rem;color:#64748b">Comissão (% / R$)
+              <div style="display:flex;gap:.25rem;margin-top:.12rem">
+                <input id="carComPct${i}" value="${esc1(c.valor_comissao_pct)}" oninput="this.value=this.value.replace(/[^0-9.,]/g,'');_setCarComPct(${i},this.value)" placeholder="%" inputmode="decimal" title="% sobre o valor financiado" style="${inp};width:48px;text-align:center">
+                <input id="carComRs${i}" value="${esc1(c.valor_comissao)}" oninput="this.value=_maskMoney(this.value);_setCarComRs(${i},this.value)" placeholder="R$" style="${inp};flex:1;min-width:70px"></div></label>
             <label style="flex:1;min-width:84px;font-size:.66rem;color:#64748b">Total financiado
               <div id="carTot${i}" title="Financiado + Comissão (calculado)" style="${inp};width:100%;margin-top:.12rem;background:#f1f5f9;color:#0d2b4e;font-weight:700;box-sizing:border-box;min-height:1.15rem">${_totalFinNum(c)!=null?esc1(_fmtR(_totalFinNum(c))):'—'}</div></label>
           </div>
@@ -3525,6 +3532,7 @@
       if (ve != null) setF('valor_financiado', vc - ve);
       else if (vf != null) setF('valor_entrada', vc - vf);
     }
+    _syncCarCom(i);                // comissão (% ou R$) acompanha o novo financiado
     _recalcTotalFin(i);            // Total financiado = Financiado + Comissão (travado)
     _saveCarrosDeb();
   }
@@ -3538,13 +3546,47 @@
   function _setProp(i, j, campo, val) {
     if (!_carrosLead[i].propostas) _carrosLead[i].propostas = [];
     _carrosLead[i].propostas[j][campo] = val;
-    if (campo === 'comissao' || campo === 'valor_aprovado') {   // Líquido = Aprovado − Comissão (calculado)
-      const p = _carrosLead[i].propostas[j];
-      const n = _liquidoNum(p.valor_aprovado, p.comissao);
-      p.liquido_liberado = n != null ? _fmtR(n) : '';
-      _pintaLiq(document.getElementById('liq' + i + '_' + j), n);
+    if (campo === 'valor_aprovado') {   // aprovado mudou → comissão(%) acompanha e recalcula o líquido
+      _syncPropCom(i, j);
+      _atualizarLiquido(i, j);
     }
     _saveCarrosDeb();
+  }
+  function _atualizarLiquido(i, j) {   // Líquido = Aprovado − Comissão R$ (calculado, travado)
+    const p = _carrosLead[i].propostas[j];
+    const n = _liquidoNum(p.valor_aprovado, p.comissao);
+    p.liquido_liberado = n != null ? _fmtR(n) : '';
+    _pintaLiq(document.getElementById('liq' + i + '_' + j), n);
+  }
+  // ─── Comissão % ↔ R$ : preenche um, o outro calcula (modo = o que você digitou por último) ───
+  // CARRO: base = valor financiado. BANCO: base = valor aprovado.
+  function _setCarComPct(i, val) { const c = _carrosLead[i]; c.valor_comissao_pct = val; c.valor_comissao_modo = 'pct'; _syncCarCom(i); _recalcTotalFin(i); _saveCarrosDeb(); }
+  function _setCarComRs(i, val)  { const c = _carrosLead[i]; c.valor_comissao = val;     c.valor_comissao_modo = 'rs';  _syncCarCom(i); _recalcTotalFin(i); _saveCarrosDeb(); }
+  function _syncCarCom(i) {
+    const c = _carrosLead[i], base = _parseR(c.valor_financiado);
+    if (c.valor_comissao_modo === 'pct') {          // % é o driver → R$ derivado (limpa se % ou base vazios)
+      const pct = _parsePct(c.valor_comissao_pct);
+      c.valor_comissao = (base != null && pct != null) ? _fmtR(base * pct / 100) : '';
+      const el = document.getElementById('carComRs' + i); if (el) el.value = c.valor_comissao;
+    } else if (c.valor_comissao_modo === 'rs') {     // R$ é o driver → % derivado (limpa se R$ ou base vazios)
+      const rs = _parseR(c.valor_comissao);
+      c.valor_comissao_pct = (base != null && base > 0 && rs != null) ? _fmtPct(rs / base * 100) : '';
+      const el = document.getElementById('carComPct' + i); if (el) el.value = c.valor_comissao_pct;
+    }
+  }
+  function _setPropComPct(i, j, val) { const p = _carrosLead[i].propostas[j]; p.comissao_pct = val; p.comissao_modo = 'pct'; _syncPropCom(i, j); _atualizarLiquido(i, j); _saveCarrosDeb(); }
+  function _setPropComRs(i, j, val)  { const p = _carrosLead[i].propostas[j]; p.comissao = val;     p.comissao_modo = 'rs';  _syncPropCom(i, j); _atualizarLiquido(i, j); _saveCarrosDeb(); }
+  function _syncPropCom(i, j) {
+    const p = _carrosLead[i].propostas[j], base = _parseR(p.valor_aprovado);
+    if (p.comissao_modo === 'pct') {                 // % é o driver → R$ derivado (limpa se % ou base vazios)
+      const pct = _parsePct(p.comissao_pct);
+      p.comissao = (base != null && pct != null) ? _fmtR(base * pct / 100) : '';
+      const el = document.getElementById('propComRs' + i + '_' + j); if (el) el.value = p.comissao;
+    } else if (p.comissao_modo === 'rs') {           // R$ é o driver → % derivado (limpa se R$ ou base vazios)
+      const rs = _parseR(p.comissao);
+      p.comissao_pct = (base != null && base > 0 && rs != null) ? _fmtPct(rs / base * 100) : '';
+      const el = document.getElementById('propComPct' + i + '_' + j); if (el) el.value = p.comissao_pct;
+    }
   }
   function _pintaLiq(el, n) {
     if (!el) return;
@@ -3567,7 +3609,7 @@
     _saveCarrosDeb();
   }
   function _setPropStatus(i, j, val) { _carrosLead[i].propostas[j].status = val; _desenharCarros(); _saveCarrosDeb(); }
-  function _addProp(i) { if (!_carrosLead[i].propostas) _carrosLead[i].propostas = []; _carrosLead[i].propostas.push({ banco: '', status: 'enviada', valor_aprovado: '', comissao: '', liquido_liberado: '', qtd_parcelas: '', valor_parcela: '' }); _desenharCarros(); }
+  function _addProp(i) { if (!_carrosLead[i].propostas) _carrosLead[i].propostas = []; _carrosLead[i].propostas.push({ banco: '', status: 'enviada', valor_aprovado: '', comissao: '', comissao_pct: '', liquido_liberado: '', qtd_parcelas: '', valor_parcela: '' }); _desenharCarros(); }
   function _delProp(i, j) { _carrosLead[i].propostas.splice(j, 1); _desenharCarros(); _saveCarrosDeb(); }
 
   async function buscarPlaca() {
