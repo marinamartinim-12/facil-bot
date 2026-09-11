@@ -849,14 +849,25 @@ def _montar_msg_recontato(lead) -> list[str]:
     return [msg1, msg2]
 
 
-async def _reativar_lead_perdido(lead, texto: str, db, enviar_fn) -> bool:
+async def _reativar_lead_perdido(lead, texto: str, db, enviar_fn) -> "bool | str":
     """
     Trata lead 'perdido' que voltou a enviar mensagem.
+    - Perdido por RESTRIÇÃO (sem CPF de terceiro): recusa deliberada → NÃO reativa
+      (retorna "silencioso": mantém perdido, só registra, não notifica a equipe).
     - Com dados: reativa como qualificado, manda boas-vindas personalizadas.
     - Sem dados: reinicia o fluxo do bot do zero.
-    Retorna True se tratou como recontato (chamador não precisa fazer mais nada).
+    Retorna True se tratou como recontato (chamador não precisa fazer mais nada),
+    "silencioso" se registrou sem reativar, ou False para cair no fluxo normal.
     """
     _salvar_msg_webhook(db, lead.telefone, texto, role="user")
+
+    # Perdido por restrição = recusa deliberada. Uma cortesia ("obrigada", "ok") NÃO pode
+    # requalificar pra atendimento humano. Mantém perdido; só registra a mensagem.
+    if (lead.motivo_perda or "").startswith("Restrição"):
+        lead.atualizado_em = datetime.utcnow()
+        db.commit()
+        print(f"🚫 Lead #{lead.id} perdido por restrição — mensagem registrada, sem reativar/notificar")
+        return "silencioso"
 
     if lead.nome:
         # ── Tem dados: boas-vindas + passa para equipe ─────────────────────
@@ -1488,6 +1499,8 @@ async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
         # Lead perdido voltou a entrar em contato → reativa inteligentemente
         if lead and lead.status == StatusLeadEnum.perdido:
             tratado = await _reativar_lead_perdido(lead, texto, db, enviar_zapi)
+            if tratado == "silencioso":
+                return JSONResponse({"status": "perdido_restricao"})   # cortesia; segue perdido
             if tratado:
                 await _notificar_equipe(telefone, db)
                 return JSONResponse({"status": "reativado"})
@@ -1567,6 +1580,8 @@ async def receber_webhook_meta(request: Request, db: Session = Depends(get_db)):
             # Lead perdido voltou → reativa inteligentemente
             if lead and lead.status == StatusLeadEnum.perdido:
                 tratado = await _reativar_lead_perdido(lead, texto, db, enviar_meta)
+                if tratado == "silencioso":
+                    continue   # cortesia de lead perdido por restrição; segue perdido
                 if tratado:
                     await _notificar_equipe(telefone, db)
                     continue
