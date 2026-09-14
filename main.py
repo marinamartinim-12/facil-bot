@@ -849,6 +849,38 @@ def _montar_msg_recontato(lead) -> list[str]:
     return [msg1, msg2]
 
 
+_CORTESIA_PALAVRAS = {
+    "obrigado", "obrigada", "obrigadao", "obrigadão", "obg", "obgd", "obgado", "obgada",
+    "vlw", "valeu", "valew", "tchau", "xau", "tchauzinho", "adeus",
+    "ok", "okay", "okey", "blz", "beleza", "grato", "grata", "agradecido", "agradecida",
+    "agradeco", "agradeço", "gratidao", "gratidão", "nada", "certo", "entendi", "att",
+    "abraco", "abraço", "abracos", "abraços", "falou", "flw", "isso", "perfeito",
+    "otimo", "ótimo", "show", "joia", "jóia", "combinado", "amem", "amém", "amen", "imagina",
+}
+_CORTESIA_STOP = {
+    "pela", "pelo", "pelas", "pelos", "sua", "seu", "suas", "seus", "muito", "muita",
+    "muitissimo", "atencao", "atenção", "ai", "aí", "ta", "tá", "ja", "já", "entao",
+    "então", "bom", "boa", "dia", "tarde", "noite", "e", "a", "o", "de", "da", "do",
+    "por", "tudo", "mesmo", "viu", "tao", "demais", "mais", "gente", "voce", "você",
+    "voces", "vocês", "deus", "abencoe", "abençoe", "aos", "as", "os", "meu", "minha",
+    "atendimento", "retorno", "ajuda", "ate", "até", "logo", "abs",
+}
+
+def _e_cortesia(texto: str) -> bool:
+    """True se a mensagem é só uma cortesia/despedida (obrigado, tchau, ok, valeu…),
+    sem nenhum conteúdo novo. Usado p/ NÃO reativar um lead perdido só porque ele agradeceu."""
+    if not texto:
+        return False
+    t = re.sub(r"[^0-9a-zà-ú\s]", " ", texto.lower())   # tira pontuação/emoji, mantém acentos
+    t = re.sub(r"\s+", " ", t).strip()
+    if not t or len(t) > 50:
+        return False
+    tokens = [w for w in t.split() if w not in _CORTESIA_STOP]
+    if not tokens:
+        return True   # só stopwords (ex.: "muito obrigado pela atenção" → sobra "obrigado")
+    return all(w in _CORTESIA_PALAVRAS for w in tokens)
+
+
 async def _reativar_lead_perdido(lead, texto: str, db, enviar_fn) -> "bool | str":
     """
     Trata lead 'perdido' que voltou a enviar mensagem.
@@ -867,6 +899,14 @@ async def _reativar_lead_perdido(lead, texto: str, db, enviar_fn) -> "bool | str
         lead.atualizado_em = datetime.utcnow()
         db.commit()
         print(f"🚫 Lead #{lead.id} perdido por restrição — mensagem registrada, sem reativar/notificar")
+        return "silencioso"
+
+    # Cortesia/despedida ("obrigado pela atenção", "tchau", "ok"…) NÃO reativa um lead perdido.
+    # (ex.: a atendente moveu pra Perdido e o cliente só agradeceu → não requalificar.)
+    if _e_cortesia(texto):
+        lead.atualizado_em = datetime.utcnow()
+        db.commit()
+        print(f"🙏 Lead #{lead.id} perdido + cortesia ('{texto[:30]}') — registrado, sem reativar/notificar")
         return "silencioso"
 
     if lead.nome:
@@ -4068,6 +4108,54 @@ async def dashboard_stats(
         "ranking": ranking,
         "tarja": tarja,
     }, ttl=60)
+
+
+@app.get("/api/resumo-dia")
+async def resumo_dia(
+    data: str = "",
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obter_usuario_atual),
+):
+    """Resumo do dia por funcionária (admin/dono): quantos leads ela mexeu e quantos
+    passaram por cada etapa. Baseado em QUEM MOVEU o card (HistoricoLead)."""
+    if usuario.role not in (RoleEnum.admin, RoleEnum.dono):
+        raise HTTPException(status_code=403, detail="Apenas administradores.")
+    agora = _agora_br()
+    try:
+        y, m, d = (int(x) for x in data.split("-")) if data else (agora.year, agora.month, agora.day)
+    except Exception:
+        y, m, d = agora.year, agora.month, agora.day
+    ini_utc = datetime(y, m, d, tzinfo=_TZ_BR).astimezone(timezone.utc).replace(tzinfo=None)
+    fim_utc = ini_utc + timedelta(days=1)
+
+    trans = (db.query(HistoricoLead.usuario_id, HistoricoLead.para_status, HistoricoLead.lead_id)
+             .filter(HistoricoLead.quando >= ini_utc, HistoricoLead.quando < fim_utc,
+                     HistoricoLead.usuario_id.isnot(None))
+             .all())
+    STAGE = {"pre_analise": "pre_analise", "proposta_enviada": "proposta",
+             "proposta_aprovada": "aprovada", "fechado": "fechado", "perdido": "perdido"}
+    agg = {}
+    for uid, para, lid in trans:
+        a = agg.setdefault(uid, {"atendidos": set(), "pre_analise": set(), "proposta": set(),
+                                 "aprovada": set(), "fechado": set(), "perdido": set()})
+        a["atendidos"].add(lid)
+        k = STAGE.get(para)
+        if k:
+            a[k].add(lid)
+    nomes = {}
+    if agg:
+        nomes = {u.id: u.nome for u in db.query(Usuario).filter(Usuario.id.in_(list(agg.keys()))).all()}
+    linhas = [{
+        "nome": nomes.get(uid, f"#{uid}"),
+        "atendidos": len(a["atendidos"]),
+        "pre_analise": len(a["pre_analise"]),
+        "proposta": len(a["proposta"]),
+        "aprovada": len(a["aprovada"]),
+        "fechado": len(a["fechado"]),
+        "perdido": len(a["perdido"]),
+    } for uid, a in agg.items()]
+    linhas.sort(key=lambda x: (-x["atendidos"], x["nome"].lower()))
+    return {"data": f"{d:02d}/{m:02d}/{y}", "funcionarias": linhas}
 
 
 @app.get("/api/stats")
