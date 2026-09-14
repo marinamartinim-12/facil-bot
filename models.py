@@ -1,9 +1,10 @@
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, ForeignKey, Boolean, LargeBinary
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import sessionmaker, relationship, validates
 from datetime import datetime
 import enum
 import os
+import re
 
 from config import get_settings
 
@@ -162,6 +163,14 @@ class Lead(Base):
 
     responsavel = relationship("Usuario", back_populates="leads_assumidos")
     parceiro    = relationship("Parceiro", back_populates="leads")
+
+    # Segurança: nome/veículo vêm do WhatsApp (não confiável). Remove caracteres que
+    # permitem injeção de HTML já na gravação (defesa na origem, cobre todos os caminhos).
+    @validates("nome", "carro_interesse")
+    def _sanitizar_texto_livre(self, key, value):
+        if value is None:
+            return None
+        return re.sub(r'[<>"]', "", str(value))
 
 
 class Parceiro(Base):

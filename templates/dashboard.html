@@ -2217,7 +2217,7 @@
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:5px">
               <span class="card-owner-dot" style="background:${cor}"></span>
-              <div class="card-name" style="flex:1" title="${esc(nome)}">${esc(nome)}</div>
+              <div class="card-name" style="flex:1" title="${escAttr(nome)}">${escHtml(nome)}</div>
               ${conversasNaoLidas.has(l.id) ? `<span style="min-width:9px;height:9px;border-radius:50%;background:#25D366;display:inline-block;flex-shrink:0" title="Mensagem não lida"></span>` : ''}
             </div>
             <div class="card-phone">${l.telefone}</div>
@@ -3325,15 +3325,95 @@
       telefone:   _limpo(lead?.telefone),
       nascimento: nasc,
     };
-    const campos = [['nome','Nome'], ['cpf','CPF'], ['telefone','Telefone'], ['nascimento','Nascimento']];
-    el.innerHTML = campos.map(([k, rot]) => {
-      const val = _dadosCopiar[k];
-      return `<div style="display:flex;align-items:center;gap:.35rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:.3rem .55rem">
+    const box = 'display:flex;align-items:center;gap:.35rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:.3rem .55rem';
+    const inpS = 'border:1px solid var(--border);border-radius:6px;padding:.25rem .45rem;font-size:.82rem;font-weight:600;color:#0f172a;outline:none;background:#fff';
+    const _ro = (currentUser?.role === 'dono') ? 'readonly' : '';   // DONO é só leitura
+    const copiar = k => `<button onclick="_copiarInput('cb_${k}',this)" title="Copiar" class="btn btn-sm" style="padding:.1rem .4rem;font-size:.82rem;background:#e0e7ff;color:#3730a3;line-height:1">📋</button>`;
+    // Editáveis (salvam no lead e sincronizam com a aba Dados)
+    const editaveis = [
+      { k:'nome',       campo:'nome',            rot:'Nome',       w:'160px', ph:'Nome completo'   },
+      { k:'cpf',        campo:'cpf',             rot:'CPF',        w:'128px', ph:'000.000.000-00'  },
+      { k:'nascimento', campo:'data_nascimento', rot:'Nascimento', w:'104px', ph:'DD/MM/AAAA'      },
+    ];
+    let html = editaveis.map(({ k, campo, rot, w, ph }) => `
+      <div style="${box}">
         <span style="font-size:.62rem;text-transform:uppercase;color:#64748b;font-weight:700">${rot}</span>
-        <span style="font-size:.82rem;font-weight:600;color:#0f172a">${escHtml(val || '—')}</span>
-        ${val ? `<button onclick="_copiarCampo('${k}',this)" title="Copiar ${rot}" class="btn btn-sm" style="padding:.1rem .4rem;font-size:.82rem;background:#e0e7ff;color:#3730a3;line-height:1">📋</button>` : ''}
+        <input ${_ro} id="cb_${k}" value="${escAttr(_dadosCopiar[k])}" placeholder="${ph}"
+          onchange="_salvarCampoLead('${campo}','${k}',this.value)"
+          style="${inpS};width:${w}">
+        ${copiar(k)}
+      </div>`).join('');
+    // Telefone: editável, mas é a chave do WhatsApp → confirma ao alterar
+    html += `
+      <div style="${box}">
+        <span style="font-size:.62rem;text-transform:uppercase;color:#64748b;font-weight:700">Telefone</span>
+        <input ${_ro} id="cb_telefone" value="${escAttr(_dadosCopiar.telefone)}" placeholder="Ex: 31999990000"
+          onchange="_salvarTelefoneLead(this)" title="É o número do WhatsApp — trocar muda pra onde vão as mensagens"
+          style="${inpS};width:122px">
+        ${copiar('telefone')}
       </div>`;
-    }).join('');
+    el.innerHTML = html;
+  }
+  // Salva o TELEFONE (chave do WhatsApp) — confirma antes e trata duplicado
+  async function _salvarTelefoneLead(inp) {
+    if (!modalLeadId) return;
+    const valor = (inp.value || '').trim();
+    const atual = _dadosCopiar.telefone || '';
+    if (valor === atual) return;
+    if (!valor) { alert('O telefone não pode ficar vazio.'); inp.value = atual; return; }
+    if (!confirm('Esse é o número do WhatsApp do cliente.\nTrocar muda pra onde vão as mensagens dele. Confirmar a alteração?')) {
+      inp.value = atual; return;
+    }
+    try {
+      const r = await fetch(`/api/leads/${modalLeadId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ telefone: valor }),
+      });
+      const data = await r.json();
+      if (!r.ok) { alert(data.detail || 'Erro ao salvar telefone.'); inp.value = atual; return; }
+      window._modalLeadData = data;
+      const idx = allLeads.findIndex(l => l.id === modalLeadId); if (idx !== -1) allLeads[idx] = data;
+      _dadosCopiar.telefone = data.telefone || '';
+      inp.value = data.telefone || '';
+      const _sub = document.getElementById('modalSubtitle');
+      if (_sub) { const _mod = (data.modalidade && data.modalidade !== 'indefinido') ? (data.modalidade.charAt(0).toUpperCase() + data.modalidade.slice(1)) : ''; _sub.textContent = [data.telefone, _mod].filter(Boolean).join(' · '); }
+      if (document.getElementById('modalDados') && !document.getElementById('ei_nome')) renderDadosLead(data, false);
+    } catch { alert('Erro de rede.'); inp.value = atual; }
+  }
+  // Copia o valor ATUAL de um input (faixa "Copiar pro banco")
+  function _copiarInput(id, btn) {
+    const inp = document.getElementById(id);
+    const txt = (inp && inp.value || '').trim();
+    if (!txt) return;
+    navigator.clipboard.writeText(txt).then(() => {
+      const o = btn.textContent; btn.textContent = '✓'; btn.style.color = '#166534';
+      setTimeout(() => { btn.textContent = o; btn.style.color = ''; }, 1300);
+    }).catch(() => {});
+  }
+  // Salva UM campo do lead (edição inline na faixa do Financiamento) e sincroniza com a aba Dados
+  async function _salvarCampoLead(campo, k, valorRaw) {
+    if (!modalLeadId) return;
+    const valor = (valorRaw || '').trim();
+    const el = document.getElementById('cb_' + k);
+    try {
+      const r = await fetch(`/api/leads/${modalLeadId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [campo]: valor || null }),
+      });
+      const lead = await r.json().catch(() => ({}));
+      if (!r.ok) { alert(lead.detail || 'Erro ao salvar.'); if (el) el.value = _dadosCopiar[k] || ''; return; }
+      window._modalLeadData = lead;
+      const idx = allLeads.findIndex(l => l.id === modalLeadId); if (idx !== -1) allLeads[idx] = lead;
+      // Reflete o valor JÁ NORMALIZADO pelo backend (ex.: CPF vira 000.000.000-00)
+      let novo = lead[campo] != null ? String(lead[campo]) : '';
+      if (k === 'nascimento' && novo.includes('-')) novo = novo.split('-').reverse().join('/');
+      _dadosCopiar[k] = novo;
+      if (el) el.value = novo;
+      const nome = (lead.nome && lead.nome !== '—') ? lead.nome : lead.telefone;
+      const t = document.getElementById('modalTitle'); if (t) t.textContent = nome;
+      // Reflete na aba Dados (leitura), sem redesenhar se ela estiver em modo de edição (não perde o que ela digita lá)
+      if (document.getElementById('modalDados') && !document.getElementById('ei_nome')) renderDadosLead(lead, false);
+    } catch { alert('Erro de rede ao salvar.'); if (el) el.value = _dadosCopiar[k] || ''; }
   }
 
   // Financiamento por carro: status possíveis das propostas (valor, rótulo, cor de fundo, cor do texto)
@@ -3929,11 +4009,11 @@
       ? `<tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--muted)">Nenhum lead encontrado.</td></tr>`
       : filtered.map(l => `<tr>
           <td style="color:var(--muted);font-size:.76rem">#${l.id}</td>
-          <td><strong>${esc(l.nome)}</strong></td>
+          <td><strong>${escHtml(l.nome)}</strong></td>
           <td class="td-mono">${l.telefone.startsWith('_manual_') ? '<span style="color:var(--muted);font-style:italic">sem tel.</span>' : l.telefone}</td>
           <td>${origemLabel(l.origem, l.origem_detalhe)}</td>
           <td class="td-mono">${l.cpf}</td>
-          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.carro_interesse)}</td>
+          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(l.carro_interesse)}</td>
           <td><span class="badge badge-${l.modalidade}">${labMod(l.modalidade)}</span></td>
           <td><span class="badge badge-${l.status}">${labSt(l.status)}</span></td>
           <td>${respBadge(l.responsavel, {vazio: true}) || '<span style="color:var(--muted)">—</span>'}</td>
@@ -5529,8 +5609,8 @@
       const lista = d.leads.map(l => `
         <div onclick="verLead(${l.lead_id})" title="Abrir conversa" style="display:flex;align-items:center;gap:.6rem;padding:.5rem .65rem;border:1px solid #e2e8f0;border-left:4px solid ${cor(l.espera_s)};border-radius:8px;cursor:pointer;background:#fff">
           <div style="flex:1;min-width:0">
-            <div style="font-size:.85rem;font-weight:700;color:#0d2b4e">${esc(l.nome)}</div>
-            <div style="font-size:.73rem;color:#64748b">👤 ${esc(l.responsavel)} · <span class="badge badge-${l.status}" style="font-size:.62rem;padding:1px 5px">${labSt(l.status)}</span> · desde ${esc(l.desde)}</div>
+            <div style="font-size:.85rem;font-weight:700;color:#0d2b4e">${escHtml(l.nome)}</div>
+            <div style="font-size:.73rem;color:#64748b">👤 ${escHtml(l.responsavel)} · <span class="badge badge-${l.status}" style="font-size:.62rem;padding:1px 5px">${labSt(l.status)}</span> · desde ${escHtml(l.desde)}</div>
           </div>
           <div style="text-align:right;white-space:nowrap">
             <div style="font-size:.85rem;font-weight:800;color:${cor(l.espera_s)}">⏳ ${esc(l.espera)}</div>
@@ -6733,7 +6813,7 @@
             <div onclick="_toggleSessao('${esc(nome)}')"
               style="display:flex;align-items:center;justify-content:space-between;padding:.65rem 1rem;background:${aberto?'#f0fdf4':'#fafbfd'};cursor:pointer;gap:.5rem;flex-wrap:wrap">
               <div style="display:flex;align-items:center;gap:.5rem">
-                <strong style="font-size:.9rem">${esc(nome)}</strong>${onlineBadge}
+                <strong style="font-size:.9rem">${escHtml(nome)}</strong>${onlineBadge}
               </div>
               <div style="display:flex;align-items:center;gap:1.2rem;font-size:.8rem;color:var(--muted)">
                 <span title="Sessões no período"><strong style="color:var(--navy)">${nSessoes}</strong> sess.</span>
@@ -7312,11 +7392,11 @@
         <div class="wsp-conv-avatar" style="background:${cor}22;color:${_corLegivel(cor)};font-size:.95rem" title="${temResp ? 'Responsável: ' + escHtml(resp.nome) : 'Sem responsável'}">${escHtml(ini)}</div>
         <div class="wsp-conv-body">
           <div class="wsp-conv-top">
-            <span class="wsp-conv-name">${l.parceiro_id ? '🤝 ' : ''}${esc(nome)}</span>
+            <span class="wsp-conv-name">${l.parceiro_id ? '🤝 ' : ''}${escHtml(nome)}</span>
             <span class="wsp-conv-time" style="${l._temNovo?'color:#25D366;font-weight:700':''}">${l.ultima_hora||''}</span>
           </div>
           <div class="wsp-conv-preview" style="display:flex;align-items:center;justify-content:space-between;gap:.25rem">
-            <span style="display:flex;align-items:center;gap:.2rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${icon} ${esc(preview)}</span>
+            <span style="display:flex;align-items:center;gap:.2rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${icon} ${escHtml(preview)}</span>
             ${novo}
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-top:1px">
@@ -7990,6 +8070,8 @@
   // ═══════ HELPERS ═══════
   function esc(s) { return (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
   function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'); }
+  // Escaper para VALOR de atributo HTML (value="..."/title="...") — escapa aspas e < > & p/ não quebrar o atributo (anti-XSS)
+  function escAttr(s) { return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   // Renderiza lista de mensagens no estilo WhatsApp Web
   function renderMensagens(mensagens) {
@@ -8088,7 +8170,7 @@
             <span style="font-size:1.6rem;line-height:1">📄</span>
             <div>
               <div style="font-size:.85rem;font-weight:500;word-break:break-all">${docNome}</div>
-              <a href="${docUrl}" download="${docNome}" style="font-size:.75rem;color:#25d366">⬇ Baixar</a>
+              <a href="${docUrl}" download="${escAttr(docMatch[2])}" style="font-size:.75rem;color:#25d366">⬇ Baixar</a>
             </div>
           </div>`;
       } else {
@@ -8248,7 +8330,7 @@
 
     const row = (label, key, placeholder='', width='1fr') => editando
       ? `<div><label style="font-size:.72rem;font-weight:600;color:#374151;display:block;margin-bottom:2px">${label}</label>
-           <input id="dc_${key}" value="${escHtml(dc[key]||'')}" placeholder="${placeholder}" style="${s}"></div>`
+           <input id="dc_${key}" value="${escAttr(dc[key]||'')}" placeholder="${placeholder}" style="${s}"></div>`
       : `<div><label style="font-size:.72rem;color:var(--muted)">${label}</label>
            <span style="font-size:.82rem">${escHtml(dc[key]||'—')}</span></div>`;
 
@@ -8321,16 +8403,16 @@
     // Campos do requerimento (guardados em dados_contrato)
     const dc = (lead && lead.dados_contrato) || {};
     const dcInput = (key, ph) => editando
-      ? `<input id="ec_${key}" value="${escHtml(dc[key]||'')}" style="${inpStyle}" placeholder="${ph||''}">`
+      ? `<input id="ec_${key}" value="${escAttr(dc[key]||'')}" style="${inpStyle}" placeholder="${ph||''}">`
       : `<span>${escHtml(dc[key]||'—')}</span>`;
     const cepIds = "{rua:'ec_req_rua',bairro:'ec_req_bairro',cidade:'ec_req_cidade',numero:'ec_req_numero',msg:'ec_cep_msg'}";
     const cepField = editando
-      ? `<input id="ec_req_cep" value="${escHtml(dc.req_cep||'')}" style="${inpStyle}" placeholder="00000-000" oninput="_buscarCepCampos(this.value,${cepIds})" onblur="_buscarCepCampos(this.value,${cepIds})"><span id="ec_cep_msg" style="font-size:.66rem;color:var(--muted);display:block"></span>`
+      ? `<input id="ec_req_cep" value="${escAttr(dc.req_cep||'')}" style="${inpStyle}" placeholder="00000-000" oninput="_buscarCepCampos(this.value,${cepIds})" onblur="_buscarCepCampos(this.value,${cepIds})"><span id="ec_cep_msg" style="font-size:.66rem;color:var(--muted);display:block"></span>`
       : `<span>${escHtml(dc.req_cep||'—')}</span>`;
     // Cidade/UF do endereço — começa com a cidade coletada pelo bot se ainda não houver endereço
     const cidadeVal = dc.req_cidade || (lead.cidade && lead.cidade !== '—' ? lead.cidade : '');
     const cidadeField = editando
-      ? `<input id="ec_req_cidade" value="${escHtml(cidadeVal)}" style="${inpStyle}" placeholder="Ex: Belo Horizonte/MG">`
+      ? `<input id="ec_req_cidade" value="${escAttr(cidadeVal)}" style="${inpStyle}" placeholder="Ex: Belo Horizonte/MG">`
       : `<span>${escHtml(cidadeVal||'—')}</span>`;
     const reqBlock = `
       <div class="data-item full" style="border-top:1px solid var(--border);margin-top:.5rem;padding-top:.55rem">
@@ -8343,15 +8425,15 @@
       <div class="data-item full"><label>Complemento</label>${dcInput('req_complemento','Apto, bloco, casa, ponto de referência…')}</div>
       <div class="data-item"><label>Bairro</label>${dcInput('req_bairro','Bairro')}</div>
       <div class="data-item"><label>Cidade/UF</label>${cidadeField}</div>`;
-    const inputNome   = editando ? `<input id="ei_nome"  value="${escHtml(lead.nome&&lead.nome!=='—'?lead.nome:'')}" style="${inpStyle}" placeholder="Nome do cliente">` : `<span>${escHtml(lead.nome||'—')}</span>`;
-    const inputCPF    = editando ? `<input id="ei_cpf"   value="${escHtml(lead.cpf&&lead.cpf!=='—'?lead.cpf:'')}" style="${inpStyle}" placeholder="000.000.000-00">` : `<span>${escHtml(lead.cpf||'—')}</span>`;
-    const inputNasc   = editando ? `<input id="ei_nasc"  value="${escHtml(lead.data_nascimento&&lead.data_nascimento!=='—'?lead.data_nascimento:'')}" style="${inpStyle}" placeholder="DD/MM/AAAA">` : `<span>${escHtml(lead.data_nascimento||'—')}</span>`;
-    const inputCarro  = editando ? `<input id="ei_carro" value="${escHtml(lead.carro_interesse&&lead.carro_interesse!=='—'?lead.carro_interesse:'')}" style="${inpStyle}" placeholder="Ex: Honda Civic 2020">` : `<span>${escHtml(lead.carro_interesse||'—')}</span>`;
+    const inputNome   = editando ? `<input id="ei_nome"  value="${escAttr(lead.nome&&lead.nome!=='—'?lead.nome:'')}" style="${inpStyle}" placeholder="Nome do cliente">` : `<span>${escHtml(lead.nome||'—')}</span>`;
+    const inputCPF    = editando ? `<input id="ei_cpf"   value="${escAttr(lead.cpf&&lead.cpf!=='—'?lead.cpf:'')}" style="${inpStyle}" placeholder="000.000.000-00">` : `<span>${escHtml(lead.cpf||'—')}</span>`;
+    const inputNasc   = editando ? `<input id="ei_nasc"  value="${escAttr(lead.data_nascimento&&lead.data_nascimento!=='—'?lead.data_nascimento:'')}" style="${inpStyle}" placeholder="DD/MM/AAAA">` : `<span>${escHtml(lead.data_nascimento||'—')}</span>`;
+    const inputCarro  = editando ? `<input id="ei_carro" value="${escAttr(lead.carro_interesse&&lead.carro_interesse!=='—'?lead.carro_interesse:'')}" style="${inpStyle}" placeholder="Ex: Honda Civic 2020">` : `<span>${escHtml(lead.carro_interesse||'—')}</span>`;
     const inputRestr  = editando
       ? `<select id="ei_restricao" style="${inpStyle}"><option value="">—</option><option value="sim" ${lead.restricao==='sim'?'selected':''}>Sim</option><option value="não" ${lead.restricao==='não'?'selected':''}>Não</option></select>`
       : `<span>${lead.restricao==='sim'?'⚠️ Sim':lead.restricao==='não'?'✅ Não':'—'}</span>`;
-    const inputEmail  = editando ? `<input id="ei_email" type="email" value="${escHtml(lead.email||'')}" style="${inpStyle}" placeholder="email@exemplo.com">` : `<span>${escHtml(lead.email||'—')}</span>`;
-    const inputProf   = editando ? `<input id="ei_prof" value="${escHtml(lead.profissao||'')}" style="${inpStyle}" placeholder="Ex: Motorista, Servidor público…">` : `<span>${escHtml(lead.profissao||'—')}</span>`;
+    const inputEmail  = editando ? `<input id="ei_email" type="email" value="${escAttr(lead.email||'')}" style="${inpStyle}" placeholder="email@exemplo.com">` : `<span>${escHtml(lead.email||'—')}</span>`;
+    const inputProf   = editando ? `<input id="ei_prof" value="${escAttr(lead.profissao||'')}" style="${inpStyle}" placeholder="Ex: Motorista, Servidor público…">` : `<span>${escHtml(lead.profissao||'—')}</span>`;
     const rendaOpts   = ['','Até R$2.000','R$2.000 a R$5.000','R$5.000 a R$10.000','Acima de R$10.000'];
     const inputRenda  = editando
       ? `<select id="ei_renda" style="${inpStyle}">${rendaOpts.map(o=>`<option value="${o}" ${lead.renda===o?'selected':''}>${o||'Não informado'}</option>`).join('')}</select>`
@@ -8515,6 +8597,9 @@
       const idx = allLeads.findIndex(l => l.id === modalLeadId);
       if (idx !== -1) allLeads[idx] = leadAtualizado;
       renderDadosLead(leadAtualizado, false);
+      // Mantém em sincronia as partes do Financiamento que derivam dos dados do lead
+      _renderCopiarBanco(leadAtualizado);        // faixa "Copiar pro banco" (nome/CPF/telefone/nascimento)
+      _renderModalidadeToggle(leadAtualizado);   // seletor EGV / Financiamento
       // Atualiza título do modal
       const nome = (leadAtualizado.nome && leadAtualizado.nome !== '—') ? leadAtualizado.nome : leadAtualizado.telefone;
       document.getElementById('modalTitle').textContent = nome;

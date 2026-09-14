@@ -3733,6 +3733,20 @@ async def editar_lead(
                 if len(valor) == 11:
                     valor = f"{valor[:3]}.{valor[3:6]}.{valor[6:9]}-{valor[9:]}"
             setattr(lead, campo, valor if valor != "" else None)
+    # Telefone é a chave do WhatsApp — tratado à parte: normaliza pro formato que o webhook
+    # recebe (só dígitos, COM o 55 do país), não pode ficar vazio e é único.
+    if "telefone" in body:
+        tel_norm = "".join(c for c in (body.get("telefone") or "") if c.isdigit())
+        # número local (DDD+8/9) = 10 ou 11 dígitos → prefixa 55 pra casar com o Z-API/Meta ("5531...")
+        if len(tel_norm) in (10, 11):
+            tel_norm = "55" + tel_norm
+        if not tel_norm:
+            raise HTTPException(status_code=400, detail="O telefone não pode ficar vazio.")
+        if tel_norm != lead.telefone:
+            outro = db.query(Lead).filter(Lead.telefone == tel_norm, Lead.id != lead.id).first()
+            if outro:
+                raise HTTPException(status_code=400, detail=f"Já existe outro lead com este telefone ({outro.nome or tel_norm}).")
+            lead.telefone = tel_norm
     # Dados extras para o requerimento (JSON blob)
     if "dados_contrato" in body:
         import json as _json
