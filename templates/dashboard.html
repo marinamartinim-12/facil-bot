@@ -2177,7 +2177,7 @@
 
   function cardHtml(l) {
     const nome = l.nome !== '—' ? l.nome : l.telefone;
-    const tempo = tempoRelativo(l.criado_em);
+    const tempo = tempoRelativo(l.ultima_msg_em || l.criado_em);
     const isAdmin = currentUser.role === 'admin';
     const isResponsavel = l.responsavel?.id === currentUser.id;
 
@@ -2238,7 +2238,7 @@
         </div>
         <div class="card-subline">
           <span class="card-owner-name ${temResp ? '' : 'sem'}" style="${temResp ? 'color:' + _corLegivel(cor) : ''}" title="Responsável">${temResp ? escHtml(resp.nome) : 'sem responsável'}</span>
-          <span class="card-time">🕐 ${tempo}</span>
+          <span class="card-time" title="Desde a última mensagem${l.ultima_msg_em ? '' : ' (sem mensagens — mostrando quando entrou)'}">🕐 ${tempo}</span>
         </div>
         <div class="card-actions">${acoes}</div>
       </div>`;

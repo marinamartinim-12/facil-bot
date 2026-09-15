@@ -2202,7 +2202,15 @@ def _leads_sync(db, status, modalidade):
     _resp = {u.id: u for u in db.query(Usuario).filter(Usuario.id.in_(_rids)).all()} if _rids else {}
     _pids = {l.parceiro_id for l in leads if l.parceiro_id}
     _parc = {p.id: p for p in db.query(Parceiro).filter(Parceiro.id.in_(_pids)).all()} if _pids else {}
-    result = [_serial_lead(l, db, _resp, _parc) for l in leads]
+    # Última mensagem por lead (UMA query, escopada aos telefones do funil — sem N+1)
+    from sqlalchemy import func as _func
+    _tels = [l.telefone for l in leads if l.telefone]
+    _ultmsg = {}
+    if _tels:
+        _ultmsg = dict(db.query(MensagemConversa.telefone, _func.max(MensagemConversa.criado_em))
+                       .filter(MensagemConversa.telefone.in_(_tels))
+                       .group_by(MensagemConversa.telefone).all())
+    result = [_serial_lead(l, db, _resp, _parc, _ultmsg) for l in leads]
     # Marca "sem próximo passo": lead ativo (assumido→proposta) SEM agendamento pendente.
     # Uma consulta só (não N+1) p/ o conjunto de leads com agendamento em aberto.
     com_pendente = {lid for (lid,) in db.query(Agendamento.lead_id)
@@ -8421,7 +8429,7 @@ def _safe_json(raw, padrao):
         return padrao
 
 
-def _serial_lead(l: Lead, db: Session, resp_map: dict = None, parc_map: dict = None) -> dict:
+def _serial_lead(l: Lead, db: Session, resp_map: dict = None, parc_map: dict = None, ultmsg_map: dict = None) -> dict:
     # resp_map/parc_map opcionais: as rotas de LISTA (/api/leads, inbox) pré-carregam
     # responsáveis e parceiros em UMA query só e passam aqui — evita o N+1 (1 query por
     # lead). Sem eles, cai no caminho antigo (lead avulso) — comportamento idêntico.
@@ -8452,6 +8460,9 @@ def _serial_lead(l: Lead, db: Session, resp_map: dict = None, parc_map: dict = N
         "assumido_em": _fmt_br(l.assumido_em),
         "criado_em": _fmt_br(l.criado_em) or "—",
         "atualizado_em": _fmt_br(l.atualizado_em) or "—",
+        # Data/hora da ÚLTIMA MENSAGEM real da conversa (p/ o card mostrar há quanto tempo o
+        # cliente não fala). Só preenchido nas listas que passam o mapa (funil); "" nos demais.
+        "ultima_msg_em": (_fmt_br(ultmsg_map.get(l.telefone)) if (ultmsg_map and ultmsg_map.get(l.telefone)) else ""),
         "observacoes": _parse_observacoes(l.observacoes),
         "origem": l.origem or "whatsapp",
         "origem_detalhe": l.origem_detalhe or "",
