@@ -20,6 +20,8 @@ class Settings(BaseSettings):
 
     # Segurança — troque em produção
     SECRET_KEY: str = "facil-financiamentos-chave-secreta-mude-em-producao-2026"
+    # Segredo do webhook (Z-API/Meta) — VAZIO = não valida (transição). Setado = exige ?s=<segredo> na URL.
+    WEBHOOK_SECRET: str = ""
 
     # Admin padrão criado automaticamente no primeiro uso
     ADMIN_NOME: str = "Administrador"

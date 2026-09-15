@@ -1323,8 +1323,25 @@ async def usuarios_online(db: Session = Depends(get_db),
     return {"online": lista, "total": len(lista)}
 
 
+def _webhook_autorizado(request: Request) -> bool:
+    """Enforce-if-configured: se WEBHOOK_SECRET estiver setado, exige o mesmo segredo na URL
+    do webhook (?s=...) ou no header X-Webhook-Secret. VAZIO = não bloqueia (fase de transição),
+    então subir esse código não quebra nada até a Marina configurar o segredo."""
+    from hmac import compare_digest
+    esperado = (settings.WEBHOOK_SECRET or "").strip()
+    if not esperado:
+        return True
+    recebido = (request.query_params.get("s") or request.headers.get("x-webhook-secret") or "").strip()
+    try:
+        return compare_digest(recebido, esperado)
+    except Exception:
+        return False
+
+
 @app.post("/webhook/zapi")
 async def receber_webhook_zapi(request: Request, db: Session = Depends(get_db)):
+    if not _webhook_autorizado(request):
+        return JSONResponse({"status": "unauthorized"}, status_code=403)
     body = await request.json()
     # Diagnóstico: guarda os últimos webhooks em memória (visível em /api/debug/webhooks)
     try:
@@ -1604,6 +1621,8 @@ async def verificar_webhook_meta(
 
 @app.post("/webhook/meta")
 async def receber_webhook_meta(request: Request, db: Session = Depends(get_db)):
+    if not _webhook_autorizado(request):
+        return JSONResponse({"status": "unauthorized"}, status_code=403)
     body = await request.json()
     try:
         entry = body["entry"][0]["changes"][0]["value"]
