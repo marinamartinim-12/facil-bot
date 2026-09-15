@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import uuid
 import httpx
+import secrets
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -85,6 +86,18 @@ async def _guarda_dono_somente_leitura(request: Request, call_next):
                 and role_do_token(request.cookies.get("access_token")) == "dono":
             return JSONResponse({"detail": "Sem permissão para esta área."}, status_code=403)
     return await call_next(request)
+
+
+@app.middleware("http")
+async def _headers_seguranca(request: Request, call_next):
+    """Headers de segurança em toda resposta (B2). CSP fica p/ depois (precisa testar com os
+    scripts inline). Estes são não-quebráveis: nosniff, anti-clickjacking, HSTS, referrer."""
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    return resp
 
 # Cache para deduplicar mensagens enviadas pelo painel vs. webhook fromMe
 # Chave: (telefone, texto_normalizado) → timestamp do envio
@@ -592,7 +605,7 @@ async def startup():
             )
             db.add(admin)
             db.commit()
-            print(f"✅ Admin criado: {settings.ADMIN_EMAIL} / {settings.ADMIN_PASSWORD}")
+            print(f"✅ Admin criado: {settings.ADMIN_EMAIL} (senha via env — não logada)")
     except Exception as e:
         print(f"⚠️ admin: {e}")
 
@@ -671,6 +684,7 @@ async def login(request: Request, response: Response, db: Session = Depends(get_
         key="access_token",
         value=token,
         httponly=True,
+        secure=True,
         samesite="lax",
         max_age=60 * 60 * 24 * 7,
     )
@@ -697,6 +711,7 @@ async def login(request: Request, response: Response, db: Session = Depends(get_
         key="sessao_id",
         value=str(sessao.id),
         httponly=True,
+        secure=True,
         samesite="lax",
         max_age=60 * 60 * 24 * 7,
     )
@@ -768,7 +783,7 @@ async def heartbeat(request: Request, response: Response, db: Session = Depends(
         db.refresh(sessao)
         response.set_cookie(
             key="sessao_id", value=str(sessao.id),
-            httponly=True, samesite="lax", max_age=60 * 60 * 24 * 7,
+            httponly=True, secure=True, samesite="lax", max_age=60 * 60 * 24 * 7,
         )
 
     sessao.ultimo_ativo_em = datetime.utcnow()
@@ -3260,7 +3275,7 @@ async def servir_audio(filename: str, request: Request, dl: int = 0, db: Session
              "m4a": "audio/mp4", "mp4": "audio/mp4", "aac": "audio/aac"}
     fonte, dados, mime, _ = _midia_fonte(db, filename)
     if fonte == "r2":
-        url = storage.url_assinada(filename, mime=mime or tipos.get(ext, "audio/ogg"),
+        url = storage.url_assinada(filename, mime=tipos.get(ext, "audio/ogg"),
                                    nome_download=(filename if dl else None))
         if url:
             return RedirectResponse(url, status_code=307)
@@ -3268,9 +3283,9 @@ async def servir_audio(filename: str, request: Request, dl: int = 0, db: Session
     if not dados:
         raise HTTPException(status_code=404)
     if dl:
-        return Response(content=dados, media_type=mime or tipos.get(ext, "audio/ogg"),
+        return Response(content=dados, media_type=tipos.get(ext, "audio/ogg"),
                         headers={"Content-Disposition": f'attachment; filename="{filename}"'})
-    return _resposta_midia_range(request, dados, mime or tipos.get(ext, "audio/ogg"))
+    return _resposta_midia_range(request, dados, tipos.get(ext, "audio/ogg"))
 
 
 @app.get("/api/imagem/{filename}")
@@ -3283,7 +3298,7 @@ async def servir_imagem(filename: str, dl: int = 0, db: Session = Depends(get_db
              "webp": "image/webp", "gif": "image/gif"}
     fonte, dados, mime, _ = _midia_fonte(db, filename)
     if fonte == "r2":
-        url = storage.url_assinada(filename, mime=mime or tipos.get(ext, "image/jpeg"),
+        url = storage.url_assinada(filename, mime=tipos.get(ext, "image/jpeg"),
                                    nome_download=(filename if dl else None))
         if url:
             return RedirectResponse(url, status_code=307)
@@ -3291,7 +3306,7 @@ async def servir_imagem(filename: str, dl: int = 0, db: Session = Depends(get_db
     if not dados:
         raise HTTPException(status_code=404)
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'} if dl else {}
-    return Response(content=dados, media_type=mime or tipos.get(ext, "image/jpeg"), headers=headers)
+    return Response(content=dados, media_type=tipos.get(ext, "image/jpeg"), headers=headers)
 
 
 @app.get("/api/documento/{filename}")
@@ -4288,7 +4303,7 @@ async def criar_usuario(request: Request, db: Session = Depends(get_db), admin: 
     u = Usuario(
         nome=body.get("nome", "").strip(),
         email=email,
-        senha_hash=hash_senha(body.get("senha", "Senha@123")),
+        senha_hash=hash_senha(body.get("senha") or secrets.token_urlsafe(9)),
         role=body.get("role", RoleEnum.funcionario),
         cor=_normalizar_cor(body.get("cor")),
         ativo=True,
