@@ -30,6 +30,23 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 
+# Chaves fracas/padrão que NUNCA devem assinar tokens em produção
+_SECRET_KEYS_FRACAS = {
+    "facil-financiamentos-chave-secreta-mude-em-producao-2026",
+    "facil-financiamentos-chave-secreta-2026-mude-em-producao",
+    "", "changeme", "secret", "mude-em-producao", "sua-chave-secreta",
+}
+
+
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    # Fail-closed: a SECRET_KEY assina o "crachá" de login (JWT). Se estiver ausente ou for
+    # uma chave fraca/padrão conhecida, o app RECUSA subir — evita token de admin forjável.
+    _sk = (s.SECRET_KEY or "").strip()
+    if _sk in _SECRET_KEYS_FRACAS or len(_sk) < 16:
+        raise RuntimeError(
+            "SECRET_KEY ausente ou fraca — configure uma chave forte e aleatória na "
+            "variável de ambiente SECRET_KEY (Render → Environment)."
+        )
+    return s
