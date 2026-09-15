@@ -57,7 +57,7 @@ class RoleEnum(str, enum.Enum):
     admin = "admin"
     funcionario = "funcionario"
     dono = "dono"   # perfil do dono: só visualização (dashboard, relatórios, funil), sem editar nada
-    marketing = "marketing"  # analista de marketing (terceirizado): só-leitura dos relatórios/analytics, SEM ver valores ganhos (dinheiro) e SEM gestão de usuários
+    marketing = "marketing"  # analista de marketing: SÓ-LEITURA, vê tudo que o admin vê (inclusive valores/lucro), EXCETO RH, Configuração do bot e Usuários
 
 
 class ModalidadeEnum(str, enum.Enum):
