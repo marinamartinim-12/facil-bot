@@ -66,6 +66,19 @@ def requer_gestao(usuario: Usuario = Depends(obter_usuario_atual)) -> Usuario:
     return usuario
 
 
+def requer_relatorios(request: Request, usuario: Usuario = Depends(obter_usuario_atual)) -> Usuario:
+    """Relatórios/analytics SEM dinheiro: admin (tudo), dono e marketing só em GET/HEAD.
+    Usado só nos endpoints de relatório que NÃO expõem valores ganhos. A analista de
+    marketing NUNCA passa por requer_admin — então segue barrada de usuários, config,
+    exports de dinheiro etc. (fail-closed). O dinheiro que porventura exista nesses
+    endpoints é removido no próprio endpoint quando o perfil é marketing."""
+    if usuario.role == RoleEnum.admin:
+        return usuario
+    if usuario.role in (RoleEnum.dono, RoleEnum.marketing) and request.method in ("GET", "HEAD"):
+        return usuario
+    raise HTTPException(status_code=403, detail="Acesso restrito à gestão")
+
+
 def role_do_token(access_token: Optional[str]) -> Optional[str]:
     """Lê o perfil (role) direto do JWT, sem tocar no banco — usado pelo guarda de escrita."""
     if not access_token:

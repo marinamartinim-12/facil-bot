@@ -944,6 +944,7 @@
                 <option value="funcionario">Funcionário</option>
                 <option value="admin">Administrador</option>
                 <option value="dono">Dono (só visualização)</option>
+                <option value="marketing">Marketing (relatórios, sem valores)</option>
               </select>
             </div>
           </div>
@@ -1193,7 +1194,7 @@
           <button class="rel-subtab" data-sub="equipe" onclick="showRelSub('equipe')">👥 Equipe</button>
           <button class="rel-subtab" data-sub="vendas" onclick="showRelSub('vendas')">💰 Vendas</button>
           <button class="rel-subtab" data-sub="comportamento" onclick="showRelSub('comportamento')">📊 Comportamento</button>
-          <button class="rel-subtab" data-sub="sistema" onclick="showRelSub('sistema')">⚙️ Sistema</button>
+          <button class="rel-subtab" id="relSubSistema" data-sub="sistema" onclick="showRelSub('sistema')">⚙️ Sistema</button>
         </div>
 
         <div class="rel-card" data-relgrupo="marketing">
@@ -1837,22 +1838,28 @@
     document.getElementById('loginView').style.display = 'none';
     document.getElementById('appView').classList.add('show');
     document.getElementById('sidebarNome').textContent = currentUser.nome;
-    document.getElementById('sidebarRole').textContent = currentUser.role === 'admin' ? 'Administrador' : (currentUser.role === 'dono' ? 'Dono' : 'Funcionário');
+    document.getElementById('sidebarRole').textContent = currentUser.role === 'admin' ? 'Administrador' : (currentUser.role === 'dono' ? 'Dono' : (currentUser.role === 'marketing' ? 'Marketing' : 'Funcionário'));
     document.getElementById('sidebarAvatar').textContent = currentUser.nome[0].toUpperCase();
     // Sempre esconde primeiro para evitar resíduo de sessão anterior
     document.body.classList.toggle('role-dono', currentUser.role === 'dono');
     document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
     if (currentUser.role === 'admin') {
       document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
-    } else if (currentUser.role === 'dono') {
-      // Dono = admin só-leitura: mostra TODO o conteúdo de gestão (dashboard completo com
-      // contratos/valores, relatórios)...
+    } else if (currentUser.role === 'dono' || currentUser.role === 'marketing') {
+      // Dono e Marketing = perfis só-leitura: mostram o conteúdo de gestão (Dashboard, Funil,
+      // Relatórios). O DINHEIRO é bloqueado no SERVIDOR — o dono vê valores, o marketing NÃO
+      // (o backend não manda os valores p/ o perfil marketing), então revelar os cards é seguro.
       document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
-      // ...mas esconde as ABAS que ele não usa (fica só Dashboard, Funil e Relatórios)...
+      // ...mas esconde as ABAS que eles não usam (fica só Dashboard, Funil e Relatórios)...
       ['nav-lista','nav-atendimento','nav-agenda','nav-parceiros','nav-contratos','nav-usuarios','nav-rh','nav-configuracoes']
         .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
       // ...e cards operacionais de monitoramento que ele não precisa ver.
       ['dashRelatoriosCard','dashOnlineCard'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+      // Marketing (externo, sem dinheiro): esconde a sub-aba Sistema (só tem custo de API),
+      // o card de férias/folgas (RH interno) e o botão Excel de contratos (export com dinheiro).
+      if (currentUser.role === 'marketing') {
+        ['relSubSistema','dashFeriasCard','btnExportContratos'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+      }
     }
     _iniciarHeartbeat();   // Registra atividade a cada 60s
     carregarFila();        // Fila rotativa de atendimento
@@ -1862,6 +1869,7 @@
     _moverCardsRH();       // tira os cards de RH de Relatórios e leva pra aba RH (antes de renderizar)
     let viewInicial = localStorage.getItem('ultimaView') || 'funil';
     if (currentUser.role === 'dono') viewInicial = 'dashboard';   // dono sempre abre no Dashboard
+    if (currentUser.role === 'marketing') viewInicial = 'relatorios';   // marketing abre direto nos Relatórios
     showView(viewInicial);
     refresh();
     setInterval(refresh, 30000);
@@ -1883,6 +1891,7 @@
   const views = ['dashboard','funil','lista','atendimento','agenda','parceiros','contratos','usuarios','relatorios','rh','configuracoes'];
   const adminViews = ['contratos', 'usuarios', 'relatorios', 'rh', 'configuracoes'];
   const donoViews = ['dashboard', 'funil', 'relatorios'];   // o que o Dono pode abrir
+  const marketingViews = ['dashboard', 'funil', 'relatorios'];   // o que o Marketing pode abrir (só-leitura, sem dinheiro)
   function showView(v) {
     // Se um lead está aberto, fecha antes de trocar de tela (senão ele fica por cima do menu).
     // Avisa só se houver algo digitado e não salvo (observação / dados em edição).
@@ -1893,9 +1902,11 @@
     }
     // Bloqueia telas de admin p/ quem não é admin — exceto o Dono nas telas dele
     if (adminViews.includes(v) && currentUser?.role !== 'admin'
-        && !(currentUser?.role === 'dono' && donoViews.includes(v))) return;
-    // Dono nunca abre telas fora das dele (mesmo via ultimaView salva)
+        && !(currentUser?.role === 'dono' && donoViews.includes(v))
+        && !(currentUser?.role === 'marketing' && marketingViews.includes(v))) return;
+    // Dono e Marketing nunca abrem telas fora das deles (mesmo via ultimaView salva)
     if (currentUser?.role === 'dono' && !donoViews.includes(v)) return;
+    if (currentUser?.role === 'marketing' && !marketingViews.includes(v)) return;
     localStorage.setItem('ultimaView', v);
     views.forEach(x => {
       document.getElementById('view'+cap(x)).style.display = x === v ? '' : 'none';
@@ -2489,6 +2500,8 @@
         acoes += `<button class="btn btn-sm" style="background:#dc2626;color:#fff" onclick="excluirLead(${leadId})">🗑 Excluir</button>`;
       }
 
+      // Marketing é só-leitura: nenhuma ação (evita botões que dariam erro 403 ao clicar)
+      if (currentUser.role === 'marketing') acoes = '';
       document.getElementById('modalAcoes').innerHTML = acoes || '<span style="font-size:.78rem;color:var(--muted)">Nenhuma ação disponível</span>';
 
       // Contratos
@@ -5674,7 +5687,7 @@
   async function carregarLeadsCalendario() {
     const card = document.getElementById('relLeadsCalCard');
     if (!card) return;
-    if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
+    if (currentUser?.role !== 'admin' && currentUser?.role !== 'marketing') { card.style.display = 'none'; return; }
     const body = document.getElementById('relLeadsCalBody');
     const func = document.getElementById('calFuncFiltro')?.value || '';
     let qs = `?escopo=${_calEscopo}`;
@@ -5805,7 +5818,7 @@
   async function carregarTempoResposta() {
     const card = document.getElementById('relRespostaCard');
     if (!card) return;
-    if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
+    if (currentUser?.role !== 'admin' && currentUser?.role !== 'marketing') { card.style.display = 'none'; return; }
     const body = document.getElementById('relRespostaBody');
     try {
       const r = await fetch('/api/relatorio/tempo-resposta?dias=30');
@@ -5855,7 +5868,7 @@
   async function carregarComportamento() {
     const card = document.getElementById('relComportCard');
     if (!card) return;
-    if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
+    if (currentUser?.role !== 'admin' && currentUser?.role !== 'marketing') { card.style.display = 'none'; return; }
     const body = document.getElementById('relComportBody');
     const sel = document.getElementById('filtroComportPeriodo')?.value || '30';
     const diasTempo = (sel === 'tudo') ? '180' : sel;   // tempo-resposta aceita no máx 180
@@ -6406,7 +6419,7 @@
     const el = document.getElementById('relPerfil');
     const card = document.getElementById('relPerfilCard');
     if (!el || !card) return;
-    if (currentUser?.role !== 'admin') { card.style.display = 'none'; return; }
+    if (currentUser?.role !== 'admin' && currentUser?.role !== 'marketing') { card.style.display = 'none'; return; }
     try {
       const r = await fetch('/api/relatorio/perfil');
       if (!r.ok) return;
@@ -6435,7 +6448,7 @@
           ${[
             ['Contratos fechados', d.total_fechados, '#065f46'],
             ['Total de leads', d.total_leads, '#1e40af'],
-            ['Valor médio financiado', 'R$ '+d.valor_medio.toLocaleString('pt-BR'), '#92400e'],
+            ['Valor médio financiado', (d.valor_medio == null ? '—' : 'R$ '+d.valor_medio.toLocaleString('pt-BR')), '#92400e'],
             ['Tempo médio p/ fechar', d.tempo_medio_dias+' dias', '#7c3aed'],
           ].map(([l,v,c])=>`
             <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:.75rem 1rem;text-align:center">
@@ -7107,7 +7120,7 @@
       </div>
       <div class="dash-meta-bar-bg"><div class="dash-meta-bar" style="width:${pct}%"></div></div>
       <div style="font-size:.72rem;color:var(--muted)">${d.pct_meta}% da meta — ${d.mes}</div>
-      ${(d.faixas_meta && d.faixas_meta.length) ? `<div style="font-size:.7rem;color:#475569;margin-top:.4rem;display:flex;flex-direction:column;gap:.15rem">${d.faixas_meta.map(f=>`<span style="${d.fechados_mes>=f.contratos?'color:#16a34a;font-weight:700':''}">${d.fechados_mes>=f.contratos?'✅':'🎯'} ${f.contratos} contratos → R$ ${Number(f.bonus).toLocaleString('pt-BR')}</span>`).join('')}</div>` : ''}`;
+      ${(d.faixas_meta && d.faixas_meta.length) ? `<div style="font-size:.7rem;color:#475569;margin-top:.4rem;display:flex;flex-direction:column;gap:.15rem">${d.faixas_meta.map(f=>`<span style="${d.fechados_mes>=f.contratos?'color:#16a34a;font-weight:700':''}">${d.fechados_mes>=f.contratos?'✅':'🎯'} ${f.contratos} contratos${f.bonus!=null?' → R$ '+Number(f.bonus).toLocaleString('pt-BR'):''}</span>`).join('')}</div>` : ''}`;
 
     // ── Ranking (empate compartilha posição) ──
     const medalhas = ['🥇','🥈','🥉'];
@@ -7158,7 +7171,7 @@
     ).join('');
 
     const faixasTxt = (d.faixas_meta||[]).map(f =>
-      `${d.fechados_mes>=f.contratos?'✅':''}${f.contratos}→R$${Number(f.bonus).toLocaleString('pt-BR')}`).join(' · ');
+      `${d.fechados_mes>=f.contratos?'✅':''}${f.contratos}${f.bonus!=null?'→R$'+Number(f.bonus).toLocaleString('pt-BR'):''}`).join(' · ');
     const metaExtra = `
       <div class="funil-meta-bar-bg"><div class="funil-meta-bar" style="width:${pct}%;background:${corMeta}"></div></div>
       <div style="font-size:.63rem;color:${corMeta};font-weight:700">${pct}% de ${d.meta}</div>
@@ -9339,6 +9352,7 @@
             <option value="funcionario">Funcionário</option>
             <option value="admin">Administrador</option>
             <option value="dono">Dono (só visualização)</option>
+            <option value="marketing">Marketing (relatórios, sem valores)</option>
           </select>
         </div>
         <div>

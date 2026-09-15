@@ -47,7 +47,7 @@ from sqlalchemy.orm import Session
 from config import get_settings
 from models import Lead, MensagemConversa, Usuario, Configuracao, Contrato, Parceiro, ContatoParceiro, SessaoUsuario, AusenciaFuncionaria, RegistroPonto, JustificativaPonto, CorrecaoPonto, AtividadePing, Agendamento, MidiaArquivo, DocumentoCliente, HistoricoLead, criar_tabelas, get_db, StatusLeadEnum, ModalidadeEnum, RoleEnum, EstadoConversaEnum
 from bot import processar_mensagem, obter_resumo_lead, _proximo_horario_atendimento, diagnostico_ia
-from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin, requer_gestao, role_do_token
+from auth import verificar_senha, hash_senha, criar_token, obter_usuario_atual, requer_admin, requer_gestao, requer_relatorios, role_do_token
 import storage
 
 settings = get_settings()
@@ -70,9 +70,10 @@ _DONO_GET_BLOQUEADO_EXATO = {"/api/diagnostico-ia", "/api/config"}
 async def _guarda_dono_somente_leitura(request: Request, call_next):
     metodo = request.method
     path = request.url.path
+    _role_jwt = role_do_token(request.cookies.get("access_token"))
     if metodo not in ("GET", "HEAD", "OPTIONS"):
         # Escrita: bloqueia pro dono, EXCETO login/logout/heartbeat, observações e agenda
-        if role_do_token(request.cookies.get("access_token")) == "dono" \
+        if _role_jwt == "dono" \
                 and path not in _DONO_ESCRITA_LIBERADA \
                 and not path.endswith(_DONO_ESCRITA_LIBERADA_SUFIXO) \
                 and not path.startswith(_DONO_ESCRITA_LIBERADA_PREFIX):
@@ -80,10 +81,16 @@ async def _guarda_dono_somente_leitura(request: Request, call_next):
                 {"detail": "Perfil do dono é somente leitura — sem permissão para alterar."},
                 status_code=403,
             )
+        # Marketing = analista só-leitura: bloqueia TODA escrita (sem exceção de observações/agenda)
+        if _role_jwt == "marketing" and path not in _DONO_ESCRITA_LIBERADA:
+            return JSONResponse(
+                {"detail": "Perfil de marketing é somente leitura — sem permissão para alterar."},
+                status_code=403,
+            )
     else:
         # Leitura: bloqueia telas sensíveis/de ação (migração, limpar ponto, backup, debug, config…)
         if (path.startswith(_DONO_GET_BLOQUEADO_PREFIX) or path in _DONO_GET_BLOQUEADO_EXATO) \
-                and role_do_token(request.cookies.get("access_token")) == "dono":
+                and _role_jwt in ("dono", "marketing"):
             return JSONResponse({"detail": "Sem permissão para esta área."}, status_code=403)
     return await call_next(request)
 
@@ -2188,9 +2195,10 @@ async def buscar_lead_por_cpf(
     }
 
 
-def _leads_sync(db, status, modalidade):
+def _leads_sync(db, status, modalidade, ocultar_valores=False):
     """Parte pesada do funil (carrega e serializa ~1786 leads) — roda em thread p/ NÃO
-    travar o event loop; responsáveis/parceiros pré-carregados (sem N+1)."""
+    travar o event loop; responsáveis/parceiros pré-carregados (sem N+1).
+    ocultar_valores=True (marketing): serializa os leads SEM valores de dinheiro."""
     query = db.query(Lead)
     if status:
         query = query.filter(Lead.status == status)
@@ -2210,7 +2218,7 @@ def _leads_sync(db, status, modalidade):
         _ultmsg = dict(db.query(MensagemConversa.telefone, _func.max(MensagemConversa.criado_em))
                        .filter(MensagemConversa.telefone.in_(_tels))
                        .group_by(MensagemConversa.telefone).all())
-    result = [_serial_lead(l, db, _resp, _parc, _ultmsg) for l in leads]
+    result = [_serial_lead(l, db, _resp, _parc, _ultmsg, ocultar_valores=ocultar_valores) for l in leads]
     # Marca "sem próximo passo": lead ativo (assumido→proposta) SEM agendamento pendente.
     # Uma consulta só (não N+1) p/ o conjunto de leads com agendamento em aberto.
     com_pendente = {lid for (lid,) in db.query(Agendamento.lead_id)
@@ -2229,19 +2237,22 @@ async def listar_leads(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
-    # Cache curto GLOBAL (o funil é igual p/ todos) + parte pesada em thread (carregar/
-    # serializar ~1786 leads é ~1s e NÃO pode travar o event loop).
-    _ck = ("leads", status or "", modalidade or "")
+    # Cache curto (o funil é igual p/ todos do MESMO nível de visão) + parte pesada em thread
+    # (carregar/serializar ~1786 leads é ~1s e NÃO pode travar o event loop). O marketing recebe
+    # os leads SEM dinheiro, então tem bucket de cache próprio (senão vazaria/contaminaria).
+    _ocultar = (usuario.role == RoleEnum.marketing)
+    _ck = ("leads", status or "", modalidade or "", _ocultar)
     _c = _rc_get(_ck)
     if _c is not None:
         return _c
-    result = await asyncio.to_thread(_leads_sync, db, status, modalidade)
+    result = await asyncio.to_thread(_leads_sync, db, status, modalidade, _ocultar)
     return _rc_set(_ck, result, ttl=10)
 
 
-def _conversa_sync(db, lead_id):
+def _conversa_sync(db, lead_id, ocultar_valores=False):
     """Carrega a conversa (histórico + lead serializado) — roda em thread p/ não travar
-    o event loop (senão o chat do funil fica preso na fila atrás de outros pedidos)."""
+    o event loop (senão o chat do funil fica preso na fila atrás de outros pedidos).
+    ocultar_valores=True (marketing): lead serializado SEM valores de dinheiro."""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
@@ -2260,13 +2271,16 @@ def _conversa_sync(db, lead_id):
             continue
     # Serializa o lead com proteção — nunca derruba a conversa
     try:
-        lead_serial = _serial_lead(lead, db)
+        lead_serial = _serial_lead(lead, db, ocultar_valores=ocultar_valores)
     except Exception as e:
         print(f"⚠️ Erro ao serializar lead {lead_id} na conversa: {e}")
         lead_serial = {"id": lead.id, "telefone": lead.telefone, "nome": lead.nome or "—",
                        "status": lead.status, "observacoes": [], "dados_contrato": {},
                        "carros_proposta": []}
-    return {"lead": lead_serial, "mensagens": mensagens}
+    # Marketing (externo, só-leitura): esconde o TEXTO das conversas — a equipe às vezes digita
+    # valores do negócio no chat, que não passam por nenhum filtro. Ela vê os dados do lead e os
+    # relatórios, mas não a transcrição. (Reversível: basta devolver 'mensagens' sem o gate.)
+    return {"lead": lead_serial, "mensagens": ([] if ocultar_valores else mensagens)}
 
 
 @app.get("/api/leads/{lead_id}/conversa")
@@ -2275,7 +2289,7 @@ async def obter_conversa(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
-    return await asyncio.to_thread(_conversa_sync, db, lead_id)
+    return await asyncio.to_thread(_conversa_sync, db, lead_id, usuario.role == RoleEnum.marketing)
 
 
 def _log_historico(db, lead_id: int, de_status, para_status, usuario_id, quando=None):
@@ -2903,9 +2917,10 @@ async def relatorio_contratos_csv(
 @app.get("/api/relatorio/perfil")
 async def relatorio_perfil(
     db: Session = Depends(get_db),
-    admin: Usuario = Depends(requer_admin),
+    admin: Usuario = Depends(requer_relatorios),
 ):
-    """Painel de perfil de clientes para direcionar anúncios (admin only)."""
+    """Painel de perfil de clientes para direcionar anúncios. Admin/dono/marketing (leitura).
+    Marketing NÃO recebe o valor_medio (é um número financeiro — some do payload)."""
     from collections import Counter
     import re as _re
 
@@ -2992,7 +3007,8 @@ async def relatorio_perfil(
     return {
         "total_fechados": len(fechados),
         "total_leads":    len(todos),
-        "valor_medio":    valor_medio,
+        # valor_medio é número financeiro → None p/ marketing (o front mostra "—")
+        "valor_medio":    (None if admin.role == RoleEnum.marketing else valor_medio),
         "tempo_medio_dias": tempo_medio,
         "faixas_etarias": faixas,
         "rendas":         dict(rendas),
@@ -3432,6 +3448,10 @@ async def listar_contratos_fechados(
 async def listar_documentos_cliente(
     lead_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(obter_usuario_atual),
 ):
+    # Marketing (analista só-leitura) NÃO lista documentos: contratos/comprovantes carregam
+    # valores do negócio (mesma razão de listar_contratos/baixar_pdf).
+    if usuario.role == RoleEnum.marketing:
+        return []
     docs = (db.query(DocumentoCliente)
             .filter(DocumentoCliente.lead_id == lead_id)
             .order_by(DocumentoCliente.criado_em.desc()).all())
@@ -3713,8 +3733,9 @@ async def migrar_postgres(admin: Usuario = Depends(requer_admin)):
                          "total_linhas": sum(copiado.values())})
 
 
-def _inbox_sync(db):
-    """Parte pesada do inbox (muitas consultas) — roda em thread p/ não travar o servidor."""
+def _inbox_sync(db, ocultar_valores=False):
+    """Parte pesada do inbox (muitas consultas) — roda em thread p/ não travar o servidor.
+    ocultar_valores=True (marketing): leads serializados SEM valores de dinheiro."""
     from sqlalchemy import func
     leads_com_msg = (
         db.query(Lead)
@@ -3746,8 +3767,8 @@ def _inbox_sync(db):
         nao_lido = bool(l.nao_lido_manual) or (
             (ultima.role == "user") and (l.lido_em is None or ultima.criado_em > l.lido_em))
         resultado.append({
-            **_serial_lead(l, db, _resp, _parc),
-            "ultima_mensagem": conteudo_limpo[:60],
+            **_serial_lead(l, db, _resp, _parc, ocultar_valores=ocultar_valores),
+            "ultima_mensagem": ("" if ocultar_valores else conteudo_limpo[:60]),
             "ultima_hora": _fmt_br(ultima.criado_em, "%H:%M") if ultima and ultima.criado_em else "",
             "ultima_msg_ts": ultima.criado_em.timestamp() if ultima and ultima.criado_em else 0,
             "nao_lido": nao_lido,
@@ -3763,7 +3784,7 @@ async def inbox(
 ):
     """Retorna TODAS as conversas com mensagens, ordenadas pela mais recente.
     Roda em thread separada para NÃO travar o servidor (evita envios pendurados)."""
-    return await asyncio.to_thread(_inbox_sync, db)
+    return await asyncio.to_thread(_inbox_sync, db, usuario.role == RoleEnum.marketing)
 
 
 @app.post("/api/leads/{lead_id}/marcar-lida")
@@ -4052,7 +4073,8 @@ async def dashboard_stats(
 ):
     """Métricas completas para a aba Dashboard."""
     _adm = usuario.role in (RoleEnum.admin, RoleEnum.dono)
-    _ck = ("dashboard-stats", "adm" if _adm else "func")
+    _mkt = (usuario.role == RoleEnum.marketing)   # analista: NÃO vê dinheiro (nem o bônus das metas)
+    _ck = ("dashboard-stats", "adm" if _adm else ("mkt" if _mkt else "func"))
     _cached = _rc_get(_ck)
     if _cached is not None:
         return _cached
@@ -4134,6 +4156,14 @@ async def dashboard_stats(
             "total_comissao": f"R$ {total_comissao:,.2f}".replace(",","X").replace(".",",").replace("X","."),
         }
 
+    # Marketing (analista) NÃO vê o bônus/premiação em R$ das metas — só a quantidade de contratos.
+    # O bônus é dinheiro; remove antes de devolver (o bucket de cache 'mkt' garante que não
+    # contamina o payload das funcionárias, que continuam vendo o bônus).
+    _faixas_out = ([{k: v for k, v in f.items() if k != "bonus"} for f in faixas_meta]
+                   if _mkt else faixas_meta)
+    _faixa_atingida_out = ({k: v for k, v in faixa_atingida.items() if k != "bonus"}
+                           if (_mkt and faixa_atingida) else faixa_atingida)
+
     return _rc_set(_ck, {
         "mes": f"{agora.month:02d}/{agora.year}",
         "total_mes": total_mes,
@@ -4145,8 +4175,8 @@ async def dashboard_stats(
         "conv_aprovada": conv_aprovada,
         "meta": meta,
         "pct_meta": pct_meta,
-        "faixas_meta": faixas_meta,
-        "faixa_atingida": faixa_atingida,
+        "faixas_meta": _faixas_out,
+        "faixa_atingida": _faixa_atingida_out,
         "ranking": ranking,
         "tarja": tarja,
     }, ttl=60)
@@ -4158,9 +4188,9 @@ async def resumo_dia(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
-    """Resumo do dia por funcionária (admin/dono): quantos leads ela mexeu e quantos
-    passaram por cada etapa. Baseado em QUEM MOVEU o card (HistoricoLead)."""
-    if usuario.role not in (RoleEnum.admin, RoleEnum.dono):
+    """Resumo do dia por funcionária (admin/dono/marketing): quantos leads ela mexeu e quantos
+    passaram por cada etapa. Baseado em QUEM MOVEU o card (HistoricoLead). Sem dinheiro."""
+    if usuario.role not in (RoleEnum.admin, RoleEnum.dono, RoleEnum.marketing):
         raise HTTPException(status_code=403, detail="Apenas administradores.")
     agora = _agora_br()
     try:
@@ -4695,6 +4725,9 @@ async def rh_listar_ausencias(db: Session = Depends(get_db),
                               usuario: Usuario = Depends(obter_usuario_atual)):
     """Todas as férias/folgas de quem está ATIVO — visível a todos (calendário compartilhado).
     Desligados não aparecem mais aqui (mas o histórico deles fica preservado)."""
+    # Marketing é externo — não vê dados internos de RH (férias/folgas da equipe).
+    if usuario.role == RoleEnum.marketing:
+        return []
     aus = (db.query(AusenciaFuncionaria)
            .join(Usuario, Usuario.id == AusenciaFuncionaria.usuario_id)
            .filter(Usuario.ativo == True)
@@ -5976,7 +6009,7 @@ async def rejeitar_correcao(cid: int, request: Request, db: Session = Depends(ge
 
 
 @app.get("/api/relatorios")
-async def relatorios(db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin)):
+async def relatorios(db: Session = Depends(get_db), admin: Usuario = Depends(requer_relatorios)):
     usuarios = db.query(Usuario).filter(Usuario.ativo == True, Usuario.role == RoleEnum.funcionario).all()
     _ign = Lead.ignorar_relatorios.isnot(True)
     por_funcionario = []
@@ -6002,7 +6035,7 @@ async def relatorios(db: Session = Depends(get_db), admin: Usuario = Depends(req
 @app.get("/api/relatorio/produtividade")
 async def relatorio_produtividade(periodo: str = "tudo",
                                   db: Session = Depends(get_db),
-                                  admin: Usuario = Depends(requer_admin)):
+                                  admin: Usuario = Depends(requer_relatorios)):
     """Por operadora (responsável pelo lead): quantos dos leads dela JÁ TÊM e quantos
     AINDA NÃO TÊM observação e agendamento (follow-up manual). Conta individualmente.
     'periodo' filtra pelos leads que ENTRARAM no período (criado_em).
@@ -6056,7 +6089,7 @@ async def relatorio_produtividade(periodo: str = "tudo",
 @app.get("/api/relatorio/eficiencia")
 async def relatorio_eficiencia(periodo: str = "tudo",
                                db: Session = Depends(get_db),
-                               admin: Usuario = Depends(requer_admin)):
+                               admin: Usuario = Depends(requer_relatorios)):
     """Funil de conversão por operadora: recebidos → proposta → aprovados → fechados, + perdidos.
     Contagem CUMULATIVA por status atual: quem está (ou passou) num estágio à frente conta nos
     anteriores. Obs.: só temos o status ATUAL — um lead perdido conta só em 'perdidos' (não dá
@@ -6119,7 +6152,7 @@ async def relatorio_eficiencia(periodo: str = "tudo",
 @app.get("/api/relatorio/fluxo-propostas")
 async def relatorio_fluxo_propostas(inicio: str = "", fim: str = "",
                                     db: Session = Depends(get_db),
-                                    admin: Usuario = Depends(requer_admin)):
+                                    admin: Usuario = Depends(requer_relatorios)):
     """FLUXO real (não foto): quantos leads PASSARAM por 'proposta enviada' no período — mesmo
     que já tenham saído do funil — e, desses, quantos foram aprovados e fechados. Usa o histórico
     de transições (HistoricoLead), filtrando pela DATA em que a proposta foi enviada.
@@ -6174,7 +6207,7 @@ def _dias_horas(seg) -> str:
 @app.get("/api/relatorio/fechamentos")
 async def relatorio_fechamentos(periodo: str = "mes", inicio: str = "", fim: str = "",
                                 db: Session = Depends(get_db),
-                                admin: Usuario = Depends(requer_admin)):
+                                admin: Usuario = Depends(requer_relatorios)):
     """Quem REALMENTE fechou (pelo histórico) + tempo médio pra fechar.
     Conta pela DATA DE FECHAMENTO (evento -> 'fechado'), NÃO pela chegada: um lead que
     chegou em maio e fechou em junho conta no desempenho de junho. 'quem fechou' = quem
@@ -6257,7 +6290,7 @@ async def relatorio_fechamentos(periodo: str = "mes", inicio: str = "", fim: str
 @app.get("/api/relatorio/origem")
 async def relatorio_origem(periodo: str = "tudo",
                            db: Session = Depends(get_db),
-                           admin: Usuario = Depends(requer_admin)):
+                           admin: Usuario = Depends(requer_relatorios)):
     """Por operadora: quantos leads vieram de PARCEIRO (cartela) x NOVOS (whatsapp/anúncio/etc).
     Ajuda a comparar volume de forma justa — quem tem cartela de parceiros maior recebe mais.
     Mesmos filtros do funil de eficiência, então 'Total' bate com 'Recebidos'."""
@@ -6296,7 +6329,7 @@ async def relatorio_origem(periodo: str = "tudo",
 
 @app.get("/api/relatorio/sem-proximo-passo")
 async def relatorio_sem_proximo_passo(db: Session = Depends(get_db),
-                                      admin: Usuario = Depends(requer_admin)):
+                                      admin: Usuario = Depends(requer_relatorios)):
     """Leads que ALGUÉM está trabalhando (assumido/pré-análise/proposta) e que NÃO têm
     nenhum agendamento PENDENTE = sem próximo passo. Por operadora — risco de esfriar."""
     ATIVOS = [StatusLeadEnum.assumido.value, StatusLeadEnum.pre_analise.value,
@@ -6337,7 +6370,7 @@ async def relatorio_sem_proximo_passo(db: Session = Depends(get_db),
 
 @app.get("/api/relatorio/leads-perdidos-ia")
 async def leads_perdidos_ia(periodo: str = "30dias", db: Session = Depends(get_db),
-                            admin: Usuario = Depends(requer_admin)):
+                            admin: Usuario = Depends(requer_relatorios)):
     """IA faz um apanhado geral dos MOTIVOS de perda dos leads perdidos (sob demanda)."""
     desde = _inicio_periodo(periodo)
     q = db.query(Lead).filter(Lead.status == StatusLeadEnum.perdido.value,
@@ -6472,9 +6505,9 @@ async def backfill_historico(admin: Usuario = Depends(requer_admin)):
 @app.get("/api/relatorio/parceiros")
 async def relatorio_parceiros(
     db: Session = Depends(get_db),
-    admin: Usuario = Depends(requer_admin),
+    admin: Usuario = Depends(requer_relatorios),
 ):
-    """Relatório de desempenho por parceiro (admin only)."""
+    """Relatório de desempenho por parceiro (admin/dono/marketing — sem dinheiro)."""
     parceiros = db.query(Parceiro).order_by(Parceiro.nome).all()
     resultado = []
     for p in parceiros:
@@ -6738,7 +6771,7 @@ async def conversas_paradas_minhas(db: Session = Depends(get_db),
 async def relatorio_tempo_resposta(
     dias: int = 30,
     db: Session = Depends(get_db),
-    admin: Usuario = Depends(requer_admin),
+    admin: Usuario = Depends(requer_relatorios),
 ):
     """Tempo até a 1ª resposta humana (após handoff da IA), contando só horário comercial.
     Mensagens da equipe são salvas com prefixo '[Nome]:' — é assim que distinguimos da IA."""
@@ -6818,7 +6851,7 @@ async def relatorio_tempo_resposta(
 
 @app.get("/api/relatorio/motivos-perda")
 async def relatorio_motivos_perda(dias: int = 30, db: Session = Depends(get_db),
-                                  admin: Usuario = Depends(requer_admin)):
+                                  admin: Usuario = Depends(requer_relatorios)):
     """Contagem dos MOTIVOS de perda reais (informados pela equipe ou pela IA).
     Agrupa pela CATEGORIA (parte antes do ' — '); dias=0 = todo o período."""
     _ck = ("motivos-perda", dias)
@@ -6906,7 +6939,7 @@ def _resultado_label(status):
 @app.get("/api/relatorio/leads-calendario")
 async def relatorio_leads_calendario(
     ano: int = None, mes: int = None, funcionaria: int = None, escopo: str = "mes",
-    db: Session = Depends(get_db), admin: Usuario = Depends(requer_admin),
+    db: Session = Depends(get_db), admin: Usuario = Depends(requer_relatorios),
 ):
     """Resumo de leads por funcionária. escopo='mes' (atendidos no mês, com calendário)
     ou 'geral' (todos os tempos — útil porque a venda demora a fechar)."""
@@ -8362,6 +8395,9 @@ async def listar_contratos(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
+    # Marketing (analista só-leitura) NÃO vê contratos: o PDF/os links carregam valores do negócio.
+    if usuario.role == RoleEnum.marketing:
+        return []
     contratos = db.query(Contrato).filter(Contrato.lead_id == lead_id).order_by(Contrato.criado_em.desc()).all()
     base_url = str(request.base_url).rstrip("/")
     return [
@@ -8390,6 +8426,9 @@ async def baixar_pdf_assinado(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(obter_usuario_atual),
 ):
+    # Marketing (analista só-leitura) NÃO baixa PDF de contrato (contém valores do negócio).
+    if usuario.role == RoleEnum.marketing:
+        raise HTTPException(403, "Sem permissão para esta área.")
     c = db.query(Contrato).filter(Contrato.id == contrato_id).first()
     if not c:
         raise HTTPException(404, "Contrato não encontrado")
@@ -8429,7 +8468,10 @@ def _safe_json(raw, padrao):
         return padrao
 
 
-def _serial_lead(l: Lead, db: Session, resp_map: dict = None, parc_map: dict = None, ultmsg_map: dict = None) -> dict:
+def _serial_lead(l: Lead, db: Session, resp_map: dict = None, parc_map: dict = None, ultmsg_map: dict = None, ocultar_valores: bool = False) -> dict:
+    # ocultar_valores=True (perfil marketing): NÃO serializa nenhum valor de dinheiro do negócio
+    # (retorno/valor/comissão + os blobs de proposta e contrato) — a proteção é no SERVIDOR, então
+    # nem pela aba Network o valor sai. Nome do banco/operadora/placa/veículo NÃO são dinheiro e ficam.
     # resp_map/parc_map opcionais: as rotas de LISTA (/api/leads, inbox) pré-carregam
     # responsáveis e parceiros em UMA query só e passam aqui — evita o N+1 (1 query por
     # lead). Sem eles, cai no caminho antigo (lead avulso) — comportamento idêntico.
@@ -8472,14 +8514,14 @@ def _serial_lead(l: Lead, db: Session, resp_map: dict = None, parc_map: dict = N
         "deal_data":     l.deal_data or "",
         "deal_veiculo":  l.deal_veiculo or "",
         "deal_placa":    l.deal_placa or "",
-        "deal_retorno":  l.deal_retorno or "",
-        "deal_valor":    l.deal_valor or "",
-        "deal_comissao": l.deal_comissao or "",
+        "deal_retorno":  ("" if ocultar_valores else (l.deal_retorno or "")),
+        "deal_valor":    ("" if ocultar_valores else (l.deal_valor or "")),
+        "deal_comissao": ("" if ocultar_valores else (l.deal_comissao or "")),
         "deal_banco":      l.deal_banco or "",
         "deal_conta_pg":   l.deal_conta_pg or "",
         "deal_operadora":  l.deal_operadora or "",
-        # Dados extras p/ requerimento
-        "dados_contrato": _safe_json(l.dados_contrato, {}),
+        # Dados extras p/ requerimento (contêm valores do negócio → ocultos p/ marketing)
+        "dados_contrato": ({} if ocultar_valores else _safe_json(l.dados_contrato, {})),
         # Perfil do cliente
         "cidade":   l.cidade   or "",
         "email":    l.email    or "",
@@ -8489,7 +8531,8 @@ def _serial_lead(l: Lead, db: Session, resp_map: dict = None, parc_map: dict = N
         "oculto_funil": bool(l.oculto_funil),
         "descadastrado": bool(l.descadastrado),
         "ignorar_relatorios": bool(l.ignorar_relatorios),
-        "carros_proposta": _safe_json(l.carros_proposta, []),
+        # Propostas de banco (financiado/comissão/líquido por banco) → ocultas p/ marketing
+        "carros_proposta": ([] if ocultar_valores else _safe_json(l.carros_proposta, [])),
     }
 
 
