@@ -3559,8 +3559,8 @@
       <div style="border:1px solid ${escolhido?'#16a34a':'#e2e8f0'};border-left:3px solid ${escolhido?'#16a34a':'#cbd5e1'};border-radius:8px;background:${escolhido?'#f0fdf4':'#fff'};padding:.5rem .65rem">
         <div style="display:flex;align-items:flex-start;gap:.5rem">
           <div style="flex:1;min-width:0">
-            <div style="font-size:.85rem;font-weight:700;color:#0d2b4e">${esc1(c.modelo) || '—'} ${anos?('· '+esc1(anos)):''}${c.cor?(' · '+esc1(c.cor)):''}</div>
-            <div style="font-size:.74rem;color:#64748b">🔖 ${esc1(c.placa)||'sem placa'}${c.placa?` <button onclick="_copiarTxt(this)" data-copy="${esc1(c.placa)}" title="Copiar placa" style="border:none;background:none;cursor:pointer;font-size:.76rem;padding:0;vertical-align:baseline">📋</button>`:''}${c.chassi?(' · Chassi '+esc1(c.chassi)):''}${c.renavam?(' · RENAVAM '+esc1(c.renavam)):''}</div>
+            <div style="font-size:.85rem;font-weight:700;color:#0d2b4e">${escHtml(c.modelo) || '—'} ${anos?('· '+escHtml(anos)):''}${c.cor?(' · '+escHtml(c.cor)):''}</div>
+            <div style="font-size:.74rem;color:#64748b">🔖 ${escHtml(c.placa)||'sem placa'}${c.placa?` <button onclick="_copiarTxt(this)" data-copy="${escAttr(c.placa)}" title="Copiar placa" style="border:none;background:none;cursor:pointer;font-size:.76rem;padding:0;vertical-align:baseline">📋</button>`:''}${c.chassi?(' · Chassi '+escHtml(c.chassi)):''}${c.renavam?(' · RENAVAM '+escHtml(c.renavam)):''}</div>
             ${escolhido?'<div style="font-size:.7rem;color:#166534;font-weight:700;margin-top:.15rem">⭐ Carro escolhido para fechar</div>':''}
           </div>
           <div style="display:flex;flex-direction:column;gap:.25rem">

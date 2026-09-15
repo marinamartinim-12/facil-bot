@@ -1705,7 +1705,7 @@ async def diagnostico_ia_endpoint(usuario: Usuario = Depends(requer_admin)):
 
 
 @app.post("/testar")
-async def testar_bot(request: Request, db: Session = Depends(get_db)):
+async def testar_bot(request: Request, db: Session = Depends(get_db), usuario: Usuario = Depends(requer_admin)):
     body = await request.json()
     telefone = body.get("telefone", "5500000000000")
     mensagem = body.get("mensagem", "")
@@ -8276,6 +8276,14 @@ async def verificar_assinatura(token: str, db: Session = Depends(get_db)):
     assinado_em_br = _fmt_br(c.assinado_em, "%d/%m/%Y %H:%M:%S") or "-"
     criado_em_br   = _fmt_br(c.criado_em) or "-"
 
+    # Página PÚBLICA — escapa tudo que vem de dado (nome/CPF/doc/IP/hash) p/ não injetar HTML
+    import html as _html
+    doc_id_e = _html.escape(str(d.get("doc_id", c.id)))
+    ip_e     = _html.escape(str(c.ip_cliente or "-"))
+    nome_e   = _html.escape(str(nome).upper())
+    cpf_e    = _html.escape(str(cpf))
+    hash_e   = _html.escape(str(c.hash_doc or "-"))
+
     status_badge = (
         '<span style="background:#16a34a;color:#fff;padding:.3rem .9rem;border-radius:99px;font-weight:700;font-size:.9rem">✅ ASSINADO</span>'
         if c.status == "assinado" else
@@ -8315,20 +8323,20 @@ async def verificar_assinatura(token: str, db: Session = Depends(get_db)):
   <div class="card">
     <div class="status-area">{status_badge}</div>
     <h2>📄 Dados do Documento</h2>
-    <div class="row"><span class="lbl">Nº do documento</span><span class="val">{d.get("doc_id", c.id)}</span></div>
+    <div class="row"><span class="lbl">Nº do documento</span><span class="val">{doc_id_e}</span></div>
     <div class="row"><span class="lbl">Gerado em</span><span class="val">{criado_em_br}</span></div>
     <div class="row"><span class="lbl">Assinado em</span><span class="val">{assinado_em_br}</span></div>
-    <div class="row"><span class="lbl">IP do assinante</span><span class="val">{c.ip_cliente or "-"}</span></div>
+    <div class="row"><span class="lbl">IP do assinante</span><span class="val">{ip_e}</span></div>
   </div>
   <div class="card">
     <h2>👤 Assinante</h2>
-    <div class="row"><span class="lbl">Nome</span><span class="val">{nome.upper()}</span></div>
-    <div class="row"><span class="lbl">CPF</span><span class="val">{cpf}</span></div>
+    <div class="row"><span class="lbl">Nome</span><span class="val">{nome_e}</span></div>
+    <div class="row"><span class="lbl">CPF</span><span class="val">{cpf_e}</span></div>
   </div>
   <div class="card">
     <h2>🔒 Integridade</h2>
     <p style="font-size:.8rem;color:#64748b;margin-bottom:.5rem">Hash SHA-256 do documento original:</p>
-    <div class="hash">{c.hash_doc}</div>
+    <div class="hash">{hash_e}</div>
   </div>
   <div class="footer">
     Assinado eletronicamente nos termos da Lei 14.063/2020 e MP 2.200-2/2001.<br>

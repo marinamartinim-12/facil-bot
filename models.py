@@ -166,7 +166,8 @@ class Lead(Base):
 
     # Segurança: nome/veículo vêm do WhatsApp (não confiável). Remove caracteres que
     # permitem injeção de HTML já na gravação (defesa na origem, cobre todos os caminhos).
-    @validates("nome", "carro_interesse")
+    @validates("nome", "carro_interesse", "deal_veiculo", "deal_banco", "deal_placa",
+               "deal_operadora", "deal_conta_pg", "origem_detalhe", "motivo_perda")
     def _sanitizar_texto_livre(self, key, value):
         if value is None:
             return None
@@ -193,6 +194,12 @@ class Parceiro(Base):
     contatos  = relationship("ContatoParceiro", back_populates="parceiro",
                              cascade="all, delete-orphan", order_by="ContatoParceiro.id")
     leads     = relationship("Lead", back_populates="parceiro")
+
+    @validates("nome", "nome_agenda")
+    def _sanitizar_parceiro(self, key, value):
+        if value is None:
+            return None
+        return re.sub(r'[<>"]', "", str(value))
     operadora = relationship("Usuario", foreign_keys=[operadora_id])
 
 
