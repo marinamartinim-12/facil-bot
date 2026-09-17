@@ -4088,7 +4088,8 @@ async def dashboard_stats(
 ):
     """Métricas completas para a aba Dashboard."""
     _adm = usuario.role in (RoleEnum.admin, RoleEnum.dono, RoleEnum.marketing)
-    _ck = ("dashboard-stats", "adm" if _adm else "func")
+    _mkt = (usuario.role == RoleEnum.marketing)   # vê a tarja, MAS sem a "Comissão total"
+    _ck = ("dashboard-stats", "mkt" if _mkt else ("adm" if _adm else "func"))
     _cached = _rc_get(_ck)
     if _cached is not None:
         return _cached
@@ -4169,6 +4170,9 @@ async def dashboard_stats(
             "total_valor": f"R$ {total_valor:,.2f}".replace(",","X").replace(".",",").replace("X","."),
             "total_comissao": f"R$ {total_comissao:,.2f}".replace(",","X").replace(".",",").replace("X","."),
         }
+        # Marketing vê a tarja (leads/propostas/contratos/meta/volume), mas NÃO a Comissão total (ganho).
+        if _mkt:
+            tarja["total_comissao"] = None
 
     return _rc_set(_ck, {
         "mes": f"{agora.month:02d}/{agora.year}",

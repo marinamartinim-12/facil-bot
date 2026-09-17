@@ -6346,27 +6346,28 @@
               <div style="font-size:.68rem;color:#166534;font-weight:600">VOLUME TOTAL</div>
               <div style="font-size:1rem;font-weight:800;color:#065f46">${_fmtBRL(d.total_valor)}</div>
             </div>
-            <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:.4rem .9rem;text-align:center">
+            ${currentUser?.role !== 'marketing' ? `<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:.4rem .9rem;text-align:center">
               <div style="font-size:.68rem;color:#6d28d9;font-weight:600">RETORNO TOTAL</div>
               <div style="font-size:1rem;font-weight:800;color:#6d28d9">${_fmtBRL(totalRetorno)}</div>
             </div>
             <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:.4rem .9rem;text-align:center">
               <div style="font-size:.68rem;color:#92400e;font-weight:600">COMISSÃO TOTAL</div>
               <div style="font-size:1rem;font-weight:800;color:#92400e">${_fmtBRL(d.total_comissao)}</div>
-            </div>
+            </div>` : ''}
           </div>` : ''}
         </div>`;
 
       let tabelaHtml = '';
       if (d.contratos && d.contratos.length) {
-        const isAdm = podeVerGestao();
+        const verFinanc = podeVerGestao();                 // Valor Financiado: admin + marketing (volume)
+        const verGanho = currentUser?.role === 'admin';    // Retorno / Retorno R$ / Comissão: só admin (marketing NÃO vê o ganho)
         tabelaHtml = `
           <div style="overflow-x:auto">
             <table class="rel-table">
               <thead><tr>
                 <th>Data</th><th>Cliente</th><th>Idade</th><th>Veículo</th>
                 <th>Operadora</th><th>Banco</th><th>Conta PG</th><th>Origem</th>
-                ${isAdm ? '<th>Retorno</th><th>Valor Financiado</th><th>Retorno R$</th><th>Comissão</th>' : ''}
+                ${verGanho ? '<th>Retorno</th>' : ''}${verFinanc ? '<th>Valor Financiado</th>' : ''}${verGanho ? '<th>Retorno R$</th><th>Comissão</th>' : ''}
               </tr></thead>
               <tbody>
                 ${d.contratos.map(c => `<tr>
@@ -6378,10 +6379,9 @@
                   <td>${esc(c.deal_banco)}</td>
                   <td>${esc(c.deal_conta_pg)}</td>
                   <td style="font-size:.78rem">${esc(c.origem||'—')}</td>
-                  ${isAdm ? `
-                  <td style="text-align:center;font-weight:700">${esc(c.deal_retorno)}</td>
-                  <td style="font-weight:700;color:#065f46;white-space:nowrap">${c.deal_valor !== '—' ? 'R$ '+esc(c.deal_valor) : '—'}</td>
-                  <td style="font-weight:700;color:#7c3aed;white-space:nowrap">${_retornoRS(c.deal_retorno, c.deal_valor)}</td>
+                  ${verGanho ? `<td style="text-align:center;font-weight:700">${esc(c.deal_retorno)}</td>` : ''}
+                  ${verFinanc ? `<td style="font-weight:700;color:#065f46;white-space:nowrap">${c.deal_valor !== '—' ? 'R$ '+esc(c.deal_valor) : '—'}</td>` : ''}
+                  ${verGanho ? `<td style="font-weight:700;color:#7c3aed;white-space:nowrap">${_retornoRS(c.deal_retorno, c.deal_valor)}</td>
                   <td style="font-weight:700;color:#92400e;white-space:nowrap">${c.deal_comissao !== '—' ? 'R$ '+esc(c.deal_comissao) : '—'}</td>` : ''}
                 </tr>`).join('')}
               </tbody>
@@ -7080,10 +7080,10 @@
             <span class="dash-tarja-label">Total financiado</span>
             <span class="dash-tarja-val" style="color:#86efac">${d.tarja.total_valor}</span>
           </div>
-          <div class="dash-tarja-item">
+          ${d.tarja.total_comissao ? `<div class="dash-tarja-item">
             <span class="dash-tarja-label">Comissão total</span>
             <span class="dash-tarja-val" style="color:#fcd34d">${d.tarja.total_comissao}</span>
-          </div>
+          </div>` : ''}
         </div>`;
     } else {
       tarja.style.display = 'none';
