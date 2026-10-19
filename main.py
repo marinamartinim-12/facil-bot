@@ -3289,13 +3289,26 @@ def _resposta_midia_range(request, dados, media_type):
                              "Content-Length": str(len(chunk))})
 
 
+# Cache em memória das mídias que estão no R2 (filename -> (mime, nome)). Mídia não muda
+# depois de salva, então dá p/ pular o banco nas próximas vezes (o chat pede a mesma mídia
+# muitas vezes). Limite simples de tamanho p/ não crescer sem fim.
+_MIDIA_R2_CACHE: dict = {}
+_MIDIA_R2_CACHE_MAX = 20000
+
+
 def _midia_fonte(db, filename: str):
     """De onde servir a mídia: ('r2', None, mime, nome) se os bytes estão no R2;
     ('db', bytes, mime, nome) se estão no banco/disco; (None, None, None, None) se não achou."""
+    cache = _MIDIA_R2_CACHE.get(filename)
+    if cache and storage.r2_ativo():
+        return ("r2", None, cache[0], cache[1])
     reg = db.query(MidiaArquivo).filter(MidiaArquivo.filename == filename).first()
     if reg and reg.dados:
         return ("db", reg.dados, reg.mime or None, reg.nome_original or None)
     if reg and storage.r2_ativo():
+        if len(_MIDIA_R2_CACHE) >= _MIDIA_R2_CACHE_MAX:
+            _MIDIA_R2_CACHE.clear()
+        _MIDIA_R2_CACHE[filename] = (reg.mime or None, reg.nome_original or None)
         return ("r2", None, reg.mime or None, reg.nome_original or None)
     for sub in ("imagens", "documentos", "audios"):
         p = f"/app/{sub}/{filename}"
@@ -3308,8 +3321,14 @@ def _midia_fonte(db, filename: str):
     return (None, None, None, None)
 
 
+def _redirect_midia(url: str):
+    """Redireciona p/ a URL assinada do R2 deixando o navegador guardar o redirect por
+    10 min (a URL vale 15) — assim a mesma mídia não volta ao servidor a cada atualização."""
+    return RedirectResponse(url, status_code=307, headers={"Cache-Control": "private, max-age=600"})
+
+
 @app.get("/api/audio/{filename}")
-async def servir_audio(filename: str, request: Request, dl: int = 0, db: Session = Depends(get_db)):
+def servir_audio(filename: str, request: Request, dl: int = 0, db: Session = Depends(get_db)):
     """Serve áudio. No R2, redireciona pra URL assinada (o R2 trata o Range direto).
     ?dl=1 força download (anexo) — necessário porque o arquivo vem de outro domínio."""
     if not re.match(r'^[a-f0-9]{32}\.(webm|ogg|mp3|m4a|mp4|aac)$', filename):
@@ -3322,7 +3341,7 @@ async def servir_audio(filename: str, request: Request, dl: int = 0, db: Session
         url = storage.url_assinada(filename, mime=tipos.get(ext, "audio/ogg"),
                                    nome_download=(filename if dl else None))
         if url:
-            return RedirectResponse(url, status_code=307)
+            return _redirect_midia(url)
         dados, mime, _ = _buscar_midia(db, filename)  # fallback: baixa do R2 e serve pelo app
     if not dados:
         raise HTTPException(status_code=404)
@@ -3333,7 +3352,7 @@ async def servir_audio(filename: str, request: Request, dl: int = 0, db: Session
 
 
 @app.get("/api/imagem/{filename}")
-async def servir_imagem(filename: str, dl: int = 0, db: Session = Depends(get_db)):
+def servir_imagem(filename: str, dl: int = 0, db: Session = Depends(get_db)):
     """Serve imagem (redireciona pro R2 quando aplicável). ?dl=1 força download (anexo)."""
     if not re.match(r'^[a-f0-9]{32}\.(jpg|jpeg|png|webp|gif)$', filename):
         raise HTTPException(status_code=404)
@@ -3345,7 +3364,7 @@ async def servir_imagem(filename: str, dl: int = 0, db: Session = Depends(get_db
         url = storage.url_assinada(filename, mime=tipos.get(ext, "image/jpeg"),
                                    nome_download=(filename if dl else None))
         if url:
-            return RedirectResponse(url, status_code=307)
+            return _redirect_midia(url)
         dados, mime, _ = _buscar_midia(db, filename)
     if not dados:
         raise HTTPException(status_code=404)
@@ -3354,7 +3373,7 @@ async def servir_imagem(filename: str, dl: int = 0, db: Session = Depends(get_db
 
 
 @app.get("/api/documento/{filename}")
-async def servir_documento(filename: str, db: Session = Depends(get_db)):
+def servir_documento(filename: str, db: Session = Depends(get_db)):
     """Serve documentos/PDFs com header de download (redireciona pro R2 quando aplicável)."""
     if not re.match(r'^[a-f0-9]{32}\.\w{2,5}$', filename):
         raise HTTPException(status_code=404)
@@ -3364,7 +3383,7 @@ async def servir_documento(filename: str, db: Session = Depends(get_db)):
     if fonte == "r2":
         url = storage.url_assinada(filename, mime=media_type, nome_download=(nome or filename))
         if url:
-            return RedirectResponse(url, status_code=307)
+            return _redirect_midia(url)
         dados, mime, nome = _buscar_midia(db, filename)
         media_type = mime or media_type
     if not dados:

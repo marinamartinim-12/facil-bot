@@ -7524,6 +7524,7 @@
     }
   }
 
+  let _chatSig = '';  // assinatura da última conversa desenhada no chat do Atendimento
   async function carregarMensagensChat(forcarBaixo = false) {
     if (!chatLeadAtivo) return;
     // Não recarrega o chat enquanto a atendente está OUVINDO um áudio — senão o polling
@@ -7533,11 +7534,20 @@
       if (_box && Array.from(_box.querySelectorAll('audio')).some(a => !a.paused && !a.ended)) return;
     }
     try {
-      const r = await fetch(`/api/leads/${chatLeadAtivo.id}/conversa`);
+      const _leadId = chatLeadAtivo.id;
+      const r = await fetch(`/api/leads/${_leadId}/conversa`);
+      if (!r.ok) return;
       const d = await r.json();
       const box = document.getElementById('chatMessages');
+      // Só redesenha quando chegou algo novo: redesenhar recria todo <audio>/<img> e o
+      // navegador pede DE NOVO cada mídia ao servidor a cada 8s (isso travava o sistema).
+      const _msgs = Array.isArray(d.mensagens) ? d.mensagens : [];
+      const _ult = _msgs[_msgs.length - 1] || {};
+      const _sig = _leadId + '|' + _msgs.length + '|' + (_ult.horario || '') + '|' + String(_ult.conteudo || '').slice(0, 24);
+      if (forcarBaixo !== true && _sig === _chatSig) return;
+      _chatSig = _sig;
       const atBottom = forcarBaixo || (box.scrollHeight - box.scrollTop - box.clientHeight < 60);
-      box.innerHTML = renderMensagens(d.mensagens);
+      box.innerHTML = renderMensagens(_msgs);
       if (atBottom) box.scrollTop = box.scrollHeight;
     } catch {}
   }
